@@ -28,6 +28,7 @@ SCOPES = [
 ]
 
 NOME_FOGLIO_RISPOSTE = "Risposte del modulo 9"
+RIGA_INTESTAZIONE_RISPOSTE = 9
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -62,11 +63,13 @@ def apri_foglio_dati():
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def leggi_foglio_come_df(_workbook, nome_foglio: str):
+def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1):
     """Legge un foglio (tab) del workbook e lo ritorna come DataFrame.
-    Ritorna (dataframe, errore). Il parametro workbook è preceduto da '_'
-    per dire a Streamlit di non provare a metterlo in cache lui stesso
-    (gli oggetti gspread non sono 'hashable')."""
+    'riga_intestazione' è il numero di riga (1-based) in cui si trovano i
+    nomi delle colonne: tutto ciò che sta sopra viene ignorato, tutto ciò
+    che sta sotto diventa dati. Ritorna (dataframe, errore). Il parametro
+    workbook è preceduto da '_' per dire a Streamlit di non provare a
+    metterlo in cache lui stesso (gli oggetti gspread non sono 'hashable')."""
     try:
         ws = _workbook.worksheet(nome_foglio)
     except gspread.WorksheetNotFound:
@@ -78,10 +81,31 @@ def leggi_foglio_come_df(_workbook, nome_foglio: str):
     except Exception as e:
         return None, f"Errore durante la lettura del foglio: {e}"
 
-    valori = ws.get_all_records()
-    if not valori:
+    tutti_i_valori = ws.get_all_values()
+    if len(tutti_i_valori) < riga_intestazione:
         return pd.DataFrame(), None
-    return pd.DataFrame(valori), None
+
+    intestazioni = tutti_i_valori[riga_intestazione - 1]
+    righe_dati = tutti_i_valori[riga_intestazione:]
+
+    # Rende univoci eventuali nomi di colonna duplicati o vuoti, che
+    # altrimenti causerebbero un errore nella creazione del DataFrame.
+    intestazioni_pulite = []
+    contatori = {}
+    for i, nome in enumerate(intestazioni):
+        nome = nome.strip() or f"Colonna {i + 1}"
+        if nome in contatori:
+            contatori[nome] += 1
+            nome = f"{nome} ({contatori[nome]})"
+        else:
+            contatori[nome] = 0
+        intestazioni_pulite.append(nome)
+
+    # Scarta le righe completamente vuote (capita spesso in fondo al foglio).
+    righe_dati = [r for r in righe_dati if any(cella.strip() for cella in r)]
+
+    df = pd.DataFrame(righe_dati, columns=intestazioni_pulite)
+    return df, None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -162,14 +186,14 @@ def mostra_home():
 # PAGINA: VISUALIZZA REGISTRAZIONI
 # ─────────────────────────────────────────────────────────────────
 def mostra_registrazioni():
-    st.title("Visualizza registrazioni")
-    st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}».")
+    st.title("Rapporti consegnati")
+    st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
-    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE)
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
 
     if err:
         st.error(err)
