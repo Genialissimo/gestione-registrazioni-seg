@@ -39,6 +39,7 @@ OPZIONI_SESSO = ["Maschio", "Femmina"]
 OPZIONI_INCARICO = ["(nessuno)", "Anziano", "Servitore di ministero"]
 OPZIONI_TIPO = ["Proclamatore", "Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"]
 OPZIONI_ATTIVI_INATTIVI = ["A", "I"]
+ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo"}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -141,6 +142,27 @@ def calcola_eta(data_str: str) -> str:
     oggi = datetime.now()
     anni = oggi.year - d.year - ((oggi.month, oggi.day) < (d.month, d.day))
     return str(anni)
+
+
+def calcola_eta_dettagliata(data_str: str) -> str:
+    """Calcola anni e mesi compiuti da una data in formato gg/mm/aaaa, nel
+    formato 'anni,mesi' (es. '51,7' = 51 anni e 7 mesi). Ritorna stringa
+    vuota se la data non è valida."""
+    if not data_str:
+        return ""
+    try:
+        d = datetime.strptime(data_str, "%d/%m/%Y")
+    except ValueError:
+        return ""
+    oggi = datetime.now()
+    anni = oggi.year - d.year
+    mesi = oggi.month - d.month
+    if oggi.day < d.day:
+        mesi -= 1
+    if mesi < 0:
+        anni -= 1
+        mesi += 12
+    return f"{anni},{mesi}"
 
 
 def opzioni_da_colonna(df: pd.DataFrame, nome_colonna: str) -> list:
@@ -324,68 +346,79 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             return None
 
     with st.form("form_anagrafica", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            nome_cognome = st.text_input("Cognome e Nome *", value=e.get("Cognome e Nome", ""))
-            data_nascita = st.date_input("Data di nascita", value=parse_data(e.get("Data Nascita", "")),
-                                          format="DD/MM/YYYY", min_value=datetime(1900, 1, 1))
-            sesso_corrente = e.get("Sesso", "")
-            sesso_default = ("Maschio" if sesso_corrente.upper().startswith("M")
-                              else "Femmina" if sesso_corrente.upper().startswith("F") else "Maschio")
-            sesso = st.selectbox("Sesso", OPZIONI_SESSO, index=OPZIONI_SESSO.index(sesso_default))
-            incarico_corrente = e.get("Incarico", "") or "(nessuno)"
-            if incarico_corrente not in OPZIONI_INCARICO:
-                incarico_corrente = "(nessuno)"
-            incarico = st.selectbox("Incarico", OPZIONI_INCARICO,
-                                     index=OPZIONI_INCARICO.index(incarico_corrente))
-        with col2:
-            senza_battesimo = st.checkbox("Non ancora battezzato/a",
-                                           value=not bool(e.get("Data Battesimo", "")))
-            data_battesimo = None
-            if not senza_battesimo:
-                data_battesimo = st.date_input("Data del battesimo", value=parse_data(e.get("Data Battesimo", "")),
-                                                format="DD/MM/YYYY", min_value=datetime(1900, 1, 1))
-            tipo_corrente = e.get("Tipo", "") or "Proclamatore"
-            if tipo_corrente not in OPZIONI_TIPO:
-                tipo_corrente = "Proclamatore"
-            tipo = st.selectbox("Tipo di servizio", OPZIONI_TIPO,
-                                 index=OPZIONI_TIPO.index(tipo_corrente))
-            pr_dal = None
-            if tipo in ("Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"):
-                pr_dal = st.date_input(f"{tipo} dal", value=parse_data(e.get("PR dal", "")),
-                                        format="DD/MM/YYYY", min_value=datetime(1900, 1, 1))
+        nome_cognome = st.text_input("Cognome e Nome *", value=e.get("Cognome e Nome", ""))
 
-        st.divider()
-        col3, col4 = st.columns(2)
-        with col3:
-            opzioni_gruppo = opzioni_da_colonna(df, "Gruppo")
-            gruppo_corrente = e.get("Gruppo", "")
-            elenco_gruppo = opzioni_gruppo + (["➕ Nuovo…"] if True else [])
-            if gruppo_corrente and gruppo_corrente not in elenco_gruppo:
-                elenco_gruppo = [gruppo_corrente] + elenco_gruppo
-            scelta_gruppo = st.selectbox("Gruppo", elenco_gruppo or ["➕ Nuovo…"],
-                                          index=(elenco_gruppo.index(gruppo_corrente)
-                                                 if gruppo_corrente in elenco_gruppo else 0))
-            if scelta_gruppo == "➕ Nuovo…":
-                scelta_gruppo = st.text_input("Nome del nuovo gruppo")
-        with col4:
-            note = st.text_area("Note", value=e.get("Note", ""), height=100)
+        eta_nascita = calcola_eta_dettagliata(e.get("Data Nascita", ""))
+        if eta_nascita:
+            st.markdown(f"**Data di nascita** &nbsp; "
+                        f"<span style='color:#D32F2F'>(anni {eta_nascita})</span>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown("**Data di nascita**")
+        data_nascita = st.date_input("Data di nascita", value=parse_data(e.get("Data Nascita", "")),
+                                      format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
+                                      label_visibility="collapsed")
+
+        sesso_corrente = e.get("Sesso", "")
+        sesso_default = ("Maschio" if sesso_corrente.upper().startswith("M")
+                          else "Femmina" if sesso_corrente.upper().startswith("F") else "Maschio")
+        sesso = st.selectbox("Sesso", OPZIONI_SESSO, index=OPZIONI_SESSO.index(sesso_default))
+
+        senza_battesimo = st.checkbox("Non ancora battezzato/a",
+                                       value=not bool(e.get("Data Battesimo", "")))
+        data_battesimo = None
+        if not senza_battesimo:
+            eta_battesimo = calcola_eta_dettagliata(e.get("Data Battesimo", ""))
+            if eta_battesimo:
+                st.markdown(f"**Data del battesimo** &nbsp; "
+                            f"<span style='color:#D32F2F'>(anni {eta_battesimo})</span>",
+                            unsafe_allow_html=True)
+            else:
+                st.markdown("**Data del battesimo**")
+            data_battesimo = st.date_input("Data del battesimo", value=parse_data(e.get("Data Battesimo", "")),
+                                            format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
+                                            label_visibility="collapsed")
+
+        incarico_corrente = e.get("Incarico", "") or "(nessuno)"
+        if incarico_corrente not in OPZIONI_INCARICO:
+            incarico_corrente = "(nessuno)"
+        incarico = st.selectbox("Incarico", OPZIONI_INCARICO,
+                                 index=OPZIONI_INCARICO.index(incarico_corrente))
+
+        tipo_corrente = e.get("Tipo", "") or "Proclamatore"
+        if tipo_corrente not in OPZIONI_TIPO:
+            tipo_corrente = "Proclamatore"
+        tipo = st.selectbox("Tipo di servizio", OPZIONI_TIPO,
+                             index=OPZIONI_TIPO.index(tipo_corrente))
+        pr_dal = None
+        if tipo in ("Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"):
+            pr_dal = st.date_input(f"{tipo} dal", value=parse_data(e.get("PR dal", "")),
+                                    format="DD/MM/YYYY", min_value=datetime(1900, 1, 1))
+
+        opzioni_gruppo = opzioni_da_colonna(df, "Gruppo")
+        gruppo_corrente = e.get("Gruppo", "")
+        elenco_gruppo = opzioni_gruppo + ["➕ Nuovo…"]
+        if gruppo_corrente and gruppo_corrente not in elenco_gruppo:
+            elenco_gruppo = [gruppo_corrente] + elenco_gruppo
+        scelta_gruppo = st.selectbox("Gruppo", elenco_gruppo or ["➕ Nuovo…"],
+                                      index=(elenco_gruppo.index(gruppo_corrente)
+                                             if gruppo_corrente in elenco_gruppo else 0))
+        if scelta_gruppo == "➕ Nuovo…":
+            scelta_gruppo = st.text_input("Nome del nuovo gruppo")
+
+        note = st.text_area("Note", value=e.get("Note", ""), height=100)
 
         st.divider()
         st.caption("Promemoria regolarità (da aggiornare quando manca il rapporto mensile)")
-        col5, col6, col7 = st.columns(3)
-        with col5:
-            irregolare = st.checkbox("Irregolare", value=e.get("Irregolare", "").strip().upper() in ("X", "SI", "SÌ"))
-        with col6:
-            irregolare_mesi = st.number_input("Irregolare da mesi", min_value=0, max_value=36, step=1,
-                                               value=int(e.get("Irregolare da Mesi", 0) or 0))
-        with col7:
-            attivi_inattivi_corrente = e.get("Attivi / Inattivi", "A") or "A"
-            if attivi_inattivi_corrente not in OPZIONI_ATTIVI_INATTIVI:
-                attivi_inattivi_corrente = "A"
-            attivi_inattivi = st.selectbox("Stato", OPZIONI_ATTIVI_INATTIVI,
-                                            index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente),
-                                            help="A = Attivo, I = Inattivo")
+        irregolare = st.checkbox("Irregolare", value=e.get("Irregolare", "").strip().upper() in ("X", "SI", "SÌ"))
+        irregolare_mesi = st.number_input("Irregolare da mesi", min_value=0, max_value=36, step=1,
+                                           value=int(e.get("Irregolare da Mesi", 0) or 0))
+        attivi_inattivi_corrente = e.get("Attivi / Inattivi", "A") or "A"
+        if attivi_inattivi_corrente not in OPZIONI_ATTIVI_INATTIVI:
+            attivi_inattivi_corrente = "A"
+        etichetta_stato = st.selectbox("Stato", list(ETICHETTE_ATTIVI_INATTIVI.values()),
+                                        index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente))
+        attivi_inattivi = {v: k for k, v in ETICHETTE_ATTIVI_INATTIVI.items()}[etichetta_stato]
         dal = st.date_input("Stato attuale dal", value=parse_data(e.get("Dal", "")),
                              format="DD/MM/YYYY", min_value=datetime(1900, 1, 1))
 
@@ -471,20 +504,19 @@ def mostra_anagrafiche():
         _form_anagrafica(df, riga_esistente=riga, numero_riga_foglio=numero_riga_foglio)
         return
 
-    # ── Elenco Proclamatori ──────────────────────────────────────────────
-    col_top1, col_top2, col_top3 = st.columns([3, 1, 1])
-    with col_top1:
-        ricerca = st.text_input("🔍 Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
-    with col_top2:
-        if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
-            st.session_state.anagrafica_nuovo = True
-            st.rerun()
-    with col_top3:
-        if st.button("🔄 Aggiorna", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    # ── Contenitore riservato per i pulsanti: verrà riempito più sotto, ma
+    # essendo dichiarato qui appare sempre in cima alla pagina (utile su
+    # telefono, dove altrimenti "Modifica" resterebbe nascosto sotto la
+    # griglia finché non si scorre) ─────────────────────────────────────
+    contenitore_azioni = st.container()
+
+    ricerca = st.text_input("🔍 Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
 
     if df.empty:
+        with contenitore_azioni:
+            if st.button("🟢 ➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+                st.session_state.anagrafica_nuovo = True
+                st.rerun()
         st.info("Il foglio è collegato correttamente ma non contiene ancora Proclamatori.")
         return
 
@@ -502,7 +534,12 @@ def mostra_anagrafiche():
                              "Gruppo", "Attivi / Inattivi", "Anni Età", "Anni Batt"]
                             if c in df_mostrato.columns]
 
-    df_griglia = df_mostrato[colonne_da_mostrare].rename(columns={
+    df_griglia = df_mostrato[colonne_da_mostrare].copy()
+    if "Attivi / Inattivi" in df_griglia.columns:
+        df_griglia["Attivi / Inattivi"] = df_griglia["Attivi / Inattivi"].map(
+            lambda v: ETICHETTE_ATTIVI_INATTIVI.get(v, v)
+        )
+    df_griglia = df_griglia.rename(columns={
         "Cognome e Nome": "Nome",
         "Data Nascita": "Nascita",
         "Attivi / Inattivi": "Stato",
@@ -527,15 +564,27 @@ def mostra_anagrafiche():
     )
 
     righe_selezionate = evento.selection.rows if evento and evento.selection else []
+    idx_originale = None
+    nome_sel = None
     if righe_selezionate:
         posizione = righe_selezionate[0]
         idx_originale = df_mostrato.index[posizione]
         nome_sel = df_mostrato.loc[idx_originale, "Cognome e Nome"]
-        col_sel1, col_sel2 = st.columns([1, 4])
-        with col_sel1:
-            if st.button(f"✏️ Modifica «{nome_sel}»", type="primary", use_container_width=True):
-                st.session_state.anagrafica_modifica = idx_originale
-                st.rerun()
+
+    # ── Ora riempiamo il contenitore riservato in cima alla pagina ──────
+    with contenitore_azioni:
+        if st.button("🟢 ➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+            st.session_state.anagrafica_nuovo = True
+            st.rerun()
+
+        etichetta_modifica = f"🔴 ✏️ Modifica «{nome_sel}»" if nome_sel else "🔴 ✏️ Modifica (seleziona una riga)"
+        if st.button(etichetta_modifica, use_container_width=True, disabled=idx_originale is None):
+            st.session_state.anagrafica_modifica = idx_originale
+            st.rerun()
+
+        if st.button("🔄 Aggiorna", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────
