@@ -243,13 +243,12 @@ def mostra_home():
     st.divider()
 
     st.subheader("Sezioni")
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     card_data = [
-        ("👤", "Anagrafiche", "Gestione delle anagrafiche (in arrivo)."),
         ("💳", "Registrazioni", "Registrazione movimenti (in arrivo)."),
         ("📋", "Report", "Schede e riepiloghi (in arrivo)."),
     ]
-    for col, (icon, titolo, desc) in zip((c1, c2, c3), card_data):
+    for col, (icon, titolo, desc) in zip((c1, c2), card_data):
         with col:
             with st.container(border=True):
                 st.markdown(f"#### {icon}  {titolo}")
@@ -496,32 +495,47 @@ def mostra_anagrafiche():
         )
         df_mostrato = df_mostrato[maschera]
 
-    st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali.")
+    st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Tocca una riga per selezionarla, poi «Modifica».")
 
     colonne_da_mostrare = [c for c in
                             ["Cognome e Nome", "Data Nascita", "Sesso", "Incarico", "Tipo",
                              "Gruppo", "Attivi / Inattivi", "Anni Età", "Anni Batt"]
                             if c in df_mostrato.columns]
 
-    intestazione_col = st.columns([4, 2, 1, 2, 2, 2, 1, 1])
-    for etichetta, col in zip(
-        ["Nome", "Nascita", "Sesso", "Incarico", "Tipo", "Gruppo", "Stato", ""],
-        intestazione_col,
-    ):
-        col.markdown(f"**{etichetta}**")
+    df_griglia = df_mostrato[colonne_da_mostrare].rename(columns={
+        "Cognome e Nome": "Nome",
+        "Data Nascita": "Nascita",
+        "Attivi / Inattivi": "Stato",
+    })
 
-    for idx, riga in df_mostrato.iterrows():
-        c = st.columns([4, 2, 1, 2, 2, 2, 1, 1])
-        c[0].write(riga.get("Cognome e Nome", ""))
-        c[1].write(riga.get("Data Nascita", ""))
-        c[2].write(riga.get("Sesso", ""))
-        c[3].write(riga.get("Incarico", "") or "—")
-        c[4].write(riga.get("Tipo", ""))
-        c[5].write(riga.get("Gruppo", ""))
-        c[6].write(riga.get("Attivi / Inattivi", ""))
-        if c[7].button("✏️", key=f"modifica_{idx}", help="Modifica"):
-            st.session_state.anagrafica_modifica = idx
-            st.rerun()
+    evento = st.dataframe(
+        df_griglia,
+        use_container_width=True,
+        hide_index=True,
+        height=480,
+        on_select="rerun",
+        selection_mode="single-row",
+        column_config={
+            "Nome": st.column_config.TextColumn(width="medium"),
+            "Nascita": st.column_config.TextColumn(width="small"),
+            "Sesso": st.column_config.TextColumn(width="small"),
+            "Incarico": st.column_config.TextColumn(width="medium"),
+            "Tipo": st.column_config.TextColumn(width="medium"),
+            "Gruppo": st.column_config.TextColumn(width="medium"),
+            "Stato": st.column_config.TextColumn(width="small"),
+        },
+    )
+
+    righe_selezionate = evento.selection.rows if evento and evento.selection else []
+    if righe_selezionate:
+        posizione = righe_selezionate[0]
+        idx_originale = df_mostrato.index[posizione]
+        nome_sel = df_mostrato.loc[idx_originale, "Cognome e Nome"]
+        col_sel1, col_sel2 = st.columns([1, 4])
+        with col_sel1:
+            if st.button(f"✏️ Modifica «{nome_sel}»", type="primary", use_container_width=True):
+                st.session_state.anagrafica_modifica = idx_originale
+                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────
