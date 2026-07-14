@@ -514,7 +514,7 @@ def mostra_anagrafiche():
 
     if df.empty:
         with contenitore_azioni:
-            if st.button("🟢 ➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+            if st.button("➕ Nuovo", use_container_width=True, type="primary"):
                 st.session_state.anagrafica_nuovo = True
                 st.rerun()
         st.info("Il foglio è collegato correttamente ma non contiene ancora Proclamatori.")
@@ -573,18 +573,21 @@ def mostra_anagrafiche():
 
     # ── Ora riempiamo il contenitore riservato in cima alla pagina ──────
     with contenitore_azioni:
-        if st.button("🟢 ➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
-            st.session_state.anagrafica_nuovo = True
-            st.rerun()
-
-        etichetta_modifica = f"🔴 ✏️ Modifica «{nome_sel}»" if nome_sel else "🔴 ✏️ Modifica (seleziona una riga)"
-        if st.button(etichetta_modifica, use_container_width=True, disabled=idx_originale is None):
-            st.session_state.anagrafica_modifica = idx_originale
-            st.rerun()
-
-        if st.button("🔄 Aggiorna", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+        c_nuovo, c_modifica, c_aggiorna = st.columns(3)
+        with c_nuovo:
+            if st.button("➕ Nuovo", use_container_width=True, type="primary"):
+                st.session_state.anagrafica_nuovo = True
+                st.rerun()
+        with c_modifica:
+            if st.button("✏️ Modifica", use_container_width=True, disabled=idx_originale is None):
+                st.session_state.anagrafica_modifica = idx_originale
+                st.rerun()
+        with c_aggiorna:
+            if st.button("🔄", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+        if nome_sel:
+            st.caption(f"Selezionato: **{nome_sel}**")
 
 
 # ─────────────────────────────────────────────────────────────────
