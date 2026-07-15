@@ -781,8 +781,6 @@ def mostra_storico_proclamatori():
     if ricerca:
         nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
-    if "storico_selezionati" not in st.session_state:
-        st.session_state.storico_selezionati = set()
     if "storico_espansi" not in st.session_state:
         st.session_state.storico_espansi = set()
 
@@ -800,20 +798,10 @@ def mostra_storico_proclamatori():
         inattivo = e_inattivo(stato_per_nome.get(nome, ""))
         colore_sfondo = "#FBE1E1" if inattivo else "transparent"
 
-        col_check, col_freccia, col_nome = st.columns([0.6, 0.8, 8.6])
-        with col_check:
-            selezionato = st.checkbox(
-                "", key=f"storico_check_{nome}",
-                value=nome in st.session_state.storico_selezionati,
-            )
-            if selezionato:
-                st.session_state.storico_selezionati.add(nome)
-            else:
-                st.session_state.storico_selezionati.discard(nome)
+        col_freccia, col_nome = st.columns([0.6, 9.4])
         with col_freccia:
             aperto = nome in st.session_state.storico_espansi
-            if st.button("▲" if aperto else "▼", key=f"storico_freccia_{nome}",
-                         use_container_width=True):
+            if st.button("▲" if aperto else "▼", key=f"storico_freccia_{nome}"):
                 if aperto:
                     st.session_state.storico_espansi.discard(nome)
                 else:
@@ -822,7 +810,7 @@ def mostra_storico_proclamatori():
         with col_nome:
             st.markdown(
                 f"<div style='background-color:{colore_sfondo}; padding:6px 10px; "
-                f"border-radius:6px;'>{nome}</div>",
+                f"border-radius:6px;'><b>{nome}</b></div>",
                 unsafe_allow_html=True,
             )
 
@@ -856,10 +844,19 @@ def mostra_storico_proclamatori():
                     hide_index=True,
                     use_container_width=True,
                     column_config={
-                        "Ha partecipato al ministero": st.column_config.CheckboxColumn(disabled=True),
-                        "Pioniere ausiliario": st.column_config.CheckboxColumn(disabled=True),
+                        "Anno di servizio": st.column_config.TextColumn(width="small"),
+                        "Ha partecipato al ministero": st.column_config.CheckboxColumn(
+                            "Ha partecipato al ministero", width="small", disabled=True),
+                        "Studi Biblici": st.column_config.TextColumn(width="small"),
+                        "Pioniere ausiliario": st.column_config.CheckboxColumn(
+                            "Pioniere ausiliario", width="small", disabled=True),
+                        "Ore": st.column_config.TextColumn(width="small"),
+                        "Cred. Ore": st.column_config.TextColumn(width="small"),
+                        "Osservazioni": st.column_config.TextColumn(width="large"),
                     },
                 )
+
+
 
     for gruppo in sorted(gruppi.keys()):
         st.markdown(f"#### 👤 {gruppo}")
