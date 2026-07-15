@@ -33,6 +33,17 @@ RIGA_INTESTAZIONE_RISPOSTE = 9
 NOME_FOGLIO_ANAGRAFICA = "Anagrafica"
 RIGA_INTESTAZIONE_ANAGRAFICA = 1
 
+NOME_FOGLIO_TUTTI = "Tutti"
+RIGA_INTESTAZIONE_TUTTI = 4
+# Indici di colonna (0-based) nel foglio 'Tutti': B=1, C=2, E=4, G=6, H=7, I=8, J=9
+COL_TUTTI_NOME = 1
+COL_TUTTI_MESE = 2
+COL_TUTTI_SERVIZIO = 4
+COL_TUTTI_ORE = 6
+COL_TUTTI_CRED_ORE = 7
+COL_TUTTI_STUDI = 8
+COL_TUTTI_OSSERVAZIONI = 9
+
 # Opzioni fisse per i campi a scelta della scheda anagrafica, basate sulla
 # cartolina di registrazione del proclamatore (modulo S-21).
 OPZIONI_SESSO = ["Maschio", "Femmina"]
@@ -176,6 +187,59 @@ def opzioni_da_colonna(df: pd.DataFrame, nome_colonna: str) -> list:
     return valori
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def leggi_foglio_tutti(_workbook):
+    """Legge il foglio 'Tutti' (archivio storico di tutti i rapporti di
+    tutti i mesi) leggendo le colonne per posizione (B, C, E, G, H, I, J),
+    dato che l'intestazione non è a riga 1. Ritorna (dataframe, errore)."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
+    except gspread.WorksheetNotFound:
+        nomi_disponibili = ", ".join(f"'{f.title}'" for f in _workbook.worksheets())
+        return None, (
+            f"Il foglio '{NOME_FOGLIO_TUTTI}' non esiste nel documento collegato. "
+            f"Fogli disponibili: {nomi_disponibili}."
+        )
+    except Exception as e:
+        return None, f"Errore durante la lettura del foglio: {e}"
+
+    tutti_i_valori = ws.get_all_values()
+    righe_dati = tutti_i_valori[RIGA_INTESTAZIONE_TUTTI:]
+
+    record = []
+    ultima_colonna_utile = max(COL_TUTTI_NOME, COL_TUTTI_MESE, COL_TUTTI_SERVIZIO,
+                                COL_TUTTI_ORE, COL_TUTTI_CRED_ORE, COL_TUTTI_STUDI,
+                                COL_TUTTI_OSSERVAZIONI)
+    for r in righe_dati:
+        if len(r) <= ultima_colonna_utile:
+            r = r + [""] * (ultima_colonna_utile + 1 - len(r))
+        nome = r[COL_TUTTI_NOME].strip()
+        if not nome:
+            continue
+        record.append({
+            "Nome": nome,
+            "Mese/Anno": r[COL_TUTTI_MESE].strip(),
+            "Servizio": r[COL_TUTTI_SERVIZIO].strip(),
+            "Ore": r[COL_TUTTI_ORE].strip(),
+            "Cred. Ore": r[COL_TUTTI_CRED_ORE].strip(),
+            "Studi": r[COL_TUTTI_STUDI].strip(),
+            "Osservazioni": r[COL_TUTTI_OSSERVAZIONI].strip(),
+        })
+    return pd.DataFrame(record), None
+
+
+def anno_teocratico_di(mese_anno: str):
+    """Dato un valore 'Mese/Anno' in formato AAAA-MM (es. '2026-06'),
+    ritorna l'anno teocratico di appartenenza (l'anno teocratico X va da
+    settembre X ad agosto X+1). Ritorna None se il formato non è valido."""
+    try:
+        anno_str, mese_str = mese_anno.split("-")
+        anno, mese = int(anno_str), int(mese_str)
+    except Exception:
+        return None
+    return anno if mese >= 9 else anno - 1
+
+
 def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
     if "ID" not in df.columns or df.empty:
         return 1
@@ -245,6 +309,8 @@ with st.sidebar:
               use_container_width=True, on_click=vai_a, args=("registrazioni",))
     st.button("🗂️  Anagrafiche", disabled=not collegato, use_container_width=True,
               on_click=vai_a, args=("anagrafiche",))
+    st.button("📚  Storico Proclamatori", disabled=not collegato, use_container_width=True,
+              on_click=vai_a, args=("storico",))
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -530,7 +596,7 @@ def mostra_anagrafiche():
     st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Tocca una riga per selezionarla, poi «Modifica».")
 
     colonne_da_mostrare = [c for c in
-                            ["Cognome e Nome", "Data Nascita", "Sesso", "Incarico", "Tipo",
+                            ["Cognome e Nome", "Data Nascita", "Data Battesimo", "Sesso", "Incarico", "Tipo",
                              "Gruppo", "Attivi / Inattivi", "Anni Età", "Anni Batt"]
                             if c in df_mostrato.columns]
 
@@ -542,6 +608,7 @@ def mostra_anagrafiche():
     df_griglia = df_griglia.rename(columns={
         "Cognome e Nome": "Nome",
         "Data Nascita": "Nascita",
+        "Data Battesimo": "Battesimo",
         "Attivi / Inattivi": "Stato",
     })
 
@@ -555,6 +622,7 @@ def mostra_anagrafiche():
         column_config={
             "Nome": st.column_config.TextColumn(width="medium"),
             "Nascita": st.column_config.TextColumn(width="small"),
+            "Battesimo": st.column_config.TextColumn(width="small"),
             "Sesso": st.column_config.TextColumn(width="small"),
             "Incarico": st.column_config.TextColumn(width="medium"),
             "Tipo": st.column_config.TextColumn(width="medium"),
@@ -591,11 +659,128 @@ def mostra_anagrafiche():
 
 
 # ─────────────────────────────────────────────────────────────────
+# PAGINA: STORICO PROCLAMATORI
+# ─────────────────────────────────────────────────────────────────
+def mostra_storico_proclamatori():
+    st.title("Storico Proclamatori")
+    st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
+               f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    df_anagrafica, err_anagrafica = leggi_foglio_come_df(
+        workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err_anagrafica:
+        st.error(err_anagrafica)
+        return
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+
+    # ── Elenco anni teocratici disponibili, calcolati dai dati presenti ──
+    anni_presenti = sorted({
+        a for a in (anno_teocratico_di(m) for m in df_tutti["Mese/Anno"]) if a is not None
+    }, reverse=True)
+    if not anni_presenti:
+        anno_corrente = datetime.now().year
+        anni_presenti = [anno_corrente - 1, anno_corrente]
+
+    col_anno, col_ricerca = st.columns([1, 3])
+    with col_anno:
+        anno_scelto = st.selectbox(
+            "Anno teocratico",
+            anni_presenti,
+            format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+        )
+    with col_ricerca:
+        ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+
+    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
+        return
+
+    def e_inattivo(valore: str) -> bool:
+        """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
+        'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
+        return (valore or "").strip().lower().startswith("i")
+
+    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
+    stato_per_nome = {}
+    if colonna_stato:
+        for _, riga in df_anagrafica.iterrows():
+            n = str(riga.get("Cognome e Nome", "")).strip()
+            if n:
+                stato_per_nome[n] = riga.get(colonna_stato, "")
+
+    nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+    if ricerca:
+        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
+
+    if "storico_selezionati" not in st.session_state:
+        st.session_state.storico_selezionati = set()
+    if "storico_espansi" not in st.session_state:
+        st.session_state.storico_espansi = set()
+
+    st.caption(f"{len(nomi)} Proclamatori. Le righe con sfondo rosso chiaro sono i Proclamatori Inattivi.")
+
+    for nome in nomi:
+        inattivo = e_inattivo(stato_per_nome.get(nome, ""))
+        colore_sfondo = "#FBE1E1" if inattivo else "transparent"
+
+        col_check, col_nome, col_freccia = st.columns([0.6, 8, 1.2])
+        with col_check:
+            selezionato = st.checkbox(
+                "", key=f"storico_check_{nome}",
+                value=nome in st.session_state.storico_selezionati,
+            )
+            if selezionato:
+                st.session_state.storico_selezionati.add(nome)
+            else:
+                st.session_state.storico_selezionati.discard(nome)
+        with col_nome:
+            st.markdown(
+                f"<div style='background-color:{colore_sfondo}; padding:6px 10px; "
+                f"border-radius:6px;'>{nome}</div>",
+                unsafe_allow_html=True,
+            )
+        with col_freccia:
+            aperto = nome in st.session_state.storico_espansi
+            if st.button("▲" if aperto else "▼", key=f"storico_freccia_{nome}",
+                         use_container_width=True):
+                if aperto:
+                    st.session_state.storico_espansi.discard(nome)
+                else:
+                    st.session_state.storico_espansi.add(nome)
+                st.rerun()
+
+        if nome in st.session_state.storico_espansi:
+            righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
+            righe_persona = righe_persona[
+                righe_persona["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
+            ]
+            if righe_persona.empty:
+                st.caption("Nessun rapporto trovato per l'anno teocratico selezionato.")
+            else:
+                righe_persona = righe_persona.sort_values("Mese/Anno")
+                st.dataframe(
+                    righe_persona[["Mese/Anno", "Servizio", "Ore", "Cred. Ore", "Studi", "Osservazioni"]],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+
+# ─────────────────────────────────────────────────────────────────
 # ROUTING
 # ─────────────────────────────────────────────────────────────────
 if st.session_state.pagina == "registrazioni":
     mostra_registrazioni()
 elif st.session_state.pagina == "anagrafiche":
     mostra_anagrafiche()
+elif st.session_state.pagina == "storico":
+    mostra_storico_proclamatori()
 else:
     mostra_home()
