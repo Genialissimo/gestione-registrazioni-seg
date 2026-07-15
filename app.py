@@ -35,14 +35,20 @@ RIGA_INTESTAZIONE_ANAGRAFICA = 1
 
 NOME_FOGLIO_TUTTI = "Tutti"
 RIGA_INTESTAZIONE_TUTTI = 4
-# Indici di colonna (0-based) nel foglio 'Tutti': B=1, C=2, E=4, G=6, H=7, I=8, J=9
+# Indici di colonna (0-based) nel foglio 'Tutti': B=1, C=2, D=3, E=4, G=6, H=7, I=8, J=9
 COL_TUTTI_NOME = 1
 COL_TUTTI_MESE = 2
-COL_TUTTI_SERVIZIO = 4
+COL_TUTTI_TIPO_SERVIZIO = 3   # D: es. "Pioniere Ausiliario"
+COL_TUTTI_MINISTERO = 4       # E: "Si"/"No" — ha partecipato al ministero
 COL_TUTTI_ORE = 6
 COL_TUTTI_CRED_ORE = 7
 COL_TUTTI_STUDI = 8
 COL_TUTTI_OSSERVAZIONI = 9
+
+MESI_ITALIANI = {
+    1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile", 5: "Maggio", 6: "Giugno",
+    7: "Luglio", 8: "Agosto", 9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre",
+}
 
 # Opzioni fisse per i campi a scelta della scheda anagrafica, basate sulla
 # cartolina di registrazione del proclamatore (modulo S-21).
@@ -187,11 +193,40 @@ def opzioni_da_colonna(df: pd.DataFrame, nome_colonna: str) -> list:
     return valori
 
 
+def a_float_it(s: str) -> float:
+    """Converte una stringa numerica in formato italiano (es. '15,00' o
+    '15') in float. Ritorna 0.0 se vuota o non valida."""
+    s = (s or "").strip()
+    if not s:
+        return 0.0
+    try:
+        return float(s.replace(".", "").replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def formatta_numero_it(v: float) -> str:
+    """Formatta un numero come stringa in stile italiano: 42,00"""
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def formatta_mese_esteso(mese_anno: str) -> str:
+    """Converte 'AAAA-MM' (es. '2025-09') nel nome del mese per esteso
+    (es. 'Settembre'). Ritorna il valore originale se non riconosciuto."""
+    try:
+        _, mese = mese_anno.split("-")
+        return MESI_ITALIANI.get(int(mese), mese_anno)
+    except Exception:
+        return mese_anno
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def leggi_foglio_tutti(_workbook):
     """Legge il foglio 'Tutti' (archivio storico di tutti i rapporti di
-    tutti i mesi) leggendo le colonne per posizione (B, C, E, G, H, I, J),
-    dato che l'intestazione non è a riga 1. Ritorna (dataframe, errore)."""
+    tutti i mesi) leggendo le colonne per posizione (B, C, D, E, G, H, I, J),
+    dato che l'intestazione non è a riga 1. Calcola inoltre le due caselle
+    'Ha partecipato al ministero' e 'Pioniere ausiliario' secondo le regole
+    indicate. Ritorna (dataframe, errore)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
     except gspread.WorksheetNotFound:
@@ -207,22 +242,34 @@ def leggi_foglio_tutti(_workbook):
     righe_dati = tutti_i_valori[RIGA_INTESTAZIONE_TUTTI:]
 
     record = []
-    ultima_colonna_utile = max(COL_TUTTI_NOME, COL_TUTTI_MESE, COL_TUTTI_SERVIZIO,
-                                COL_TUTTI_ORE, COL_TUTTI_CRED_ORE, COL_TUTTI_STUDI,
-                                COL_TUTTI_OSSERVAZIONI)
+    ultima_colonna_utile = max(COL_TUTTI_NOME, COL_TUTTI_MESE, COL_TUTTI_TIPO_SERVIZIO,
+                                COL_TUTTI_MINISTERO, COL_TUTTI_ORE, COL_TUTTI_CRED_ORE,
+                                COL_TUTTI_STUDI, COL_TUTTI_OSSERVAZIONI)
     for r in righe_dati:
         if len(r) <= ultima_colonna_utile:
             r = r + [""] * (ultima_colonna_utile + 1 - len(r))
         nome = r[COL_TUTTI_NOME].strip()
         if not nome:
             continue
+
+        mese_anno = r[COL_TUTTI_MESE].strip()
+        tipo_servizio = r[COL_TUTTI_TIPO_SERVIZIO].strip()
+        ministero_testo = r[COL_TUTTI_MINISTERO].strip()
+        ore_testo = r[COL_TUTTI_ORE].strip()
+        cred_ore_testo = r[COL_TUTTI_CRED_ORE].strip()
+
+        ha_partecipato = (ministero_testo.lower() in ("si", "sì")) or (a_float_it(ore_testo) > 0)
+        pioniere_ausiliario = "pioniere ausiliario" in tipo_servizio.lower()
+
         record.append({
             "Nome": nome,
-            "Mese/Anno": r[COL_TUTTI_MESE].strip(),
-            "Servizio": r[COL_TUTTI_SERVIZIO].strip(),
-            "Ore": r[COL_TUTTI_ORE].strip(),
-            "Cred. Ore": r[COL_TUTTI_CRED_ORE].strip(),
-            "Studi": r[COL_TUTTI_STUDI].strip(),
+            "Mese/Anno": mese_anno,
+            "Anno di servizio": formatta_mese_esteso(mese_anno),
+            "Ha partecipato al ministero": ha_partecipato,
+            "Studi Biblici": r[COL_TUTTI_STUDI].strip(),
+            "Pioniere ausiliario": pioniere_ausiliario,
+            "Ore": ore_testo,
+            "Cred. Ore": cred_ore_testo,
             "Osservazioni": r[COL_TUTTI_OSSERVAZIONI].strip(),
         })
     return pd.DataFrame(record), None
@@ -708,15 +755,29 @@ def mostra_storico_proclamatori():
         'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
         return (valore or "").strip().lower().startswith("i")
 
+    def stato_valido(valore: str) -> bool:
+        """Include solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
+        esclude tutto il resto (es. 'TR'/'Trasferiti')."""
+        v = (valore or "").strip().lower()
+        return v.startswith("a") or v.startswith("i")
+
     colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
+    colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
+
     stato_per_nome = {}
-    if colonna_stato:
-        for _, riga in df_anagrafica.iterrows():
-            n = str(riga.get("Cognome e Nome", "")).strip()
-            if n:
-                stato_per_nome[n] = riga.get(colonna_stato, "")
+    gruppo_per_nome = {}
+    for _, riga in df_anagrafica.iterrows():
+        n = str(riga.get("Cognome e Nome", "")).strip()
+        if not n:
+            continue
+        if colonna_stato:
+            stato_per_nome[n] = riga.get(colonna_stato, "")
+        if colonna_gruppo:
+            gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+    if colonna_stato:
+        nomi = [n for n in nomi if stato_valido(stato_per_nome.get(n, ""))]
     if ricerca:
         nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
@@ -727,11 +788,19 @@ def mostra_storico_proclamatori():
 
     st.caption(f"{len(nomi)} Proclamatori. Le righe con sfondo rosso chiaro sono i Proclamatori Inattivi.")
 
-    for nome in nomi:
+    # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
+    gruppi = {}
+    for n in nomi:
+        g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
+        gruppi.setdefault(g, []).append(n)
+    for g in gruppi:
+        gruppi[g].sort()
+
+    def _riga_proclamatore(nome: str):
         inattivo = e_inattivo(stato_per_nome.get(nome, ""))
         colore_sfondo = "#FBE1E1" if inattivo else "transparent"
 
-        col_check, col_nome, col_freccia = st.columns([0.6, 8, 1.2])
+        col_check, col_freccia, col_nome = st.columns([0.6, 0.8, 8.6])
         with col_check:
             selezionato = st.checkbox(
                 "", key=f"storico_check_{nome}",
@@ -741,12 +810,6 @@ def mostra_storico_proclamatori():
                 st.session_state.storico_selezionati.add(nome)
             else:
                 st.session_state.storico_selezionati.discard(nome)
-        with col_nome:
-            st.markdown(
-                f"<div style='background-color:{colore_sfondo}; padding:6px 10px; "
-                f"border-radius:6px;'>{nome}</div>",
-                unsafe_allow_html=True,
-            )
         with col_freccia:
             aperto = nome in st.session_state.storico_espansi
             if st.button("▲" if aperto else "▼", key=f"storico_freccia_{nome}",
@@ -756,21 +819,53 @@ def mostra_storico_proclamatori():
                 else:
                     st.session_state.storico_espansi.add(nome)
                 st.rerun()
+        with col_nome:
+            st.markdown(
+                f"<div style='background-color:{colore_sfondo}; padding:6px 10px; "
+                f"border-radius:6px;'>{nome}</div>",
+                unsafe_allow_html=True,
+            )
 
         if nome in st.session_state.storico_espansi:
             righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
             righe_persona = righe_persona[
                 righe_persona["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
             ]
+            colonne_tabella = ["Anno di servizio", "Ha partecipato al ministero", "Studi Biblici",
+                                "Pioniere ausiliario", "Ore", "Cred. Ore", "Osservazioni"]
             if righe_persona.empty:
                 st.caption("Nessun rapporto trovato per l'anno teocratico selezionato.")
             else:
                 righe_persona = righe_persona.sort_values("Mese/Anno")
+                totale_ore = sum(a_float_it(v) for v in righe_persona["Ore"])
+                totale_cred = sum(a_float_it(v) for v in righe_persona["Cred. Ore"])
+                riga_totale = pd.DataFrame([{
+                    "Anno di servizio": "Totale",
+                    "Ha partecipato al ministero": None,
+                    "Studi Biblici": "",
+                    "Pioniere ausiliario": None,
+                    "Ore": formatta_numero_it(totale_ore),
+                    "Cred. Ore": formatta_numero_it(totale_cred),
+                    "Osservazioni": "",
+                }])
+                tabella_completa = pd.concat(
+                    [righe_persona[colonne_tabella], riga_totale[colonne_tabella]], ignore_index=True
+                )
                 st.dataframe(
-                    righe_persona[["Mese/Anno", "Servizio", "Ore", "Cred. Ore", "Studi", "Osservazioni"]],
+                    tabella_completa,
                     hide_index=True,
                     use_container_width=True,
+                    column_config={
+                        "Ha partecipato al ministero": st.column_config.CheckboxColumn(disabled=True),
+                        "Pioniere ausiliario": st.column_config.CheckboxColumn(disabled=True),
+                    },
                 )
+
+    for gruppo in sorted(gruppi.keys()):
+        st.markdown(f"#### 👤 {gruppo}")
+        for nome in gruppi[gruppo]:
+            _riga_proclamatore(nome)
+        st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────
