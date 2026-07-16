@@ -410,15 +410,21 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
     """Form generico di modifica per una riga del foglio 'Risposte del
     modulo 9': un campo per ciascuna colonna del foglio, precompilato con
     i valori attuali. I campi numerici (Ore, Cr. Ore, Studi) usano un
-    campo numerico, gli altri un campo di testo."""
+    campo numerico, gli altri un campo di testo. Alcune colonne (es.
+    'Video mostrati') non vengono mostrate nel form ma il loro valore
+    esistente viene comunque preservato al salvataggio."""
     e = riga_esistente
     colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
+    colonne_nascoste = {"video mostrati"}
 
     with st.form("form_rapporto", clear_on_submit=False):
         valori_inseriti = {}
         for colonna in df.columns:
             valore_attuale = e.get(colonna, "")
             chiave_norm = colonna.strip().lower()
+            if chiave_norm in colonne_nascoste:
+                valori_inseriti[colonna] = valore_attuale
+                continue
             if "hai servito" in chiave_norm:
                 opzioni = list(OPZIONI_HAI_SERVITO)
                 if valore_attuale and valore_attuale not in opzioni:
@@ -505,13 +511,23 @@ def mostra_registrazioni():
 
     st.caption(f"{len(df_mostrato)} righe su {len(df)} totali. Tocca una riga per selezionarla, poi «Modifica».")
 
+    df_visualizzato = df_mostrato.drop(columns=["Video mostrati"], errors="ignore")
+
+    config_colonne = {}
+    for nome_colonna in ["Mese", "Ore", "Cr. Ore", "Studi"]:
+        if nome_colonna in df_visualizzato.columns:
+            config_colonne[nome_colonna] = st.column_config.TextColumn(nome_colonna, width="small")
+    if "Osservazioni" in df_visualizzato.columns:
+        config_colonne["Osservazioni"] = st.column_config.TextColumn("Osservazioni", width="large")
+
     evento = st.dataframe(
-        df_mostrato,
+        df_visualizzato,
         use_container_width=True,
         hide_index=True,
         height=560,
         on_select="rerun",
         selection_mode="single-row",
+        column_config=config_colonne,
     )
 
     righe_selezionate = evento.selection.rows if evento and evento.selection else []
