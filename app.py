@@ -294,17 +294,17 @@ def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
     return int(numeri.max()) + 1 if not numeri.empty else 1
 
 
-def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = None):
-    """Scrive una nuova riga in fondo al foglio Anagrafica, oppure aggiorna
-    una riga esistente (numero di riga del foglio, 1-based, intestazione
-    inclusa) se 'riga_da_aggiornare' è specificato. 'valori' è un dizionario
-    {nome_colonna: valore}; le colonne del foglio non presenti nel
-    dizionario vengono lasciate vuote (nuova riga) o non toccate (modifica
-    parziale non supportata qui: si riscrive l'intera riga in ordine).
-    Ritorna (successo: bool, errore: str|None)."""
+def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
+                       valori: dict, riga_da_aggiornare: int = None):
+    """Scrive una nuova riga in fondo a un foglio, oppure aggiorna una riga
+    esistente (numero di riga del foglio, 1-based) se 'riga_da_aggiornare'
+    è specificato. 'valori' è un dizionario {nome_colonna: valore}; le
+    colonne del foglio non presenti nel dizionario vengono lasciate vuote
+    (nuova riga) o svuotate (modifica: si riscrive l'intera riga in
+    ordine). Ritorna (successo: bool, errore: str|None)."""
     try:
-        ws = _workbook.worksheet(NOME_FOGLIO_ANAGRAFICA)
-        intestazioni = ws.row_values(RIGA_INTESTAZIONE_ANAGRAFICA)
+        ws = _workbook.worksheet(nome_foglio)
+        intestazioni = ws.row_values(riga_intestazione)
         riga_completa = [valori.get(nome, "") for nome in intestazioni]
 
         if riga_da_aggiornare is None:
@@ -316,6 +316,13 @@ def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = Non
         return True, None
     except Exception as e:
         return False, f"Errore durante il salvataggio: {e}"
+
+
+def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = None):
+    """Scorciatoia per salvare una riga nel foglio Anagrafica (vedi
+    'salva_riga_foglio' per i dettagli)."""
+    return salva_riga_foglio(_workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA,
+                              valori, riga_da_aggiornare)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -352,11 +359,11 @@ with st.sidebar:
               on_click=vai_a, args=("home",))
     st.button("📝  Nuova registrazione", disabled=not collegato,
               use_container_width=True)
-    st.button("📖  Visualizza registrazioni", disabled=not collegato,
+    st.button("📖  Visualizza Rapp. consegnati", disabled=not collegato,
               use_container_width=True, on_click=vai_a, args=("registrazioni",))
     st.button("🗂️  Anagrafiche", disabled=not collegato, use_container_width=True,
               on_click=vai_a, args=("anagrafiche",))
-    st.button("📚  Storico Proclamatori", disabled=not collegato, use_container_width=True,
+    st.button("📚  Storico rapporti", disabled=not collegato, use_container_width=True,
               on_click=vai_a, args=("storico",))
 
 
@@ -397,6 +404,53 @@ def mostra_home():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: VISUALIZZA REGISTRAZIONI
 # ─────────────────────────────────────────────────────────────────
+def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int):
+    """Form generico di modifica per una riga del foglio 'Risposte del
+    modulo 9': un campo per ciascuna colonna del foglio, precompilato con
+    i valori attuali. I campi numerici (Ore, Cr. Ore, Studi) usano un
+    campo numerico, gli altri un campo di testo."""
+    e = riga_esistente
+    colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
+
+    with st.form("form_rapporto", clear_on_submit=False):
+        valori_inseriti = {}
+        for colonna in df.columns:
+            valore_attuale = e.get(colonna, "")
+            if colonna.strip().lower() in colonne_numeriche:
+                try:
+                    default_num = float(str(valore_attuale).replace(",", ".")) if valore_attuale else 0.0
+                except ValueError:
+                    default_num = 0.0
+                valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0)
+            else:
+                valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale))
+
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+        with col_btn2:
+            annulla = st.form_submit_button("Annulla", use_container_width=True)
+
+    if annulla:
+        st.session_state.rapporto_modifica = None
+        st.rerun()
+
+    if invia:
+        valori_finali = {
+            colonna: (str(v) if not isinstance(v, str) else v)
+            for colonna, v in valori_inseriti.items()
+        }
+        ok, err = salva_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE,
+                                     valori_finali, riga_da_aggiornare=numero_riga_foglio)
+        if ok:
+            st.cache_data.clear()
+            st.session_state.rapporto_modifica = None
+            st.success("✔ Salvato correttamente.")
+            st.rerun()
+        else:
+            st.error(err)
+
+
 def mostra_registrazioni():
     st.title("Rapporti consegnati")
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
@@ -404,6 +458,9 @@ def mostra_registrazioni():
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
+
+    if "rapporto_modifica" not in st.session_state:
+        st.session_state.rapporto_modifica = None
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
 
@@ -414,6 +471,17 @@ def mostra_registrazioni():
     if df.empty:
         st.info("Il foglio è collegato correttamente ma non contiene ancora righe di dati.")
         return
+
+    # ── Form di modifica di una riga selezionata ────────────────────────
+    if st.session_state.rapporto_modifica is not None:
+        idx = st.session_state.rapporto_modifica
+        riga = df.iloc[idx].to_dict()
+        numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
+        st.subheader(f"✏️ Modifica rapporto: {riga.get('Cognome e Nome', '')}")
+        _form_rapporto(df, riga, numero_riga_foglio)
+        return
+
+    contenitore_azioni = st.container()
 
     fr_top = st.columns([3, 1, 1])
     with fr_top[0]:
@@ -426,21 +494,38 @@ def mostra_registrazioni():
             st.cache_data.clear()
             st.rerun()
 
-    df_mostrato = df
+    df_mostrato = df.reset_index(drop=True)
     if ricerca:
-        maschera = df.apply(
+        maschera = df_mostrato.apply(
             lambda riga: riga.astype(str).str.contains(ricerca, case=False, na=False).any(),
             axis=1,
         )
-        df_mostrato = df[maschera]
+        df_mostrato = df_mostrato[maschera]
         st.caption(f"{len(df_mostrato)} righe corrispondenti su {len(df)} totali.")
 
-    st.dataframe(
+    evento = st.dataframe(
         df_mostrato,
         use_container_width=True,
         hide_index=True,
         height=560,
+        on_select="rerun",
+        selection_mode="single-row",
     )
+
+    righe_selezionate = evento.selection.rows if evento and evento.selection else []
+    idx_originale = None
+    nome_sel = None
+    if righe_selezionate:
+        posizione = righe_selezionate[0]
+        idx_originale = df_mostrato.index[posizione]
+        if "Cognome e Nome" in df_mostrato.columns:
+            nome_sel = df_mostrato.loc[idx_originale, "Cognome e Nome"]
+
+    with contenitore_azioni:
+        etichetta = f"✏️ Modifica «{nome_sel}»" if nome_sel else "✏️ Modifica (seleziona una riga)"
+        if st.button(etichetta, disabled=idx_originale is None, type="primary"):
+            st.session_state.rapporto_modifica = idx_originale
+            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -784,7 +869,7 @@ def mostra_storico_proclamatori():
     if "storico_espansi" not in st.session_state:
         st.session_state.storico_espansi = set()
 
-    st.caption(f"{len(nomi)} Proclamatori. Le righe con sfondo rosso chiaro sono i Proclamatori Inattivi.")
+    st.caption(f"{len(nomi)} Proclamatori. La freccia rossa 🔻 indica i Proclamatori Inattivi.")
 
     # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
     gruppi = {}
@@ -796,23 +881,19 @@ def mostra_storico_proclamatori():
 
     def _riga_proclamatore(nome: str):
         inattivo = e_inattivo(stato_per_nome.get(nome, ""))
-        colore_sfondo = "#FBE1E1" if inattivo else "transparent"
+        aperto = nome in st.session_state.storico_espansi
+        if inattivo:
+            freccia = "🔺" if aperto else "🔻"  # triangoli rossi nativi, per gli Inattivi
+        else:
+            freccia = "▲" if aperto else "▼"
+        etichetta = f"{freccia}  {nome}"
 
-        col_freccia, col_nome = st.columns([0.6, 9.4])
-        with col_freccia:
-            aperto = nome in st.session_state.storico_espansi
-            if st.button("▲" if aperto else "▼", key=f"storico_freccia_{nome}"):
-                if aperto:
-                    st.session_state.storico_espansi.discard(nome)
-                else:
-                    st.session_state.storico_espansi.add(nome)
-                st.rerun()
-        with col_nome:
-            st.markdown(
-                f"<div style='background-color:{colore_sfondo}; padding:6px 10px; "
-                f"border-radius:6px;'><b>{nome}</b></div>",
-                unsafe_allow_html=True,
-            )
+        if st.button(etichetta, key=f"storico_freccia_{nome}", use_container_width=True):
+            if aperto:
+                st.session_state.storico_espansi.discard(nome)
+            else:
+                st.session_state.storico_espansi.add(nome)
+            st.rerun()
 
         if nome in st.session_state.storico_espansi:
             righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
