@@ -55,6 +55,8 @@ MESI_ITALIANI = {
 OPZIONI_SESSO = ["Maschio", "Femmina"]
 OPZIONI_INCARICO = ["(nessuno)", "Anziano", "Servitore di ministero"]
 OPZIONI_TIPO = ["Proclamatore", "Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"]
+OPZIONI_HAI_SERVITO = ["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare",
+                       "Pioniere Speciale", "Rappresentante sul campo"]
 OPZIONI_ATTIVI_INATTIVI = ["A", "I"]
 ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo"}
 
@@ -359,11 +361,11 @@ with st.sidebar:
               on_click=vai_a, args=("home",))
     st.button("📝  Nuova registrazione", disabled=not collegato,
               use_container_width=True)
-    st.button("📖  Visualizza Rapp. consegnati", disabled=not collegato,
+    st.button("📖  Visualizza rapporti consegnati", disabled=not collegato,
               use_container_width=True, on_click=vai_a, args=("registrazioni",))
     st.button("🗂️  Anagrafiche", disabled=not collegato, use_container_width=True,
               on_click=vai_a, args=("anagrafiche",))
-    st.button("📚  Storico rapporti", disabled=not collegato, use_container_width=True,
+    st.button("📚  Storico rapporti di servizio", disabled=not collegato, use_container_width=True,
               on_click=vai_a, args=("storico",))
 
 
@@ -416,7 +418,14 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
         valori_inseriti = {}
         for colonna in df.columns:
             valore_attuale = e.get(colonna, "")
-            if colonna.strip().lower() in colonne_numeriche:
+            chiave_norm = colonna.strip().lower()
+            if "hai servito" in chiave_norm:
+                opzioni = list(OPZIONI_HAI_SERVITO)
+                if valore_attuale and valore_attuale not in opzioni:
+                    opzioni = [valore_attuale] + opzioni
+                indice = opzioni.index(valore_attuale) if valore_attuale in opzioni else 0
+                valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice)
+            elif chiave_norm in colonne_numeriche:
                 try:
                     default_num = float(str(valore_attuale).replace(",", ".")) if valore_attuale else 0.0
                 except ValueError:
@@ -483,16 +492,8 @@ def mostra_registrazioni():
 
     contenitore_azioni = st.container()
 
-    fr_top = st.columns([3, 1, 1])
-    with fr_top[0]:
-        ricerca = st.text_input("🔍 Cerca in tutte le colonne",
-                                 placeholder="Digita per filtrare le righe…")
-    with fr_top[1]:
-        st.metric("Righe totali", len(df))
-    with fr_top[2]:
-        if st.button("🔄 Aggiorna", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    ricerca = st.text_input("🔍 Cerca in tutte le colonne",
+                             placeholder="Digita per filtrare le righe…")
 
     df_mostrato = df.reset_index(drop=True)
     if ricerca:
@@ -501,7 +502,8 @@ def mostra_registrazioni():
             axis=1,
         )
         df_mostrato = df_mostrato[maschera]
-        st.caption(f"{len(df_mostrato)} righe corrispondenti su {len(df)} totali.")
+
+    st.caption(f"{len(df_mostrato)} righe su {len(df)} totali. Tocca una riga per selezionarla, poi «Modifica».")
 
     evento = st.dataframe(
         df_mostrato,
@@ -522,10 +524,17 @@ def mostra_registrazioni():
             nome_sel = df_mostrato.loc[idx_originale, "Cognome e Nome"]
 
     with contenitore_azioni:
-        etichetta = f"✏️ Modifica «{nome_sel}»" if nome_sel else "✏️ Modifica (seleziona una riga)"
-        if st.button(etichetta, disabled=idx_originale is None, type="primary"):
-            st.session_state.rapporto_modifica = idx_originale
-            st.rerun()
+        c_modifica, c_aggiorna = st.columns([4, 1])
+        with c_modifica:
+            etichetta = f"✏️ Modifica «{nome_sel}»" if nome_sel else "✏️ Modifica"
+            if st.button(etichetta, disabled=idx_originale is None, type="primary",
+                         use_container_width=True):
+                st.session_state.rapporto_modifica = idx_originale
+                st.rerun()
+        with c_aggiorna:
+            if st.button("🔄", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -794,7 +803,7 @@ def mostra_anagrafiche():
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
-    st.title("Storico Proclamatori")
+    st.title("Storico rapporti consegnati")
     st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
                f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
 
@@ -866,10 +875,7 @@ def mostra_storico_proclamatori():
     if ricerca:
         nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
-    if "storico_espansi" not in st.session_state:
-        st.session_state.storico_espansi = set()
-
-    st.caption(f"{len(nomi)} Proclamatori. La freccia rossa 🔻 indica i Proclamatori Inattivi.")
+    st.caption(f"{len(nomi)} Proclamatori. Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
 
     # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
     gruppi = {}
@@ -881,21 +887,10 @@ def mostra_storico_proclamatori():
 
     def _riga_proclamatore(nome: str):
         inattivo = e_inattivo(stato_per_nome.get(nome, ""))
-        aperto = nome in st.session_state.storico_espansi
-        if inattivo:
-            freccia = "🔺" if aperto else "🔻"  # triangoli rossi nativi, per gli Inattivi
-        else:
-            freccia = "▲" if aperto else "▼"
-        etichetta = f"{freccia}  {nome}"
+        indicatore = "🔺 " if inattivo else ""
+        etichetta = f"{indicatore}{nome}"
 
-        if st.button(etichetta, key=f"storico_freccia_{nome}", use_container_width=True):
-            if aperto:
-                st.session_state.storico_espansi.discard(nome)
-            else:
-                st.session_state.storico_espansi.add(nome)
-            st.rerun()
-
-        if nome in st.session_state.storico_espansi:
+        with st.expander(etichetta):
             righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
             righe_persona = righe_persona[
                 righe_persona["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
@@ -936,8 +931,6 @@ def mostra_storico_proclamatori():
                         "Osservazioni": st.column_config.TextColumn(width="large"),
                     },
                 )
-
-
 
     for gruppo in sorted(gruppi.keys()):
         st.markdown(f"#### 👤 {gruppo}")
