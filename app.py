@@ -644,7 +644,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
                                         index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente),
                                         key=f"stato_{chiave}")
         attivi_inattivi = {v: k for k, v in ETICHETTE_ATTIVI_INATTIVI.items()}[etichetta_stato]
-        dal = st.date_input("Stato attuale dal", value=parse_data(e.get("Dal", "")),
+        dal = st.date_input("Inattivo Da", value=parse_data(e.get("Dal", "")),
                              format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}")
 
         col_btn1, col_btn2 = st.columns([1, 4])
