@@ -349,7 +349,7 @@ def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = Non
 
 
 # ─────────────────────────────────────────────────────────────────
-# CONNESSIONE + STATO IN CIMA ALLA PAGINA (navigazione tramite le card)
+# CONNESSIONE (navigazione tramite le card)
 # ─────────────────────────────────────────────────────────────────
 if "pagina" not in st.session_state:
     st.session_state.pagina = "home"
@@ -361,17 +361,6 @@ def vai_a(pagina: str):
 
 workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
-
-col_titolo, col_stato = st.columns([3, 2])
-with col_titolo:
-    st.markdown("## 📒 Gestione Registrazioni SEG")
-with col_stato:
-    if collegato:
-        st.success(f"✅  Collegato: {workbook.title}")
-    else:
-        st.error("⚠️  Non collegato")
-        if errore:
-            st.caption(errore)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -462,7 +451,7 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
 
 
 def mostra_registrazioni():
-    if st.button("← Home", key="home_da_registrazioni"):
+    if st.button("🏠 Torna alla Home", key="home_da_registrazioni", type="primary", use_container_width=True):
         vai_a("home")
         st.rerun()
     st.title("Rapporti consegnati")
@@ -694,7 +683,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 
 def mostra_anagrafiche():
-    if st.button("← Home", key="home_da_anagrafiche"):
+    if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", type="primary", use_container_width=True):
         vai_a("home")
         st.rerun()
     st.title("Anagrafiche")
@@ -884,7 +873,7 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 
 
 def mostra_storico_proclamatori():
-    if st.button("← Home", key="home_da_storico"):
+    if st.button("🏠 Torna alla Home", key="home_da_storico", type="primary", use_container_width=True):
         vai_a("home")
         st.rerun()
     st.title("Storico rapporti consegnati")
