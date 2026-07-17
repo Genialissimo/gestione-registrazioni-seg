@@ -247,7 +247,7 @@ def leggi_foglio_tutti(_workbook):
     ultima_colonna_utile = max(COL_TUTTI_NOME, COL_TUTTI_MESE, COL_TUTTI_TIPO_SERVIZIO,
                                 COL_TUTTI_MINISTERO, COL_TUTTI_ORE, COL_TUTTI_CRED_ORE,
                                 COL_TUTTI_STUDI, COL_TUTTI_OSSERVAZIONI)
-    for r in righe_dati:
+    for i, r in enumerate(righe_dati):
         if len(r) <= ultima_colonna_utile:
             r = r + [""] * (ultima_colonna_utile + 1 - len(r))
         nome = r[COL_TUTTI_NOME].strip()
@@ -263,6 +263,12 @@ def leggi_foglio_tutti(_workbook):
         ha_partecipato = (ministero_testo.lower() in ("si", "sì")) or (a_float_it(ore_testo) > 0)
         pioniere_ausiliario = "pioniere ausiliario" in tipo_servizio.lower()
 
+        # Numero di riga reale nel foglio (1-based) e valori grezzi delle
+        # colonne C..J, necessari per poter salvare le modifiche più avanti
+        # senza perdere il contenuto delle colonne che non gestiamo (es. F).
+        riga_foglio = RIGA_INTESTAZIONE_TUTTI + 1 + i
+        grezza = r[2:10]  # colonne C,D,E,F,G,H,I,J (indici 2..9)
+
         record.append({
             "Nome": nome,
             "Mese/Anno": mese_anno,
@@ -273,6 +279,8 @@ def leggi_foglio_tutti(_workbook):
             "Ore": ore_testo,
             "Cred. Ore": cred_ore_testo,
             "Osservazioni": r[COL_TUTTI_OSSERVAZIONI].strip(),
+            "RigaFoglio": riga_foglio,
+            "_grezza": grezza,
         })
     return pd.DataFrame(record), None
 
@@ -315,6 +323,19 @@ def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
             ultima_colonna = gspread.utils.rowcol_to_a1(1, len(intestazioni)).rstrip("0123456789")
             intervallo = f"A{riga_da_aggiornare}:{ultima_colonna}{riga_da_aggiornare}"
             ws.update(intervallo, [riga_completa], value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante il salvataggio: {e}"
+
+
+def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
+    """Aggiorna una riga del foglio 'Tutti' (colonne C:J) con i nuovi
+    valori, preservando inalterata la colonna F (che non gestiamo nel
+    form). 'nuova_grezza' deve avere 8 elementi (C,D,E,F,G,H,I,J).
+    Ritorna (successo: bool, errore: str|None)."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
+        ws.update(f"C{riga_foglio}:J{riga_foglio}", [nuova_grezza], value_input_option="USER_ENTERED")
         return True, None
     except Exception as e:
         return False, f"Errore durante il salvataggio: {e}"
@@ -517,8 +538,9 @@ def mostra_registrazioni():
     for nome_colonna in ["Mese", "Ore", "Cr. Ore", "Studi"]:
         if nome_colonna in df_visualizzato.columns:
             config_colonne[nome_colonna] = st.column_config.TextColumn(nome_colonna, width="small")
-    if "Osservazioni" in df_visualizzato.columns:
-        config_colonne["Osservazioni"] = st.column_config.TextColumn("Osservazioni", width="large")
+    for col in df_visualizzato.columns:
+        if "osservazioni" in col.lower():
+            config_colonne[col] = st.column_config.TextColumn(col, width="large")
 
     evento = st.dataframe(
         df_visualizzato,
@@ -818,6 +840,69 @@ def mostra_anagrafiche():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
+def _form_modifica_rapporto_tutti(dati_selezione: dict):
+    """Form di modifica di una riga del foglio 'Tutti' (colonne C..J),
+    aperto cliccando una riga dentro la tabella espansa di un Proclamatore
+    in Storico rapporti consegnati."""
+    nome = dati_selezione["nome"]
+    mese_leggibile = dati_selezione["mese_leggibile"]
+    riga_foglio = dati_selezione["riga_foglio"]
+    grezza = dati_selezione["grezza"]  # [C, D, E, F, G, H, I, J]
+
+    st.title("Modifica rapporto")
+    st.caption(f"{nome} — {mese_leggibile} (foglio «{NOME_FOGLIO_TUTTI}», riga {riga_foglio})")
+
+    with st.form("form_modifica_tutti", clear_on_submit=False):
+        mese_anno = st.text_input("Mese/Anno (formato AAAA-MM)", value=grezza[0])
+
+        opzioni_tipo = list(OPZIONI_HAI_SERVITO)
+        valore_tipo = grezza[1]
+        if valore_tipo and valore_tipo not in opzioni_tipo:
+            opzioni_tipo = [valore_tipo] + opzioni_tipo
+        indice_tipo = opzioni_tipo.index(valore_tipo) if valore_tipo in opzioni_tipo else 0
+        tipo_servizio = st.selectbox("Ha servito come", opzioni_tipo, index=indice_tipo)
+
+        opzioni_ministero = ["Si", "No"]
+        valore_ministero = grezza[2] if grezza[2] in opzioni_ministero else "No"
+        ministero = st.selectbox("Ha partecipato al ministero", opzioni_ministero,
+                                  index=opzioni_ministero.index(valore_ministero))
+
+        ore = st.number_input("Ore", value=a_float_it(grezza[4]), step=1.0)
+        cred_ore = st.number_input("Cred. Ore", value=a_float_it(grezza[5]), step=1.0)
+        studi = st.text_input("Studi Biblici", value=grezza[6])
+        osservazioni = st.text_area("Osservazioni", value=grezza[7])
+
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+        with col_btn2:
+            annulla = st.form_submit_button("Annulla", use_container_width=True)
+
+    if annulla:
+        st.session_state.storico_modifica = None
+        st.rerun()
+
+    if invia:
+        nuova_grezza = list(grezza)
+        nuova_grezza[0] = mese_anno.strip()
+        nuova_grezza[1] = tipo_servizio
+        nuova_grezza[2] = ministero
+        nuova_grezza[4] = formatta_numero_it(ore)
+        nuova_grezza[5] = formatta_numero_it(cred_ore)
+        nuova_grezza[6] = studi.strip()
+        nuova_grezza[7] = osservazioni.strip()
+        # nuova_grezza[3] (colonna F) resta invariata, non la gestiamo nel form
+
+        ok, err = salva_riga_tutti(workbook, riga_foglio, nuova_grezza)
+        if ok:
+            st.cache_data.clear()
+            st.session_state.storico_modifica = None
+            st.success("✔ Salvato correttamente.")
+            st.rerun()
+        else:
+            st.error(err)
+
+
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
     st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
@@ -825,6 +910,13 @@ def mostra_storico_proclamatori():
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    if "storico_modifica" not in st.session_state:
+        st.session_state.storico_modifica = None
+
+    if st.session_state.storico_modifica is not None:
+        _form_modifica_rapporto_tutti(st.session_state.storico_modifica)
         return
 
     df_anagrafica, err_anagrafica = leggi_foglio_come_df(
@@ -931,10 +1023,13 @@ def mostra_storico_proclamatori():
                 tabella_completa = pd.concat(
                     [righe_persona[colonne_tabella], riga_totale[colonne_tabella]], ignore_index=True
                 )
-                st.dataframe(
+                evento_tabella = st.dataframe(
                     tabella_completa,
                     hide_index=True,
                     use_container_width=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key=f"storico_tabella_{nome}",
                     column_config={
                         "Anno di servizio": st.column_config.TextColumn(width="small"),
                         "Ha partecipato al ministero": st.column_config.CheckboxColumn(
@@ -947,6 +1042,23 @@ def mostra_storico_proclamatori():
                         "Osservazioni": st.column_config.TextColumn(width="large"),
                     },
                 )
+
+                righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
+                if righe_sel:
+                    posizione = righe_sel[0]
+                    # La riga "Totale" (ultima) non è modificabile
+                    if posizione < len(righe_persona):
+                        idx_originale = righe_persona.index[posizione]
+                        riga_dati = df_tutti.loc[idx_originale]
+                        mese_leggibile = riga_dati["Anno di servizio"]
+                        if st.button(f"✏️ Modifica «{mese_leggibile}»", key=f"storico_modifica_btn_{nome}_{posizione}"):
+                            st.session_state.storico_modifica = {
+                                "nome": nome,
+                                "mese_leggibile": mese_leggibile,
+                                "riga_foglio": int(riga_dati["RigaFoglio"]),
+                                "grezza": list(riga_dati["_grezza"]),
+                            }
+                            st.rerun()
 
     for gruppo in sorted(gruppi.keys()):
         st.markdown(f"#### 👤 {gruppo}")
