@@ -380,17 +380,6 @@ with col_stato:
 def mostra_home():
     st.title("Pannello di controllo")
 
-    if collegato:
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.success(f"✅  Foglio collegato: **{workbook.title}**")
-        with col2:
-            st.link_button("Apri su Google Sheets", workbook.url, use_container_width=True)
-    else:
-        st.warning("⚠️  Nessun foglio dati collegato. Controlla la configurazione (vedi README_SETUP.md).")
-
-    st.divider()
-
     st.subheader("Sezioni")
     c1, c2, c3 = st.columns(3)
     card_data = [
