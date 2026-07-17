@@ -349,45 +349,21 @@ def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = Non
 
 
 # ─────────────────────────────────────────────────────────────────
-# STATO SESSIONE (navigazione tra pagine)
-# ─────────────────────────────────────────────────────────────────
-if "pagina" not in st.session_state:
-    st.session_state.pagina = "home"
-
-
-def vai_a(pagina: str):
-    st.session_state.pagina = pagina
-
-
-# ─────────────────────────────────────────────────────────────────
-# SIDEBAR
+# CONNESSIONE + STATO IN CIMA ALLA PAGINA (niente più sidebar)
 # ─────────────────────────────────────────────────────────────────
 workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
 
-with st.sidebar:
+col_titolo, col_stato = st.columns([3, 2])
+with col_titolo:
     st.markdown("## 📒 Gestione Registrazioni SEG")
-    st.divider()
-
+with col_stato:
     if collegato:
         st.success(f"✅  Collegato: {workbook.title}")
     else:
         st.error("⚠️  Non collegato")
         if errore:
             st.caption(errore)
-
-    st.divider()
-    st.subheader("Registrazioni")
-    st.button("🏠  Home", use_container_width=True,
-              on_click=vai_a, args=("home",))
-    st.button("📝  Nuova registrazione", disabled=not collegato,
-              use_container_width=True)
-    st.button("📖  Visualizza rapporti consegnati", disabled=not collegato,
-              use_container_width=True, on_click=vai_a, args=("registrazioni",))
-    st.button("🗂️  Anagrafiche", disabled=not collegato, use_container_width=True,
-              on_click=vai_a, args=("anagrafiche",))
-    st.button("📚  Storico rapporti di servizio", disabled=not collegato, use_container_width=True,
-              on_click=vai_a, args=("storico",))
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1068,13 +1044,15 @@ def mostra_storico_proclamatori():
 
 
 # ─────────────────────────────────────────────────────────────────
-# ROUTING
+# NAVIGAZIONE — menu orizzontale in cima (al posto della sidebar)
 # ─────────────────────────────────────────────────────────────────
-if st.session_state.pagina == "registrazioni":
-    mostra_registrazioni()
-elif st.session_state.pagina == "anagrafiche":
-    mostra_anagrafiche()
-elif st.session_state.pagina == "storico":
-    mostra_storico_proclamatori()
-else:
-    mostra_home()
+pagina_home = st.Page(mostra_home, title="Home", icon="🏠", default=True)
+pagina_registrazioni = st.Page(mostra_registrazioni, title="Rapp. consegnati", icon="📖")
+pagina_anagrafiche = st.Page(mostra_anagrafiche, title="Anagrafiche", icon="🗂️")
+pagina_storico = st.Page(mostra_storico_proclamatori, title="Storico rapporti", icon="📚")
+
+pagina_corrente = st.navigation(
+    [pagina_home, pagina_registrazioni, pagina_anagrafiche, pagina_storico],
+    position="top",
+)
+pagina_corrente.run()
