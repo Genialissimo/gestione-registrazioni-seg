@@ -367,6 +367,7 @@ collegato = workbook is not None
 # PAGINA: HOME
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
+    st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
     st.subheader("Sezioni")
