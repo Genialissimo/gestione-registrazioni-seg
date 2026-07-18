@@ -497,11 +497,24 @@ def mostra_registrazioni():
 
     ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
 
+    def e_attivo(valore: str) -> bool:
+        """Vero se lo stato è 'A' oppure 'Attivi'/'Attivo' per esteso."""
+        return (valore or "").strip().lower().startswith("a")
+
+    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
+    stato_per_nome = {}
+    if colonna_stato:
+        for _, riga in df_anagrafica.iterrows():
+            n = str(riga.get("Cognome e Nome", "")).strip()
+            if n:
+                stato_per_nome[n] = riga.get(colonna_stato, "")
+
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+    if colonna_stato:
+        nomi = [n for n in nomi if e_attivo(stato_per_nome.get(n, ""))]
     if ricerca:
         nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
-    n_verdi = n_gialli = n_rossi = 0
     conteggi = {}
     if "Cognome e Nome" in df.columns:
         for nome in nomi:
@@ -509,17 +522,6 @@ def mostra_registrazioni():
     else:
         for nome in nomi:
             conteggi[nome] = 0
-    for nome in nomi:
-        c = conteggi.get(nome, 0)
-        if c == 1:
-            n_verdi += 1
-        elif c >= 2:
-            n_gialli += 1
-        else:
-            n_rossi += 1
-
-    st.caption(f"{len(nomi)} Proclamatori — 🟢 {n_verdi} consegnato · 🟡 {n_gialli} anomalia (più righe) · "
-               f"🔴 {n_rossi} non consegnato.")
 
     for nome in nomi:
         conteggio = conteggi.get(nome, 0)
@@ -539,48 +541,35 @@ def mostra_registrazioni():
                 riga_dict = df.loc[idx].to_dict()
                 numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
                 chiave_riga = str(numero_riga_foglio)
-                chiave_edit = f"rapp_edit_{chiave_riga}"
                 chiave_conferma_elim = f"rapp_elim_{chiave_riga}"
 
-                if st.session_state.get(chiave_edit, False):
-                    _form_rapporto(df, riga_dict, numero_riga_foglio,
-                                    chiave=chiave_riga, chiave_stato_modifica=chiave_edit)
-                else:
-                    colonne_riepilogo = [c for c in df.columns if c.strip().lower() != "cognome e nome"]
-                    for c in colonne_riepilogo:
-                        valore = riga_dict.get(c, "")
-                        if valore:
-                            st.markdown(f"**{c}:** {valore}")
+                _form_rapporto(df, riga_dict, numero_riga_foglio, chiave=chiave_riga)
 
-                    col_mod, col_elim = st.columns(2)
-                    with col_mod:
-                        if st.button("✏️ Modifica", key=f"btn_mod_{chiave_riga}", use_container_width=True):
-                            st.session_state[chiave_edit] = True
-                            st.rerun()
-                    with col_elim:
-                        if st.button("🗑️ Elimina", key=f"btn_elim_{chiave_riga}", use_container_width=True):
-                            st.session_state[chiave_conferma_elim] = True
-                            st.rerun()
+                if st.button("🗑️ Elimina questo rapporto", key=f"btn_elim_{chiave_riga}",
+                             use_container_width=True):
+                    st.session_state[chiave_conferma_elim] = True
+                    st.rerun()
 
-                    if st.session_state.get(chiave_conferma_elim, False):
-                        st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
-                        col_si, col_no = st.columns(2)
-                        with col_si:
-                            if st.button("✔ Sì, elimina", key=f"btn_conf_si_{chiave_riga}",
-                                         type="primary", use_container_width=True):
-                                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
-                                if ok:
-                                    st.cache_data.clear()
-                                    st.session_state[chiave_conferma_elim] = False
-                                    st.success("✔ Rapporto eliminato.")
-                                    st.rerun()
-                                else:
-                                    st.error(err_elim)
-                        with col_no:
-                            if st.button("No, annulla", key=f"btn_conf_no_{chiave_riga}",
-                                         use_container_width=True):
+                if st.session_state.get(chiave_conferma_elim, False):
+                    st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
+                    col_si, col_no = st.columns(2)
+                    with col_si:
+                        if st.button("✔ Sì, elimina", key=f"btn_conf_si_{chiave_riga}",
+                                     type="primary", use_container_width=True):
+                            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
+                            if ok:
+                                st.cache_data.clear()
                                 st.session_state[chiave_conferma_elim] = False
+                                st.success("✔ Rapporto eliminato.")
                                 st.rerun()
+                            else:
+                                st.error(err_elim)
+                    with col_no:
+                        if st.button("No, annulla", key=f"btn_conf_no_{chiave_riga}",
+                                     use_container_width=True):
+                            st.session_state[chiave_conferma_elim] = False
+                            st.rerun()
+
                 if len(righe_persona) > 1:
                     st.divider()
 
