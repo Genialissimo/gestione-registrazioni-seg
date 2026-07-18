@@ -403,18 +403,12 @@ def mostra_home():
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
 def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int,
-                    chiave: str, chiave_stato_modifica: str = None):
-    """Form generico di modifica per una riga del foglio 'Risposte del
-    modulo 9': un campo per ciascuna colonna del foglio, precompilato con
-    i valori attuali. I campi numerici (Ore, Cr. Ore, Studi) usano un
-    campo numerico, gli altri un campo di testo. Alcune colonne (es.
-    'Video mostrati') non vengono mostrate nel form ma il loro valore
-    esistente viene comunque preservato al salvataggio. 'chiave' deve
-    essere univoca per ogni istanza del form sulla stessa pagina."""
+                    chiave: str):
+    """Form generico di modifica per una riga del foglio 'Risposte del modulo 9'."""
     e = riga_esistente
     colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
     colonne_nascoste = {"video mostrati", "cognome e nome"}
-
+ 
     with st.form(f"form_rapporto_{chiave}", clear_on_submit=False):
         valori_inseriti = {}
         for colonna in df.columns:
@@ -440,18 +434,9 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
             else:
                 valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale),
                                                           key=f"campo_{colonna}_{chiave}")
-
-        col_btn1, col_btn2 = st.columns([1, 4])
-        with col_btn1:
-            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
-        with col_btn2:
-            annulla = st.form_submit_button("Annulla", use_container_width=True)
-
-    if annulla:
-        if chiave_stato_modifica:
-            st.session_state[chiave_stato_modifica] = False
-        st.rerun()
-
+ 
+        invia = st.form_submit_button("✔ Salva modifiche", type="primary", use_container_width=True)
+ 
     if invia:
         valori_finali = {
             colonna: (str(v) if not isinstance(v, str) else v)
@@ -461,46 +446,43 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
                                      valori_finali, riga_da_aggiornare=numero_riga_foglio)
         if ok:
             st.cache_data.clear()
-            if chiave_stato_modifica:
-                st.session_state[chiave_stato_modifica] = False
             st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
             st.error(err)
-
-
+ 
+ 
 def mostra_registrazioni():
     if st.button("🏠 Torna alla Home", key="home_da_registrazioni", type="primary", use_container_width=True):
         vai_a("home")
         st.rerun()
     st.title("Rapporti consegnati")
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
-
+ 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
-
+ 
     df_anagrafica, err_anagrafica = leggi_foglio_come_df(
         workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
     if err_anagrafica:
         st.error(err_anagrafica)
         return
-
+ 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
     if err:
         st.error(err)
         return
-
+ 
     if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
-
+ 
     ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
-
+ 
     def e_attivo(valore: str) -> bool:
-        """Vero se lo stato è 'A' oppure 'Attivi'/'Attivo' per esteso."""
         return (valore or "").strip().lower().startswith("a")
-
+ 
     colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
     stato_per_nome = {}
     if colonna_stato:
@@ -508,13 +490,13 @@ def mostra_registrazioni():
             n = str(riga.get("Cognome e Nome", "")).strip()
             if n:
                 stato_per_nome[n] = riga.get(colonna_stato, "")
-
+ 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
     if colonna_stato:
         nomi = [n for n in nomi if e_attivo(stato_per_nome.get(n, ""))]
     if ricerca:
         nomi = [n for n in nomi if ricerca.lower() in n.lower()]
-
+ 
     conteggi = {}
     if "Cognome e Nome" in df.columns:
         for nome in nomi:
@@ -522,36 +504,34 @@ def mostra_registrazioni():
     else:
         for nome in nomi:
             conteggi[nome] = 0
-
+ 
     for nome in nomi:
         conteggio = conteggi.get(nome, 0)
         pallino = "🟢" if conteggio == 1 else "🟡" if conteggio >= 2 else "🔴"
-        chiave_expander_persona = f"exp_rapp_{nome}"
-
-        with st.expander(f"{pallino}  {nome}", key=chiave_expander_persona):
+        
+        with st.expander(f"{pallino}  {nome}"):
             if "Cognome e Nome" not in df.columns:
                 righe_persona = df.iloc[0:0]
             else:
                 righe_persona = df[df["Cognome e Nome"].astype(str).str.strip().str.lower() == nome.lower()]
-
+ 
             if righe_persona.empty:
                 st.caption("Nessun rapporto consegnato per questo mese.")
                 continue
-
+ 
             for idx in righe_persona.index:
                 riga_dict = df.loc[idx].to_dict()
                 numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
                 chiave_riga = str(numero_riga_foglio)
                 chiave_conferma_elim = f"rapp_elim_{chiave_riga}"
-
-                _form_rapporto(df, riga_dict, numero_riga_foglio, chiave=chiave_riga,
-                                chiave_stato_modifica=chiave_expander_persona)
-
+ 
+                _form_rapporto(df, riga_dict, numero_riga_foglio, chiave=chiave_riga)
+ 
                 if st.button("🗑️ Elimina questo rapporto", key=f"btn_elim_{chiave_riga}",
                              use_container_width=True):
                     st.session_state[chiave_conferma_elim] = True
                     st.rerun()
-
+ 
                 if st.session_state.get(chiave_conferma_elim, False):
                     st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
                     col_si, col_no = st.columns(2)
@@ -571,10 +551,9 @@ def mostra_registrazioni():
                                      use_container_width=True):
                             st.session_state[chiave_conferma_elim] = False
                             st.rerun()
-
+ 
                 if len(righe_persona) > 1:
                     st.divider()
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
