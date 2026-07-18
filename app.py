@@ -402,14 +402,13 @@ def mostra_home():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
-def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int,
-                    chiave: str):
-    """Form generico di modifica per una riga del foglio 'Risposte del modulo 9'."""
+def _form_rapporto_edit(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int, chiave: str):
+    """Form di modifica dedicato."""
     e = riga_esistente
     colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
     colonne_nascoste = {"video mostrati", "cognome e nome"}
  
-    with st.form(f"form_rapporto_{chiave}", clear_on_submit=False):
+    with st.form(f"form_modifica_{chiave}"):
         valori_inseriti = {}
         for colonna in df.columns:
             valore_attuale = e.get(colonna, "")
@@ -417,144 +416,91 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
             if chiave_norm in colonne_nascoste:
                 valori_inseriti[colonna] = valore_attuale
                 continue
+            
             if "hai servito" in chiave_norm:
                 opzioni = list(OPZIONI_HAI_SERVITO)
                 if valore_attuale and valore_attuale not in opzioni:
                     opzioni = [valore_attuale] + opzioni
                 indice = opzioni.index(valore_attuale) if valore_attuale in opzioni else 0
-                valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice,
-                                                         key=f"campo_{colonna}_{chiave}")
+                valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice, key=f"in_{colonna}")
             elif chiave_norm in colonne_numeriche:
                 try:
                     default_num = float(str(valore_attuale).replace(",", ".")) if valore_attuale else 0.0
                 except ValueError:
                     default_num = 0.0
-                valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0,
-                                                            key=f"campo_{colonna}_{chiave}")
+                valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0, key=f"in_{colonna}")
             else:
-                valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale),
-                                                          key=f"campo_{colonna}_{chiave}")
+                valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale), key=f"in_{colonna}")
  
-        invia = st.form_submit_button("✔ Salva modifiche", type="primary", use_container_width=True)
- 
-    if invia:
-        valori_finali = {
-            colonna: (str(v) if not isinstance(v, str) else v)
-            for colonna, v in valori_inseriti.items()
-        }
-        ok, err = salva_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE,
-                                     valori_finali, riga_da_aggiornare=numero_riga_foglio)
-        if ok:
-            st.cache_data.clear()
-            st.success("✔ Salvato correttamente.")
-            st.rerun()
-        else:
-            st.error(err)
- 
- 
-def mostra_registrazioni():
-    if st.button("🏠 Torna alla Home", key="home_da_registrazioni", type="primary", use_container_width=True):
-        vai_a("home")
-        st.rerun()
-    st.title("Rapporti consegnati")
-    st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
- 
-    if not collegato:
-        st.warning("⚠️  Nessun foglio dati collegato.")
-        return
- 
-    df_anagrafica, err_anagrafica = leggi_foglio_come_df(
-        workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
-    if err_anagrafica:
-        st.error(err_anagrafica)
-        return
- 
-    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
-    if err:
-        st.error(err)
-        return
- 
-    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
-        st.info("Nessun Proclamatore trovato in Anagrafica.")
-        return
- 
-    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
- 
-    def e_attivo(valore: str) -> bool:
-        return (valore or "").strip().lower().startswith("a")
- 
-    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
-    stato_per_nome = {}
-    if colonna_stato:
-        for _, riga in df_anagrafica.iterrows():
-            n = str(riga.get("Cognome e Nome", "")).strip()
-            if n:
-                stato_per_nome[n] = riga.get(colonna_stato, "")
- 
-    nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
-    if colonna_stato:
-        nomi = [n for n in nomi if e_attivo(stato_per_nome.get(n, ""))]
-    if ricerca:
-        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
- 
-    conteggi = {}
-    if "Cognome e Nome" in df.columns:
-        for nome in nomi:
-            conteggi[nome] = (df["Cognome e Nome"].astype(str).str.strip().str.lower() == nome.lower()).sum()
-    else:
-        for nome in nomi:
-            conteggi[nome] = 0
- 
-    for nome in nomi:
-        conteggio = conteggi.get(nome, 0)
-        pallino = "🟢" if conteggio == 1 else "🟡" if conteggio >= 2 else "🔴"
-        
-        with st.expander(f"{pallino}  {nome}"):
-            if "Cognome e Nome" not in df.columns:
-                righe_persona = df.iloc[0:0]
+        if st.form_submit_button("✔ Salva modifiche", type="primary", use_container_width=True):
+            valori_finali = {k: (str(v) if not isinstance(v, str) else v) for k, v in valori_inseriti.items()}
+            ok, err = salva_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE, valori_finali, riga_da_aggiornare=numero_riga_foglio)
+            if ok:
+                st.cache_data.clear()
+                st.session_state.in_modalita_modifica = False
+                st.success("Modifica salvata!")
+                st.rerun()
             else:
-                righe_persona = df[df["Cognome e Nome"].astype(str).str.strip().str.lower() == nome.lower()]
- 
-            if righe_persona.empty:
-                st.caption("Nessun rapporto consegnato per questo mese.")
-                continue
- 
-            for idx in righe_persona.index:
-                riga_dict = df.loc[idx].to_dict()
-                numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
-                chiave_riga = str(numero_riga_foglio)
-                chiave_conferma_elim = f"rapp_elim_{chiave_riga}"
- 
-                _form_rapporto(df, riga_dict, numero_riga_foglio, chiave=chiave_riga)
- 
-                if st.button("🗑️ Elimina questo rapporto", key=f"btn_elim_{chiave_riga}",
-                             use_container_width=True):
-                    st.session_state[chiave_conferma_elim] = True
-                    st.rerun()
- 
-                if st.session_state.get(chiave_conferma_elim, False):
-                    st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
-                    col_si, col_no = st.columns(2)
-                    with col_si:
-                        if st.button("✔ Sì, elimina", key=f"btn_conf_si_{chiave_riga}",
-                                     type="primary", use_container_width=True):
-                            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
-                            if ok:
-                                st.cache_data.clear()
-                                st.session_state[chiave_conferma_elim] = False
-                                st.success("✔ Rapporto eliminato.")
-                                st.rerun()
-                            else:
-                                st.error(err_elim)
-                    with col_no:
-                        if st.button("No, annulla", key=f"btn_conf_no_{chiave_riga}",
-                                     use_container_width=True):
-                            st.session_state[chiave_conferma_elim] = False
-                            st.rerun()
- 
-                if len(righe_persona) > 1:
-                    st.divider()
+                st.error(err)
 
+def mostra_registrazioni():
+    if st.button("🏠 Torna alla Home", type="primary"):
+        vai_a("home"); st.rerun()
+    
+    st.title("Rapporti consegnati")
+    
+    if not collegato:
+        st.warning("⚠️ Nessun foglio dati collegato."); return
+
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
+    if err: st.error(err); return
+
+    # Inizializzazione stati
+    if "riga_selezionata_idx" not in st.session_state: st.session_state.riga_selezionata_idx = None
+    if "in_modalita_modifica" not in st.session_state: st.session_state.in_modalita_modifica = False
+
+    # 1. MODALITÀ MODIFICA
+    if st.session_state.in_modalita_modifica and st.session_state.riga_selezionata_idx is not None:
+        idx = st.session_state.riga_selezionata_idx
+        riga_dict = df.loc[idx].to_dict()
+        numero_riga = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
+        
+        st.subheader("Modifica Rapporto")
+        _form_rapporto_edit(df, riga_dict, numero_riga, str(idx))
+        
+        if st.button("❌ Annulla e torna alla lista"):
+            st.session_state.in_modalita_modifica = False
+            st.rerun()
+        return
+
+    # 2. MODALITÀ LISTA (Tabella)
+    st.info("Seleziona una riga dalla tabella per Modificare o Eliminare.")
+    
+    evento_tabella = st.dataframe(
+        df, hide_index=True, use_container_width=True,
+        selection_mode="single-row", on_select="rerun"
+    )
+
+    if evento_tabella.selection.rows:
+        idx = evento_tabella.selection.rows[0]
+        st.session_state.riga_selezionata_idx = idx
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✏️ Modifica selezionato", type="primary"):
+                st.session_state.in_modalita_modifica = True
+                st.rerun()
+        with col2:
+            if st.button("🗑️ Elimina selezionato"):
+                num_riga = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
+                ok, err = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, num_riga)
+                if ok:
+                    st.cache_data.clear()
+                    st.success("Rapporto eliminato."); st.rerun()
+                else:
+                    st.error(err)
+    else:
+        st.session_state.riga_selezionata_idx = None
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
 # ─────────────────────────────────────────────────────────────────
