@@ -328,6 +328,17 @@ def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
         return False, f"Errore durante il salvataggio: {e}"
 
 
+def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
+    """Elimina una riga (numero 1-based) da un foglio. Ritorna
+    (successo: bool, errore: str|None)."""
+    try:
+        ws = _workbook.worksheet(nome_foglio)
+        ws.delete_rows(riga_da_eliminare)
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante l'eliminazione: {e}"
+
+
 def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
     """Aggiorna una riga del foglio 'Tutti' (colonne C:J) con i nuovi
     valori, preservando inalterata la colonna F (che non gestiamo nel
@@ -389,20 +400,22 @@ def mostra_home():
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: VISUALIZZA REGISTRAZIONI
+# PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
-def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int):
+def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int,
+                    chiave: str, chiave_stato_modifica: str = None):
     """Form generico di modifica per una riga del foglio 'Risposte del
     modulo 9': un campo per ciascuna colonna del foglio, precompilato con
     i valori attuali. I campi numerici (Ore, Cr. Ore, Studi) usano un
     campo numerico, gli altri un campo di testo. Alcune colonne (es.
     'Video mostrati') non vengono mostrate nel form ma il loro valore
-    esistente viene comunque preservato al salvataggio."""
+    esistente viene comunque preservato al salvataggio. 'chiave' deve
+    essere univoca per ogni istanza del form sulla stessa pagina."""
     e = riga_esistente
     colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
-    colonne_nascoste = {"video mostrati"}
+    colonne_nascoste = {"video mostrati", "cognome e nome"}
 
-    with st.form("form_rapporto", clear_on_submit=False):
+    with st.form(f"form_rapporto_{chiave}", clear_on_submit=False):
         valori_inseriti = {}
         for colonna in df.columns:
             valore_attuale = e.get(colonna, "")
@@ -415,15 +428,18 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
                 if valore_attuale and valore_attuale not in opzioni:
                     opzioni = [valore_attuale] + opzioni
                 indice = opzioni.index(valore_attuale) if valore_attuale in opzioni else 0
-                valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice)
+                valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice,
+                                                         key=f"campo_{colonna}_{chiave}")
             elif chiave_norm in colonne_numeriche:
                 try:
                     default_num = float(str(valore_attuale).replace(",", ".")) if valore_attuale else 0.0
                 except ValueError:
                     default_num = 0.0
-                valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0)
+                valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0,
+                                                            key=f"campo_{colonna}_{chiave}")
             else:
-                valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale))
+                valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale),
+                                                          key=f"campo_{colonna}_{chiave}")
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -432,7 +448,8 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
             annulla = st.form_submit_button("Annulla", use_container_width=True)
 
     if annulla:
-        st.session_state.rapporto_modifica = None
+        if chiave_stato_modifica:
+            st.session_state[chiave_stato_modifica] = False
         st.rerun()
 
     if invia:
@@ -444,7 +461,8 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
                                      valori_finali, riga_da_aggiornare=numero_riga_foglio)
         if ok:
             st.cache_data.clear()
-            st.session_state.rapporto_modifica = None
+            if chiave_stato_modifica:
+                st.session_state[chiave_stato_modifica] = False
             st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
@@ -462,91 +480,116 @@ def mostra_registrazioni():
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
-    if "rapporto_modifica" not in st.session_state:
-        st.session_state.rapporto_modifica = None
+    df_anagrafica, err_anagrafica = leggi_foglio_come_df(
+        workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err_anagrafica:
+        st.error(err_anagrafica)
+        return
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
-
     if err:
         st.error(err)
         return
 
-    if df.empty:
-        st.info("Il foglio è collegato correttamente ma non contiene ancora righe di dati.")
+    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
-    # ── Form di modifica di una riga selezionata ────────────────────────
-    if st.session_state.rapporto_modifica is not None:
-        idx = st.session_state.rapporto_modifica
-        riga = df.iloc[idx].to_dict()
-        numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
-        st.subheader(f"✏️ Modifica rapporto: {riga.get('Cognome e Nome', '')}")
-        _form_rapporto(df, riga, numero_riga_foglio)
-        return
+    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
 
-    contenitore_azioni = st.container()
-
-    ricerca = st.text_input("🔍 Cerca in tutte le colonne",
-                             placeholder="Digita per filtrare le righe…")
-
-    df_mostrato = df.reset_index(drop=True)
+    nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
     if ricerca:
-        maschera = df_mostrato.apply(
-            lambda riga: riga.astype(str).str.contains(ricerca, case=False, na=False).any(),
-            axis=1,
-        )
-        df_mostrato = df_mostrato[maschera]
+        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
-    st.caption(f"{len(df_mostrato)} righe su {len(df)} totali. Tocca una riga per selezionarla, poi «Modifica».")
+    n_verdi = n_gialli = n_rossi = 0
+    conteggi = {}
+    if "Cognome e Nome" in df.columns:
+        for nome in nomi:
+            conteggi[nome] = (df["Cognome e Nome"].astype(str).str.strip().str.lower() == nome.lower()).sum()
+    else:
+        for nome in nomi:
+            conteggi[nome] = 0
+    for nome in nomi:
+        c = conteggi.get(nome, 0)
+        if c == 1:
+            n_verdi += 1
+        elif c >= 2:
+            n_gialli += 1
+        else:
+            n_rossi += 1
 
-    df_visualizzato = df_mostrato.drop(columns=["Video mostrati"], errors="ignore")
+    st.caption(f"{len(nomi)} Proclamatori — 🟢 {n_verdi} consegnato · 🟡 {n_gialli} anomalia (più righe) · "
+               f"🔴 {n_rossi} non consegnato.")
 
-    config_colonne = {}
-    for nome_colonna in ["Mese", "Ore", "Cr. Ore", "Studi"]:
-        if nome_colonna in df_visualizzato.columns:
-            config_colonne[nome_colonna] = st.column_config.TextColumn(nome_colonna, width="small")
-    for col in df_visualizzato.columns:
-        if "osservazioni" in col.lower():
-            config_colonne[col] = st.column_config.TextColumn(col, width="large")
+    for nome in nomi:
+        conteggio = conteggi.get(nome, 0)
+        pallino = "🟢" if conteggio == 1 else "🟡" if conteggio >= 2 else "🔴"
 
-    evento = st.dataframe(
-        df_visualizzato,
-        use_container_width=True,
-        hide_index=True,
-        height=560,
-        on_select="rerun",
-        selection_mode="single-row",
-        column_config=config_colonne,
-    )
+        with st.expander(f"{pallino}  {nome}"):
+            if "Cognome e Nome" not in df.columns:
+                righe_persona = df.iloc[0:0]
+            else:
+                righe_persona = df[df["Cognome e Nome"].astype(str).str.strip().str.lower() == nome.lower()]
 
-    righe_selezionate = evento.selection.rows if evento and evento.selection else []
-    idx_originale = None
-    nome_sel = None
-    if righe_selezionate:
-        posizione = righe_selezionate[0]
-        idx_originale = df_mostrato.index[posizione]
-        if "Cognome e Nome" in df_mostrato.columns:
-            nome_sel = df_mostrato.loc[idx_originale, "Cognome e Nome"]
+            if righe_persona.empty:
+                st.caption("Nessun rapporto consegnato per questo mese.")
+                continue
 
-    with contenitore_azioni:
-        c_modifica, c_aggiorna = st.columns([4, 1])
-        with c_modifica:
-            etichetta = f"✏️ Modifica «{nome_sel}»" if nome_sel else "✏️ Modifica"
-            if st.button(etichetta, disabled=idx_originale is None, type="primary",
-                         use_container_width=True):
-                st.session_state.rapporto_modifica = idx_originale
-                st.rerun()
-        with c_aggiorna:
-            if st.button("🔄", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
+            for idx in righe_persona.index:
+                riga_dict = df.loc[idx].to_dict()
+                numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
+                chiave_riga = str(numero_riga_foglio)
+                chiave_edit = f"rapp_edit_{chiave_riga}"
+                chiave_conferma_elim = f"rapp_elim_{chiave_riga}"
+
+                if st.session_state.get(chiave_edit, False):
+                    _form_rapporto(df, riga_dict, numero_riga_foglio,
+                                    chiave=chiave_riga, chiave_stato_modifica=chiave_edit)
+                else:
+                    colonne_riepilogo = [c for c in df.columns if c.strip().lower() != "cognome e nome"]
+                    for c in colonne_riepilogo:
+                        valore = riga_dict.get(c, "")
+                        if valore:
+                            st.markdown(f"**{c}:** {valore}")
+
+                    col_mod, col_elim = st.columns(2)
+                    with col_mod:
+                        if st.button("✏️ Modifica", key=f"btn_mod_{chiave_riga}", use_container_width=True):
+                            st.session_state[chiave_edit] = True
+                            st.rerun()
+                    with col_elim:
+                        if st.button("🗑️ Elimina", key=f"btn_elim_{chiave_riga}", use_container_width=True):
+                            st.session_state[chiave_conferma_elim] = True
+                            st.rerun()
+
+                    if st.session_state.get(chiave_conferma_elim, False):
+                        st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
+                        col_si, col_no = st.columns(2)
+                        with col_si:
+                            if st.button("✔ Sì, elimina", key=f"btn_conf_si_{chiave_riga}",
+                                         type="primary", use_container_width=True):
+                                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
+                                if ok:
+                                    st.cache_data.clear()
+                                    st.session_state[chiave_conferma_elim] = False
+                                    st.success("✔ Rapporto eliminato.")
+                                    st.rerun()
+                                else:
+                                    st.error(err_elim)
+                        with col_no:
+                            if st.button("No, annulla", key=f"btn_conf_no_{chiave_riga}",
+                                         use_container_width=True):
+                                st.session_state[chiave_conferma_elim] = False
+                                st.rerun()
+                if len(righe_persona) > 1:
+                    st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
 # ─────────────────────────────────────────────────────────────────
 def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_foglio: int = None,
-                      chiave: str = "nuovo", modo_nuovo: bool = False):
+                      chiave: str = "nuovo", modo_nuovo: bool = False, chiave_expander: str = None):
     """Disegna il form di inserimento/modifica di un Proclamatore.
     Se 'riga_esistente' è None è un inserimento nuovo, altrimenti è una
     modifica (i campi vengono precompilati con i valori attuali).
@@ -656,6 +699,8 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
     if annulla:
         if modo_nuovo:
             st.session_state.anagrafica_nuovo = False
+        if chiave_expander:
+            st.session_state[chiave_expander] = False
         st.rerun()
 
     if invia:
@@ -690,6 +735,8 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             st.cache_data.clear()
             if modo_nuovo:
                 st.session_state.anagrafica_nuovo = False
+            if chiave_expander:
+                st.session_state[chiave_expander] = False
             st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
@@ -722,15 +769,9 @@ def mostra_anagrafiche():
         return
 
     # ── Elenco Proclamatori a riquadri pieghevoli ───────────────────────
-    col_nuovo, col_aggiorna = st.columns([4, 1])
-    with col_nuovo:
-        if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
-            st.session_state.anagrafica_nuovo = True
-            st.rerun()
-    with col_aggiorna:
-        if st.button("🔄", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+        st.session_state.anagrafica_nuovo = True
+        st.rerun()
 
     ricerca = st.text_input("🔍 Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
 
@@ -749,12 +790,25 @@ def mostra_anagrafiche():
 
     st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Tocca un nominativo per aprirne la scheda.")
 
+    if "anagrafica_aperto" not in st.session_state:
+        st.session_state.anagrafica_aperto = None
+
     for idx, riga in df_mostrato.iterrows():
         nome = riga.get("Cognome e Nome", "(senza nome)")
         numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
-        with st.expander(nome):
-            _form_anagrafica(df, riga_esistente=riga.to_dict(), numero_riga_foglio=numero_riga_foglio,
-                              chiave=str(riga.get("ID") or idx), modo_nuovo=False)
+        chiave_persona = str(riga.get("ID") or idx)
+        aperto = (st.session_state.anagrafica_aperto == chiave_persona)
+        freccia = "▼" if aperto else "▶"
+
+        if st.button(f"{freccia}  {nome}", key=f"btn_anagrafica_{chiave_persona}", use_container_width=True):
+            st.session_state.anagrafica_aperto = None if aperto else chiave_persona
+            st.rerun()
+
+        if aperto:
+            with st.container(border=True):
+                _form_anagrafica(df, riga_esistente=riga.to_dict(), numero_riga_foglio=numero_riga_foglio,
+                                  chiave=chiave_persona, modo_nuovo=False,
+                                  chiave_expander="anagrafica_aperto")
 
 
 # ─────────────────────────────────────────────────────────────────
