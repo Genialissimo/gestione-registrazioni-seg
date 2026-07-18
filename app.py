@@ -579,7 +579,7 @@ def mostra_registrazioni():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICA (Elenco Proclamatori)
 # ─────────────────────────────────────────────────────────────────
-def mostra_anagrafica():
+def mostra_anagrafiche():
     if st.button("🏠 Torna alla Home", key="home_da_anagrafica", type="primary", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -636,7 +636,6 @@ def mostra_anagrafica():
     st.divider()
     if st.button("➕ Aggiungi nuovo Proclamatore"):
         st.info("Funzione aggiunta nuovo record da implementare.")
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
