@@ -449,7 +449,7 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
 
     if annulla:
         if chiave_stato_modifica:
-            st.session_state[chiave_stato_modifica] = False
+            st.session_state[chiave_stato_modifica] = None
         st.rerun()
 
     if invia:
@@ -462,23 +462,48 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
         if ok:
             st.cache_data.clear()
             if chiave_stato_modifica:
-                st.session_state[chiave_stato_modifica] = False
+                st.session_state[chiave_stato_modifica] = None
             st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
             st.error(err)
 
 
+def _form_modifica_rapporto_consegnato(dati_selezione: dict):
+    """Pagina intera di modifica di un rapporto consegnato (foglio
+    'Risposte del modulo 9'), aperta cliccando 'Modifica' dentro la
+    griglia di un Proclamatore in Rapporti consegnati."""
+    df = dati_selezione["df"]
+    riga_dict = dati_selezione["riga_dict"]
+    numero_riga_foglio = dati_selezione["numero_riga_foglio"]
+    nome = dati_selezione["nome"]
+
+    st.title("Modifica rapporto")
+    st.caption(f"{nome} (foglio «{NOME_FOGLIO_RISPOSTE}», riga {numero_riga_foglio})")
+
+    _form_rapporto(df, riga_dict, numero_riga_foglio, chiave=str(numero_riga_foglio),
+                    chiave_stato_modifica="rapporto_modifica_globale")
+
+
 def mostra_registrazioni():
     if st.button("🏠 Torna alla Home", key="home_da_registrazioni", type="primary", use_container_width=True):
         vai_a("home")
         st.rerun()
-    st.title("Rapporti consegnati")
-    st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
 
     if not collegato:
+        st.title("Rapporti consegnati")
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
+
+    if "rapporto_modifica_globale" not in st.session_state:
+        st.session_state.rapporto_modifica_globale = None
+
+    if st.session_state.rapporto_modifica_globale is not None:
+        _form_modifica_rapporto_consegnato(st.session_state.rapporto_modifica_globale)
+        return
+
+    st.title("Rapporti consegnati")
+    st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
 
     df_anagrafica, err_anagrafica = leggi_foglio_come_df(
         workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
@@ -523,12 +548,13 @@ def mostra_registrazioni():
         for nome in nomi:
             conteggi[nome] = 0
 
+    st.caption(f"{len(nomi)} Proclamatori. 🟢 consegnato · 🟡 più righe (anomalia) · 🔴 non consegnato.")
+
     for nome in nomi:
         conteggio = conteggi.get(nome, 0)
         pallino = "🟢" if conteggio == 1 else "🟡" if conteggio >= 2 else "🔴"
-        chiave_expander_persona = f"exp_rapp_{nome}"
 
-        with st.expander(f"{pallino}  {nome}", key=chiave_expander_persona):
+        with st.expander(f"{pallino}  {nome}"):
             if "Cognome e Nome" not in df.columns:
                 righe_persona = df.iloc[0:0]
             else:
@@ -538,39 +564,60 @@ def mostra_registrazioni():
                 st.caption("Nessun rapporto consegnato per questo mese.")
                 continue
 
-            for idx in righe_persona.index:
-                riga_dict = df.loc[idx].to_dict()
-                numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx
-                chiave_riga = str(numero_riga_foglio)
-                chiave_conferma_elim = f"rapp_elim_{chiave_riga}"
+            colonne_tabella = [c for c in df.columns if c.strip().lower() != "cognome e nome"]
+            evento_tabella = st.dataframe(
+                righe_persona[colonne_tabella],
+                hide_index=True,
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key=f"tabella_rapp_{nome}",
+            )
 
-                _form_rapporto(df, riga_dict, numero_riga_foglio, chiave=chiave_riga,
-                                chiave_stato_modifica=chiave_expander_persona)
+            righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
+            idx_originale = None
+            if righe_sel:
+                idx_originale = righe_persona.index[righe_sel[0]]
 
-                if st.button("🗑️ Elimina questo rapporto", key=f"btn_elim_{chiave_riga}",
-                             use_container_width=True):
+            chiave_conferma_elim = f"rapp_elim_{nome}"
+
+            col_mod, col_elim = st.columns(2)
+            with col_mod:
+                if st.button("✏️ Modifica riga selezionata", key=f"btn_mod_{nome}",
+                             disabled=idx_originale is None, use_container_width=True):
+                    numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx_originale
+                    st.session_state.rapporto_modifica_globale = {
+                        "df": df,
+                        "riga_dict": df.loc[idx_originale].to_dict(),
+                        "numero_riga_foglio": numero_riga_foglio,
+                        "nome": nome,
+                    }
+                    st.rerun()
+            with col_elim:
+                if st.button("🗑️ Elimina riga selezionata", key=f"btn_elim_{nome}",
+                             disabled=idx_originale is None, use_container_width=True):
                     st.session_state[chiave_conferma_elim] = True
                     st.rerun()
 
-                if st.session_state.get(chiave_conferma_elim, False):
-                    st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
-                    col_si, col_no = st.columns(2)
-                    with col_si:
-                        if st.button("✔ Sì, elimina", key=f"btn_conf_si_{chiave_riga}",
-                                     type="primary", use_container_width=True):
-                            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
-                            if ok:
-                                st.cache_data.clear()
-                                st.session_state[chiave_conferma_elim] = False
-                                st.success("✔ Rapporto eliminato.")
-                                st.rerun()
-                            else:
-                                st.error(err_elim)
-                    with col_no:
-                        if st.button("No, annulla", key=f"btn_conf_no_{chiave_riga}",
-                                     use_container_width=True):
+            if st.session_state.get(chiave_conferma_elim, False) and idx_originale is not None:
+                numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx_originale
+                st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
+                col_si, col_no = st.columns(2)
+                with col_si:
+                    if st.button("✔ Sì, elimina", key=f"btn_conf_si_{nome}",
+                                 type="primary", use_container_width=True):
+                        ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
+                        if ok:
+                            st.cache_data.clear()
                             st.session_state[chiave_conferma_elim] = False
+                            st.success("✔ Rapporto eliminato.")
                             st.rerun()
+                        else:
+                            st.error(err_elim)
+                with col_no:
+                    if st.button("No, annulla", key=f"btn_conf_no_{nome}", use_container_width=True):
+                        st.session_state[chiave_conferma_elim] = False
+                        st.rerun()
 
                 if len(righe_persona) > 1:
                     st.divider()
