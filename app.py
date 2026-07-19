@@ -527,12 +527,18 @@ def mostra_registrazioni():
         return (valore or "").strip().lower().startswith("a")
 
     colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
+    colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
     stato_per_nome = {}
-    if colonna_stato:
+    gruppo_per_nome = {}
+    if colonna_stato or colonna_gruppo:
         for _, riga in df_anagrafica.iterrows():
             n = str(riga.get("Cognome e Nome", "")).strip()
-            if n:
+            if not n:
+                continue
+            if colonna_stato:
                 stato_per_nome[n] = riga.get(colonna_stato, "")
+            if colonna_gruppo:
+                gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
     if colonna_stato:
@@ -548,9 +554,15 @@ def mostra_registrazioni():
         for nome in nomi:
             conteggi[nome] = 0
 
-    st.caption(f"{len(nomi)} Proclamatori. 🟢 consegnato · 🟡 più righe (anomalia) · 🔴 non consegnato.")
+    # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
+    gruppi = {}
+    for n in nomi:
+        g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
+        gruppi.setdefault(g, []).append(n)
+    for g in gruppi:
+        gruppi[g].sort()
 
-    for nome in nomi:
+    def _riga_proclamatore_rapporto(nome: str):
         conteggio = conteggi.get(nome, 0)
         pallino = "🟢" if conteggio == 1 else "🟡" if conteggio >= 2 else "🔴"
 
@@ -562,7 +574,7 @@ def mostra_registrazioni():
 
             if righe_persona.empty:
                 st.caption("Nessun rapporto consegnato per questo mese.")
-                continue
+                return
 
             colonne_tabella = [c for c in df.columns if c.strip().lower() != "cognome e nome"]
             evento_tabella = st.dataframe(
@@ -621,6 +633,12 @@ def mostra_registrazioni():
 
                 if len(righe_persona) > 1:
                     st.divider()
+
+    for gruppo in sorted(gruppi.keys()):
+        st.markdown(f"#### 👤 {gruppo}")
+        for nome in gruppi[gruppo]:
+            _riga_proclamatore_rapporto(nome)
+        st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────
