@@ -909,7 +909,7 @@ def mostra_anagrafiche():
     st.markdown(
         """
         <style>
-        [class*="st-key-btn_anagrafica_"] button {
+        div[data-testid="stButton"] > button[kind="secondary"] {
             justify-content: flex-start !important;
             text-align: left !important;
         }
