@@ -2,3 +2,5 @@ streamlit
 gspread
 google-auth
 pandas
+pypdf
+reportlab
