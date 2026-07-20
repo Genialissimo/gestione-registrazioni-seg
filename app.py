@@ -681,21 +681,16 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         sesso = st.selectbox("Sesso", OPZIONI_SESSO, index=OPZIONI_SESSO.index(sesso_default),
                               key=f"sesso_{chiave}")
 
-        senza_battesimo = st.checkbox("Non ancora battezzato/a",
-                                       value=not bool(e.get("Data Battesimo", "")),
-                                       key=f"senza_batt_{chiave}")
-        data_battesimo = None
-        if not senza_battesimo:
-            eta_battesimo = calcola_eta_dettagliata(e.get("Data Battesimo", ""))
-            if eta_battesimo:
-                st.markdown(f"**Data del battesimo** &nbsp; "
-                            f"<span style='color:#D32F2F'>(anni {eta_battesimo})</span>",
-                            unsafe_allow_html=True)
-            else:
-                st.markdown("**Data del battesimo**")
-            data_battesimo = st.date_input("Data del battesimo", value=parse_data(e.get("Data Battesimo", "")),
-                                            format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                            label_visibility="collapsed", key=f"data_batt_{chiave}")
+        eta_battesimo = calcola_eta_dettagliata(e.get("Data Battesimo", ""))
+        if eta_battesimo:
+            st.markdown(f"**Data del battesimo** &nbsp; "
+                        f"<span style='color:#D32F2F'>(anni {eta_battesimo})</span>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown("**Data del battesimo**")
+        data_battesimo = st.date_input("Data del battesimo", value=parse_data(e.get("Data Battesimo", "")),
+                                        format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
+                                        label_visibility="collapsed", key=f"data_batt_{chiave}")
 
         incarico_corrente = e.get("Incarico", "") or "(nessuno)"
         if incarico_corrente not in OPZIONI_INCARICO:
@@ -737,22 +732,6 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
                                   key=f"au_{chiave}")
         if scelta_au == "➕ Nuovo…":
             scelta_au = st.text_input("Nuovo valore A/U", key=f"au_nuovo_{chiave}")
-        u_dal = st.date_input("U Dal", value=parse_data(e.get("U Dal", "")),
-                               format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"u_dal_{chiave}")
-
-        opzioni_trasf = opzioni_da_colonna(df, "Trasf.")
-        trasf_corrente = e.get("Trasf.", "")
-        elenco_trasf = opzioni_trasf + ["➕ Nuovo…"]
-        if trasf_corrente and trasf_corrente not in elenco_trasf:
-            elenco_trasf = [trasf_corrente] + elenco_trasf
-        scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["➕ Nuovo…"],
-                                     index=(elenco_trasf.index(trasf_corrente)
-                                            if trasf_corrente in elenco_trasf else 0),
-                                     key=f"trasf_{chiave}")
-        if scelta_trasf == "➕ Nuovo…":
-            scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}")
-
-        messaggio = st.text_input("Messaggio", value=e.get("Messaggio", ""), key=f"messaggio_{chiave}")
 
         note = st.text_area("Note", value=e.get("Note", ""), height=100, key=f"note_{chiave}")
 
@@ -772,6 +751,22 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         attivi_inattivi = {v: k for k, v in ETICHETTE_ATTIVI_INATTIVI.items()}[etichetta_stato]
         dal = st.date_input("Inattivo Da", value=parse_data(e.get("Dal", "")),
                              format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}")
+
+        st.divider()
+
+        opzioni_trasf = opzioni_da_colonna(df, "Trasf.")
+        trasf_corrente = e.get("Trasf.", "")
+        elenco_trasf = opzioni_trasf + ["➕ Nuovo…"]
+        if trasf_corrente and trasf_corrente not in elenco_trasf:
+            elenco_trasf = [trasf_corrente] + elenco_trasf
+        scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["➕ Nuovo…"],
+                                     index=(elenco_trasf.index(trasf_corrente)
+                                            if trasf_corrente in elenco_trasf else 0),
+                                     key=f"trasf_{chiave}")
+        if scelta_trasf == "➕ Nuovo…":
+            scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}")
+
+        messaggio = st.text_input("Messaggio", value=e.get("Messaggio", ""), key=f"messaggio_{chiave}")
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -805,7 +800,6 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             "PR dal": pr_dal.strftime("%d/%m/%Y") if pr_dal else "",
             "Gruppo": scelta_gruppo,
             "A/U": scelta_au,
-            "U Dal": u_dal.strftime("%d/%m/%Y") if u_dal else "",
             "Trasf.": scelta_trasf,
             "Messaggio": messaggio.strip(),
             "Note": note.strip(),
