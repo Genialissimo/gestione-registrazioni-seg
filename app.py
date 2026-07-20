@@ -873,6 +873,38 @@ def mostra_anagrafiche():
         )
         df_mostrato = df_mostrato[maschera]
 
+    # ── Filtro per stato: Attivi / Inattivi / Trasferiti ────────────────
+    def categoria_stato(valore: str) -> str:
+        """Riconosce la categoria di stato da 'Attivi / Inattivi', sia
+        scritto come sigla ('A'/'I'/'TR') che per esteso. Ritorna 'A' come
+        valore di default se non riconosciuto."""
+        v = (valore or "").strip().lower()
+        if v.startswith("i"):
+            return "I"
+        if v.startswith("t"):
+            return "TR"
+        return "A"
+
+    if "Attivi / Inattivi" in df_mostrato.columns:
+        categorie = df_mostrato["Attivi / Inattivi"].apply(categoria_stato)
+    else:
+        categorie = pd.Series(["A"] * len(df_mostrato), index=df_mostrato.index)
+
+    conteggio_a = int((categorie == "A").sum())
+    conteggio_i = int((categorie == "I").sum())
+    conteggio_tr = int((categorie == "TR").sum())
+
+    opzioni_stato = [
+        f"🟢 Attivi ({conteggio_a})",
+        f"🔺 Inattivi ({conteggio_i})",
+        f"↔️ Trasferiti ({conteggio_tr})",
+    ]
+    scelta_stato = st.radio("Stato", opzioni_stato, index=0, horizontal=True,
+                             label_visibility="collapsed", key="anagrafica_filtro_stato")
+    codice_stato_scelto = {opzioni_stato[0]: "A", opzioni_stato[1]: "I", opzioni_stato[2]: "TR"}[scelta_stato]
+
+    df_mostrato = df_mostrato[categorie == codice_stato_scelto]
+
     df_mostrato = df_mostrato.sort_values("Cognome e Nome") if "Cognome e Nome" in df_mostrato.columns else df_mostrato
 
     st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Tocca un nominativo per aprirne la scheda.")
