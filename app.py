@@ -906,6 +906,18 @@ def mostra_anagrafiche():
     if "anagrafica_aperto" not in st.session_state:
         st.session_state.anagrafica_aperto = None
 
+    st.markdown(
+        """
+        <style>
+        [class*="st-key-btn_anagrafica_"] button {
+            justify-content: flex-start !important;
+            text-align: left !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     for idx, riga in df_mostrato.iterrows():
         nome = riga.get("Cognome e Nome", "(senza nome)")
         numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
