@@ -6,11 +6,16 @@ Altri form (Nuova registrazione, Anagrafiche) verranno aggiunti in seguito.
 """
 
 from datetime import datetime
+import io
+import os
+import zipfile
 
 import pandas as pd
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+from pypdf import PdfReader, PdfWriter
+from reportlab.pdfgen import canvas as rl_canvas
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIGURAZIONE PAGINA
@@ -59,6 +64,40 @@ OPZIONI_HAI_SERVITO = ["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare
                        "Pioniere Speciale", "Rappresentante sul campo"]
 OPZIONI_ATTIVI_INATTIVI = ["A", "I", "TR"]
 ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo", "TR": "Trasferito"}
+
+
+def categoria_stato_proclamatore(valore: str) -> str:
+    """Riconosce la categoria di stato da 'Attivi / Inattivi', sia scritto
+    come sigla ('A'/'I'/'TR') che per esteso. Ritorna 'A' come valore di
+    default se non riconosciuto."""
+    v = (valore or "").strip().lower()
+    if v.startswith("i"):
+        return "I"
+    if v.startswith("t"):
+        return "TR"
+    return "A"
+
+# ── Modulo S-21 (scheda di registrazione del proclamatore) ──────────
+# Il file del modello va messo nella stessa cartella di app.py.
+PERCORSO_MODULO_S21 = os.path.join(os.path.dirname(__file__), "S-21_s-Mlt_I.pdf")
+S21_PAGE_W, S21_PAGE_H = 595.2, 841.9
+S21_OFFSET_PANNELLO = 421.0  # distanza verticale tra il pannello alto e quello basso
+
+S21_ORDINE_MESI = ["Settembre", "Ottobre", "Novembre", "Dicembre", "Gennaio", "Febbraio",
+                    "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto"]
+
+S21_RIGHE_TOP = {
+    "Settembre": 158.4, "Ottobre": 176.2, "Novembre": 193.9, "Dicembre": 211.6,
+    "Gennaio": 229.4, "Febbraio": 247.1, "Marzo": 264.8, "Aprile": 282.6,
+    "Maggio": 300.3, "Giugno": 318.0, "Luglio": 335.8, "Agosto": 353.5,
+}
+S21_TOTALE_TOP = 377.8
+
+S21_COL_MINISTERO_X = 131.5
+S21_COL_AUSILIARIO_X = 272.7
+S21_COL_STUDI_X = 203.0
+S21_COL_ORE_X = 336.0
+S21_COL_OSSERVAZIONI_X = 451.0
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -295,6 +334,255 @@ def anno_teocratico_di(mese_anno: str):
     except Exception:
         return None
     return anno if mese >= 9 else anno - 1
+
+
+def _s21_y_da_top(top: float, offset: float = 0.0, alza: float = 8.0) -> float:
+    """Converte una coordinata 'top' (distanza dall'alto pagina, come la
+    ritorna pdfplumber) nella coordinata Y usata da reportlab (che parte
+    dal basso pagina). 'offset' sposta il calcolo sul pannello basso."""
+    return S21_PAGE_H - (top + offset + alza)
+
+
+def _s21_y_da_bottom(bottom: float, offset: float = 0.0, alza: float = 1.5) -> float:
+    return S21_PAGE_H - (bottom + offset - alza)
+
+
+def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico) -> dict:
+    """Ritorna un dizionario {nome_mese: {ha_partecipato, pioniere_ausiliario,
+    studi, ore, osservazioni}} per un Proclamatore e un anno teocratico dati,
+    pescando dal DataFrame prodotto da leggi_foglio_tutti(). Ritorna un
+    dizionario vuoto se l'anno è None o non ci sono rapporti."""
+    if anno_teocratico is None or df_tutti.empty:
+        return {}
+    righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
+    righe_persona = righe_persona[righe_persona["Mese/Anno"].apply(anno_teocratico_di) == anno_teocratico]
+
+    risultato = {}
+    for _, r in righe_persona.iterrows():
+        risultato[r["Anno di servizio"]] = {
+            "ha_partecipato": bool(r["Ha partecipato al ministero"]),
+            "pioniere_ausiliario": bool(r["Pioniere ausiliario"]),
+            "studi": r["Studi Biblici"],
+            "ore": r["Ore"],
+            "osservazioni": r["Osservazioni"],
+        }
+    return risultato
+
+
+def _s21_anni_disponibili_per_nome(df_tutti: pd.DataFrame, nome: str) -> list:
+    """Ritorna gli anni teocratici (int) per cui esistono rapporti per un
+    Proclamatore, ordinati dal più recente al più vecchio."""
+    if df_tutti.empty:
+        return []
+    righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
+    anni = sorted({a for a in righe_persona["Mese/Anno"].apply(anno_teocratico_di) if a is not None}, reverse=True)
+    return anni
+
+
+def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_anno: dict):
+    """Disegna un pannello completo (dati anagrafici + tabella mensile) sul
+    canvas di overlay. 'offset' è 0 per il pannello alto, S21_OFFSET_PANNELLO
+    per quello basso."""
+    c.setFont("Helvetica", 9)
+    c.drawString(116, _s21_y_da_bottom(51.5, offset), dati.get("nome", ""))
+    c.drawString(104, _s21_y_da_bottom(65.9, offset), dati.get("data_nascita", ""))
+    c.drawString(125, _s21_y_da_bottom(80.4, offset), dati.get("data_battesimo", ""))
+
+    c.setFont("Helvetica-Bold", 9)
+    if dati.get("sesso") == "M":
+        c.drawString(386.5, _s21_y_da_bottom(65.9, offset), "X")
+    elif dati.get("sesso") == "F":
+        c.drawString(488.0, _s21_y_da_bottom(65.9, offset), "X")
+
+    incarico = dati.get("incarico", "")
+    tipo = dati.get("tipo", "")
+    caselle_riga = [
+        (19.3, incarico == "Anziano"),
+        (82.9, incarico == "Servitore di ministero"),
+        (218.3, tipo == "Pioniere Regolare"),
+        (329.8, tipo == "Pioniere speciale"),
+        (438.7, tipo == "Missionario sul campo"),
+    ]
+    for x, selezionato in caselle_riga:
+        if selezionato:
+            c.drawString(x, _s21_y_da_top(82.1, offset), "X")
+
+    c.setFont("Helvetica", 8)
+    totale_ore = 0.0
+    totale_studi = 0.0
+    for mese in S21_ORDINE_MESI:
+        riga = righe_anno.get(mese)
+        if not riga:
+            continue
+        top = S21_RIGHE_TOP[mese]
+        if riga.get("ha_partecipato"):
+            c.drawString(S21_COL_MINISTERO_X, _s21_y_da_top(top, offset, alza=9.5), "X")
+        if riga.get("pioniere_ausiliario"):
+            c.drawString(S21_COL_AUSILIARIO_X, _s21_y_da_top(top, offset, alza=9.5), "X")
+        studi_val = str(riga.get("studi") or "").strip()
+        if studi_val and studi_val != "0":
+            c.drawString(S21_COL_STUDI_X, _s21_y_da_top(top, offset, alza=9.5), studi_val)
+            totale_studi += a_float_it(studi_val)
+        ore_val = str(riga.get("ore") or "").strip()
+        if ore_val and ore_val != "0":
+            c.drawString(S21_COL_ORE_X, _s21_y_da_top(top, offset, alza=9.5), ore_val)
+            totale_ore += a_float_it(ore_val)
+        osservazioni_val = str(riga.get("osservazioni") or "").strip()
+        if osservazioni_val:
+            c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top(top, offset, alza=9.5), osservazioni_val[:38])
+
+    if totale_ore:
+        c.drawString(S21_COL_ORE_X, _s21_y_da_top(S21_TOTALE_TOP, offset, alza=9.5), formatta_numero_it(totale_ore))
+    if totale_studi:
+        c.drawString(S21_COL_STUDI_X, _s21_y_da_top(S21_TOTALE_TOP, offset, alza=9.5), formatta_numero_it(totale_studi))
+
+
+def _s21_dati_da_riga_anagrafica(riga: dict) -> dict:
+    """Converte una riga del foglio Anagrafica (dizionario) nel formato
+    atteso da _s21_disegna_pannello."""
+    return {
+        "nome": riga.get("Cognome e Nome", ""),
+        "data_nascita": riga.get("Data Nascita", ""),
+        "data_battesimo": riga.get("Data Battesimo", ""),
+        "sesso": (riga.get("Sesso", "") or "").strip().upper()[:1],
+        "incarico": riga.get("Incarico", ""),
+        "tipo": riga.get("Tipo", ""),
+    }
+
+
+def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame) -> bytes:
+    """Genera il PDF del modulo S-21 per un singolo Proclamatore: pannello
+    alto con l'anno di servizio più recente disponibile, pannello basso con
+    quello precedente. Ritorna i byte del PDF pronto da scaricare."""
+    nome = riga_anagrafica.get("Cognome e Nome", "")
+    dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
+
+    anni = _s21_anni_disponibili_per_nome(df_tutti, nome)
+    anno_corrente = anni[0] if len(anni) >= 1 else None
+    anno_precedente = anni[1] if len(anni) >= 2 else None
+
+    righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
+    righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
+    _s21_disegna_pannello(c, 0.0, dati, righe_precedente)
+    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente)
+    c.save()
+    buf.seek(0)
+
+    overlay_reader = PdfReader(buf)
+    template_reader = PdfReader(PERCORSO_MODULO_S21)
+    writer = PdfWriter()
+
+    pagina = template_reader.pages[0]
+    pagina.merge_page(overlay_reader.pages[0])
+    writer.add_page(pagina)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame) -> bytes:
+    """Genera un unico PDF con una pagina per ciascun Proclamatore passato
+    in 'righe_anagrafica' (lista di dizionari, come per il singolo)."""
+    writer = PdfWriter()
+    template_reader = PdfReader(PERCORSO_MODULO_S21)
+
+    for riga_anagrafica in righe_anagrafica:
+        nome = riga_anagrafica.get("Cognome e Nome", "")
+        dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
+
+        anni = _s21_anni_disponibili_per_nome(df_tutti, nome)
+        anno_corrente = anni[0] if len(anni) >= 1 else None
+        anno_precedente = anni[1] if len(anni) >= 2 else None
+
+        righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
+        righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
+
+        buf = io.BytesIO()
+        c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
+        _s21_disegna_pannello(c, 0.0, dati, righe_precedente)
+        _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente)
+        c.save()
+        buf.seek(0)
+
+        overlay_reader = PdfReader(buf)
+        pagina = template_reader.pages[0]
+        pagina_overlay = pagina
+        # Serve una copia fresca della pagina modello per ogni Proclamatore,
+        # altrimenti gli overlay si sovrapporrebbero tutti sulla stessa pagina.
+        template_fresh = PdfReader(PERCORSO_MODULO_S21)
+        pagina_overlay = template_fresh.pages[0]
+        pagina_overlay.merge_page(overlay_reader.pages[0])
+        writer.add_page(pagina_overlay)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _s21_nome_file_sicuro(nome: str) -> str:
+    """Ripulisce un nome da caratteri non ammessi nei nomi di file/cartella
+    (Windows e Dropbox in particolare non ammettono \\ / : * ? " < > |)."""
+    nome_pulito = "".join(c for c in nome if c not in '\\/:*?"<>|').strip()
+    return nome_pulito or "Senza_nome"
+
+
+def _s21_anno_cartella_corrente() -> str:
+    """Ritorna l'anno (come stringa) da usare come cartella principale
+    dell'esportazione, cioè l'anno di fine dell'anno di servizio in corso
+    oggi (es. per l'anno di servizio Settembre 2025 → Agosto 2026,
+    ritorna '2026')."""
+    oggi = datetime.now()
+    anno_teo = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+    return str(anno_teo + 1) if anno_teo is not None else str(oggi.year)
+
+
+def _s21_cartella_per_riga(riga: dict) -> str:
+    """Determina il sotto-percorso di cartella (dentro 'Anno AAAA/') per un
+    Proclamatore, secondo la struttura:
+    Attivi/Proclamatori/<Gruppo>, Attivi/Pionieri Regolari,
+    Attivi/Pionieri Speciali, Attivi/Missionari sul campo, Inattivi,
+    Trasferiti."""
+    stato = categoria_stato_proclamatore(riga.get("Attivi / Inattivi", ""))
+    if stato == "I":
+        return "Inattivi"
+    if stato == "TR":
+        return "Trasferiti"
+
+    tipo = (riga.get("Tipo") or "").strip()
+    if tipo == "Pioniere Regolare":
+        return "Attivi/Pionieri Regolari"
+    if tipo == "Pioniere speciale":
+        return "Attivi/Pionieri Speciali"
+    if tipo == "Missionario sul campo":
+        return "Attivi/Missionari sul campo"
+
+    gruppo = (riga.get("Gruppo") or "").strip() or "(Senza gruppo)"
+    return f"Attivi/Proclamatori/{gruppo}"
+
+
+def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame) -> bytes:
+    """Genera uno ZIP con una scheda S-21 per ciascun Proclamatore in
+    'righe_anagrafica', organizzate secondo la struttura di cartelle
+    'Anno AAAA/Attivi/…', 'Anno AAAA/Inattivi/…' ecc., col nome del file
+    uguale al Cognome e Nome. Pronto da scompattare dentro Dropbox o Drive."""
+    anno_cartella = _s21_anno_cartella_corrente()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for riga in righe_anagrafica:
+            nome = (riga.get("Cognome e Nome") or "").strip()
+            if not nome:
+                continue
+            pdf_bytes = genera_pdf_s21_singolo(riga, df_tutti)
+            sotto_cartella = _s21_cartella_per_riga(riga)
+            nome_file = _s21_nome_file_sicuro(nome) + ".pdf"
+            percorso = f"Anno {anno_cartella}/{sotto_cartella}/{nome_file}"
+            zf.writestr(percorso, pdf_bytes)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
@@ -850,9 +1138,35 @@ def mostra_anagrafiche():
         return
 
     # ── Elenco Proclamatori a riquadri pieghevoli ───────────────────────
-    if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
-        st.session_state.anagrafica_nuovo = True
-        st.rerun()
+    col_nuovo, col_pdf_tutti = st.columns([2, 1])
+    with col_nuovo:
+        if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+            st.session_state.anagrafica_nuovo = True
+            st.rerun()
+    with col_pdf_tutti:
+        if st.button("📦 Esporta ZIP schede S-21", use_container_width=True):
+            if not os.path.exists(PERCORSO_MODULO_S21):
+                st.error(f"Modulo S-21 non trovato: metti il file «S-21_s-Mlt_I.pdf» "
+                         f"nella stessa cartella di app.py.")
+            else:
+                df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+                if err_tutti:
+                    st.error(err_tutti)
+                else:
+                    righe = [r.to_dict() for _, r in df.iterrows()]
+                    if not righe:
+                        st.warning("Nessun Proclamatore trovato in Anagrafica.")
+                    else:
+                        with st.spinner("Genero le schede…"):
+                            zip_bytes = genera_zip_s21(righe, df_tutti)
+                        st.download_button(
+                            "⬇️ Scarica ZIP",
+                            data=zip_bytes,
+                            file_name=f"Schede_S21_{_s21_anno_cartella_corrente()}.zip",
+                            mime="application/zip",
+                            key="download_s21_zip",
+                            use_container_width=True,
+                        )
 
     ricerca = st.text_input("🔍 Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
 
@@ -868,19 +1182,8 @@ def mostra_anagrafiche():
         df_mostrato = df_mostrato[maschera]
 
     # ── Filtro per stato: Attivi / Inattivi / Trasferiti ────────────────
-    def categoria_stato(valore: str) -> str:
-        """Riconosce la categoria di stato da 'Attivi / Inattivi', sia
-        scritto come sigla ('A'/'I'/'TR') che per esteso. Ritorna 'A' come
-        valore di default se non riconosciuto."""
-        v = (valore or "").strip().lower()
-        if v.startswith("i"):
-            return "I"
-        if v.startswith("t"):
-            return "TR"
-        return "A"
-
     if "Attivi / Inattivi" in df_mostrato.columns:
-        categorie = df_mostrato["Attivi / Inattivi"].apply(categoria_stato)
+        categorie = df_mostrato["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
     else:
         categorie = pd.Series(["A"] * len(df_mostrato), index=df_mostrato.index)
 
@@ -934,6 +1237,27 @@ def mostra_anagrafiche():
                 _form_anagrafica(df, riga_esistente=riga.to_dict(), numero_riga_foglio=numero_riga_foglio,
                                   chiave=chiave_persona, modo_nuovo=False,
                                   chiave_expander="anagrafica_aperto")
+
+                if not os.path.exists(PERCORSO_MODULO_S21):
+                    st.caption("⚠️ Modulo S-21 non trovato accanto ad app.py: impossibile generare il PDF.")
+                elif st.button("📄 Genera scheda S-21", key=f"s21_genera_{chiave_persona}",
+                                use_container_width=True):
+                    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+                    if err_tutti:
+                        st.error(err_tutti)
+                    else:
+                        pdf_bytes = genera_pdf_s21_singolo(riga.to_dict(), df_tutti)
+                        st.session_state[f"s21_pdf_{chiave_persona}"] = pdf_bytes
+
+                if st.session_state.get(f"s21_pdf_{chiave_persona}"):
+                    st.download_button(
+                        "⬇️ Scarica PDF",
+                        data=st.session_state[f"s21_pdf_{chiave_persona}"],
+                        file_name=f"{_s21_nome_file_sicuro(nome)}.pdf",
+                        mime="application/pdf",
+                        key=f"s21_download_{chiave_persona}",
+                        use_container_width=True,
+                    )
 
 
 # ─────────────────────────────────────────────────────────────────
