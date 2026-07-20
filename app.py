@@ -57,8 +57,8 @@ OPZIONI_INCARICO = ["(nessuno)", "Anziano", "Servitore di ministero"]
 OPZIONI_TIPO = ["Proclamatore", "Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"]
 OPZIONI_HAI_SERVITO = ["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare",
                        "Pioniere Speciale", "Rappresentante sul campo"]
-OPZIONI_ATTIVI_INATTIVI = ["A", "I"]
-ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo"}
+OPZIONI_ATTIVI_INATTIVI = ["A", "I", "TR"]
+ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo", "TR": "Trasferito"}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -727,6 +727,33 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         if scelta_gruppo == "➕ Nuovo…":
             scelta_gruppo = st.text_input("Nome del nuovo gruppo", key=f"gruppo_nuovo_{chiave}")
 
+        opzioni_au = opzioni_da_colonna(df, "A/U")
+        au_corrente = e.get("A/U", "")
+        elenco_au = opzioni_au + ["➕ Nuovo…"]
+        if au_corrente and au_corrente not in elenco_au:
+            elenco_au = [au_corrente] + elenco_au
+        scelta_au = st.selectbox("A/U", elenco_au or ["➕ Nuovo…"],
+                                  index=(elenco_au.index(au_corrente) if au_corrente in elenco_au else 0),
+                                  key=f"au_{chiave}")
+        if scelta_au == "➕ Nuovo…":
+            scelta_au = st.text_input("Nuovo valore A/U", key=f"au_nuovo_{chiave}")
+        u_dal = st.date_input("U Dal", value=parse_data(e.get("U Dal", "")),
+                               format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"u_dal_{chiave}")
+
+        opzioni_trasf = opzioni_da_colonna(df, "Trasf.")
+        trasf_corrente = e.get("Trasf.", "")
+        elenco_trasf = opzioni_trasf + ["➕ Nuovo…"]
+        if trasf_corrente and trasf_corrente not in elenco_trasf:
+            elenco_trasf = [trasf_corrente] + elenco_trasf
+        scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["➕ Nuovo…"],
+                                     index=(elenco_trasf.index(trasf_corrente)
+                                            if trasf_corrente in elenco_trasf else 0),
+                                     key=f"trasf_{chiave}")
+        if scelta_trasf == "➕ Nuovo…":
+            scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}")
+
+        messaggio = st.text_input("Messaggio", value=e.get("Messaggio", ""), key=f"messaggio_{chiave}")
+
         note = st.text_area("Note", value=e.get("Note", ""), height=100, key=f"note_{chiave}")
 
         st.divider()
@@ -777,6 +804,10 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             "Tipo": tipo,
             "PR dal": pr_dal.strftime("%d/%m/%Y") if pr_dal else "",
             "Gruppo": scelta_gruppo,
+            "A/U": scelta_au,
+            "U Dal": u_dal.strftime("%d/%m/%Y") if u_dal else "",
+            "Trasf.": scelta_trasf,
+            "Messaggio": messaggio.strip(),
             "Note": note.strip(),
             "Irregolare": "X" if irregolare else "",
             "Irregolare da Mesi": str(irregolare_mesi) if irregolare else "",
