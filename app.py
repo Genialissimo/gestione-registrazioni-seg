@@ -119,6 +119,7 @@ S21_BOX_MISSIONARIO = (436.37, 446.59, 82.08, 92.24)
 S21_COL_ANNO_SERVIZIO = (17.5, 101.4)  # colonna "Anno di servizio"
 S21_ANNO_LABEL_TOP = 145.5  # tra l'intestazione di colonna e la prima riga (Settembre)
 S21_SPOSTAMENTO_RIGHE = 2.0  # piccolo spostamento verso il basso per le righe della tabella mensile
+S21_SPOSTAMENTO_TESTATA = 1.8  # spostamento verso il basso per le X di Sesso/Classe/Incarico
 
 S21_FONT_VALORI = 10.5      # nome, date
 S21_FONT_CHECK_HEADER = 9.5  # X nei quadratini della testata
@@ -433,6 +434,34 @@ def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico)
     return risultato
 
 
+def _s21_nota_inattivo_dal(riga_anagrafica: dict) -> str:
+    """Se il Proclamatore è Inattivo, ritorna il testo 'Inattivo dal
+    gg/mm/aaaa' da scrivere nella prima riga di Osservazioni. Ritorna
+    stringa vuota se non è Inattivo o se la data non è compilata."""
+    stato = categoria_stato_proclamatore(riga_anagrafica.get("Attivi / Inattivi", ""))
+    if stato != "I":
+        return ""
+    data_inattivo = (riga_anagrafica.get("Inattivo dal") or riga_anagrafica.get("Dal") or "").strip()
+    if not data_inattivo:
+        return ""
+    return f"Inattivo dal {data_inattivo}"
+
+
+def _s21_con_nota_prima_riga(righe_anno: dict, nota: str) -> dict:
+    """Ritorna una copia di 'righe_anno' con 'nota' anteposta alle
+    Osservazioni della prima riga (Settembre) — creandola se il mese non ha
+    ancora dati, così la nota compare anche su una cartolina altrimenti
+    completamente vuota."""
+    if not nota:
+        return righe_anno
+    righe_anno = dict(righe_anno)
+    prima_riga = dict(righe_anno.get("Settembre", {}))
+    esistente = str(prima_riga.get("osservazioni") or "").strip()
+    prima_riga["osservazioni"] = f"{nota} — {esistente}" if esistente else nota
+    righe_anno["Settembre"] = prima_riga
+    return righe_anno
+
+
 def anni_teocratici_per_menu(df_tutti: pd.DataFrame) -> list:
     """Ritorna l'elenco degli anni teocratici (int) da proporre in un menu a
     tendina: l'unione tra gli anni per cui esistono già rapporti nel foglio
@@ -485,28 +514,28 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         c.setFillColorRGB(*S21_COLORE_NERO)
 
     if dati.get("sesso") == "M":
-        _s21_centro_box(c, S21_BOX_SESSO_M, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_SESSO_M, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
     elif dati.get("sesso") == "F":
-        _s21_centro_box(c, S21_BOX_SESSO_F, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_SESSO_F, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
 
     classe_spirituale = (dati.get("classe_spirituale") or "").strip().upper()
     if classe_spirituale in ("U", "UNTO"):
-        _s21_centro_box(c, S21_BOX_UNTO, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_UNTO, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
     elif classe_spirituale in ("AP", "A", "ALTRE PECORE"):
-        _s21_centro_box(c, S21_BOX_ALTRE_PECORE, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_ALTRE_PECORE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
 
     incarico = dati.get("incarico", "")
     tipo = dati.get("tipo", "")
     if incarico == "Anziano":
-        _s21_centro_box(c, S21_BOX_ANZIANO, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_ANZIANO, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
     if incarico == "Servitore di ministero":
-        _s21_centro_box(c, S21_BOX_SERVITORE, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_SERVITORE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
     if tipo == "Pioniere Regolare":
-        _s21_centro_box(c, S21_BOX_PIONIERE_REGOLARE, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_PIONIERE_REGOLARE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
     if tipo == "Pioniere speciale":
-        _s21_centro_box(c, S21_BOX_PIONIERE_SPECIALE, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_PIONIERE_SPECIALE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
     if tipo == "Missionario sul campo":
-        _s21_centro_box(c, S21_BOX_MISSIONARIO, offset, font_size=S21_FONT_CHECK_HEADER)
+        _s21_centro_box(c, S21_BOX_MISSIONARIO, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
 
     c.setFillColorRGB(*S21_COLORE_NERO)
 
@@ -597,6 +626,10 @@ def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame, anno_c
     righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
     righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
 
+    nota_inattivo = _s21_nota_inattivo_dal(riga_anagrafica)
+    righe_corrente = _s21_con_nota_prima_riga(righe_corrente, nota_inattivo)
+    righe_precedente = _s21_con_nota_prima_riga(righe_precedente, nota_inattivo)
+
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
     _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
@@ -631,6 +664,10 @@ def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame, anno
 
         righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
         righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
+
+        nota_inattivo = _s21_nota_inattivo_dal(riga_anagrafica)
+        righe_corrente = _s21_con_nota_prima_riga(righe_corrente, nota_inattivo)
+        righe_precedente = _s21_con_nota_prima_riga(righe_precedente, nota_inattivo)
 
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
@@ -1174,7 +1211,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
                                         index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente),
                                         key=f"stato_{chiave}")
         attivi_inattivi = {v: k for k, v in ETICHETTE_ATTIVI_INATTIVI.items()}[etichetta_stato]
-        dal = st.date_input("Inattivo Da", value=parse_data(e.get("Dal", "")),
+        dal = st.date_input("Inattivo Da", value=parse_data(e.get("Inattivo dal", "")),
                              format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}")
 
         st.divider()
@@ -1231,7 +1268,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             "Irregolare": "X" if irregolare else "",
             "Irregolare da Mesi": str(irregolare_mesi) if irregolare else "",
             "Attivi / Inattivi": attivi_inattivi,
-            "Dal": dal.strftime("%d/%m/%Y") if dal else "",
+            "Inattivo dal": dal.strftime("%d/%m/%Y") if dal else "",
             "Anni Età": calcola_eta(data_nascita_str),
             "Anni Batt": calcola_eta(data_battesimo_str),
         }
@@ -1358,7 +1395,8 @@ def mostra_cartoline_registrazione():
         vai_a("home")
         st.rerun()
     st.title("📇 Cartoline di registrazione")
-    st.caption("Scegli l'anno di servizio e i Proclamatori Attivi per cui generare la scheda S-21.")
+    st.caption("Scegli l'anno di servizio e i Proclamatori per cui generare la scheda S-21. "
+               "Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -1391,19 +1429,23 @@ def mostra_cartoline_registrazione():
     st.caption(f"La prima cartolina riporterà **{anno_scelto - 1}-{anno_scelto}**, "
                f"la seconda **{anno_scelto}-{anno_scelto + 1}**.")
 
-    df_attivi = df.reset_index(drop=True)
-    if "Attivi / Inattivi" in df_attivi.columns:
-        categorie = df_attivi["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
-        df_attivi = df_attivi[categorie == "A"]
-    df_attivi = df_attivi[df_attivi["Cognome e Nome"].astype(str).str.strip() != ""]
+    df_lista = df.reset_index(drop=True)
+    if "Attivi / Inattivi" in df_lista.columns:
+        categorie = df_lista["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+        df_lista = df_lista[categorie.isin(["A", "I"])]
+        stato_per_nome = dict(zip(df_lista["Cognome e Nome"].astype(str).str.strip(),
+                                   categorie[df_lista.index]))
+    else:
+        stato_per_nome = {}
+    df_lista = df_lista[df_lista["Cognome e Nome"].astype(str).str.strip() != ""]
 
     ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
-    df_mostrato = df_attivi
+    df_mostrato = df_lista
     if ricerca:
         df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
     df_mostrato = df_mostrato.sort_values("Cognome e Nome")
 
-    nomi_tutti_attivi = [str(n).strip() for n in df_attivi["Cognome e Nome"] if str(n).strip()]
+    nomi_tutti = [str(n).strip() for n in df_lista["Cognome e Nome"] if str(n).strip()]
     nomi_visibili = [str(n).strip() for n in df_mostrato["Cognome e Nome"] if str(n).strip()]
 
     def _chiave_cb(nome: str) -> str:
@@ -1417,20 +1459,21 @@ def mostra_cartoline_registrazione():
             st.rerun()
     with col_nessuno:
         if st.button("⬜ Deseleziona tutti", use_container_width=True):
-            for nome in nomi_tutti_attivi:
+            for nome in nomi_tutti:
                 st.session_state[_chiave_cb(nome)] = False
             st.rerun()
 
-    selezionati = [nome for nome in nomi_tutti_attivi if st.session_state.get(_chiave_cb(nome), False)]
-    st.caption(f"{len(selezionati)} selezionati su {len(df_attivi)} Attivi totali.")
+    selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
+    st.caption(f"{len(selezionati)} selezionati su {len(df_lista)} Proclamatori totali (Attivi + Inattivi).")
     st.divider()
 
     for nome in nomi_visibili:
-        st.checkbox(nome, key=_chiave_cb(nome))
+        etichetta = f"🔺 {nome}" if stato_per_nome.get(nome) == "I" else nome
+        st.checkbox(etichetta, key=_chiave_cb(nome))
 
     st.divider()
 
-    selezionati = [nome for nome in nomi_tutti_attivi if st.session_state.get(_chiave_cb(nome), False)]
+    selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
     if st.button(f"📄 Genera {n_sel} cartolin{'a' if n_sel == 1 else 'e'} selezionat{'a' if n_sel == 1 else 'e'}",
                  type="primary", use_container_width=True, disabled=n_sel == 0):
