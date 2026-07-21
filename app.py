@@ -434,6 +434,58 @@ def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico)
     return risultato
 
 
+def _s21_righe_anno_aggregate(df_tutti: pd.DataFrame, nomi: list, anno_teocratico) -> dict:
+    """Come _s21_righe_anno_per_nome, ma aggrega più Proclamatori insieme:
+    Ore/Studi/Cred. Ore sono la somma del mese, mentre 'ha_partecipato' e
+    'pioniere_ausiliario' diventano il CONTEGGIO di quante persone quel mese
+    avevano quella casella spuntata (int invece di bool). Usata per le
+    cartoline di riepilogo (Tutti i proclamatori, Pionieri Regolari, ecc.)."""
+    if anno_teocratico is None or df_tutti.empty or not nomi:
+        return {}
+    nomi_lower = {n.strip().lower() for n in nomi if n and n.strip()}
+    if not nomi_lower:
+        return {}
+    righe = df_tutti[df_tutti["Nome"].str.strip().str.lower().isin(nomi_lower)]
+    righe = righe[righe["Mese/Anno"].apply(anno_teocratico_di) == anno_teocratico]
+    if righe.empty:
+        return {}
+
+    risultato = {}
+    for mese in S21_ORDINE_MESI:
+        righe_mese = righe[righe["Anno di servizio"] == mese]
+        if righe_mese.empty:
+            continue
+        conteggio_ministero = int(righe_mese["Ha partecipato al ministero"].astype(bool).sum())
+        conteggio_ausiliario = int(righe_mese["Pioniere ausiliario"].astype(bool).sum())
+        studi_tot = sum(a_float_it(v) for v in righe_mese["Studi Biblici"])
+        ore_tot = sum(a_float_it(v) for v in righe_mese["Ore"])
+        cred_tot = sum(a_float_it(v) for v in righe_mese["Cred. Ore"]) if "Cred. Ore" in righe_mese.columns else 0.0
+        risultato[mese] = {
+            "ha_partecipato": conteggio_ministero,
+            "pioniere_ausiliario": conteggio_ausiliario,
+            "studi": formatta_numero_it(studi_tot) if studi_tot else "",
+            "ore": formatta_numero_it(ore_tot) if ore_tot else "",
+            "cred_ore": formatta_numero_it(cred_tot) if cred_tot else "",
+            "osservazioni": "",
+        }
+    return risultato
+
+
+def _s21_dati_riepilogo(titolo: str) -> dict:
+    """Dati di testata per una cartolina di riepilogo aggregata: solo il
+    titolo nel campo 'Nome e cognome', nessuna data/sesso/incarico (quindi
+    nessuna casella della testata verrà spuntata)."""
+    return {
+        "nome": titolo,
+        "data_nascita": "",
+        "data_battesimo": "",
+        "sesso": "",
+        "incarico": "",
+        "tipo": "",
+        "classe_spirituale": "",
+    }
+
+
 def _s21_nota_inattivo_dal(riga_anagrafica: dict) -> str:
     """Se il Proclamatore è Inattivo, ritorna il testo 'Inattivo dal
     gg/mm/aaaa' da scrivere nella prima riga di Osservazioni. Ritorna
@@ -555,12 +607,16 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         if not riga:
             continue
         top, bottom = S21_RIGHE[mese]
-        if riga.get("ha_partecipato"):
-            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA,
-                             sposta=S21_SPOSTAMENTO_RIGHE)
-        if riga.get("pioniere_ausiliario"):
-            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA,
-                             sposta=S21_SPOSTAMENTO_RIGHE)
+        valore_ministero = riga.get("ha_partecipato")
+        if valore_ministero:
+            testo_ministero = "X" if isinstance(valore_ministero, bool) else str(valore_ministero)
+            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset, testo=testo_ministero,
+                             font_size=S21_FONT_CHECK_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
+        valore_ausiliario = riga.get("pioniere_ausiliario")
+        if valore_ausiliario:
+            testo_ausiliario = "X" if isinstance(valore_ausiliario, bool) else str(valore_ausiliario)
+            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset, testo=testo_ausiliario,
+                             font_size=S21_FONT_CHECK_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
 
         studi_val = str(riga.get("studi") or "").strip()
         if studi_val and studi_val != "0":
@@ -752,6 +808,87 @@ def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente
             nome_file = _s21_nome_file_sicuro(nome) + ".pdf"
             percorso = f"Anno {anno_cartella}/{sotto_cartella}/{nome_file}"
             zf.writestr(percorso, pdf_bytes)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
+    """Genera una cartolina S-21 di riepilogo aggregato per una categoria
+    (es. 'Tutti i proclamatori', 'Tutti i pionieri regolari'): stessa
+    grafica delle cartoline individuali, ma con conteggi e somme al posto
+    dei dati di una singola persona."""
+    anno_precedente = anno_corrente - 1
+    dati = _s21_dati_riepilogo(titolo)
+    righe_corrente = _s21_righe_anno_aggregate(df_tutti, nomi, anno_corrente)
+    righe_precedente = _s21_righe_anno_aggregate(df_tutti, nomi, anno_precedente)
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
+    _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
+    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente)
+    c.save()
+    buf.seek(0)
+
+    overlay_reader = PdfReader(buf)
+    template_reader = PdfReader(PERCORSO_MODULO_S21)
+    writer = PdfWriter()
+    pagina = template_reader.pages[0]
+    pagina.merge_page(overlay_reader.pages[0])
+    writer.add_page(pagina)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
+    """Genera il pacchetto ZIP completo e ufficiale: una cartolina per
+    OGNI Proclamatore Attivo o Inattivo in Anagrafica (i Trasferiti sono
+    esclusi), più le quattro cartoline di riepilogo aggregato (solo sugli
+    Attivi) nella cartella principale. Non dipende da nessuna selezione: è
+    pensato per essere sempre coerente e completo."""
+    anno_cartella = anno_corrente + 1
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1) Una cartolina per ciascun Proclamatore Attivo o Inattivo (Trasferiti esclusi).
+        for _, riga in df.iterrows():
+            riga_dict = riga.to_dict()
+            nome = (riga_dict.get("Cognome e Nome") or "").strip()
+            if not nome:
+                continue
+            if categoria_stato_proclamatore(riga_dict.get("Attivi / Inattivi", "")) == "TR":
+                continue
+            pdf_bytes = genera_pdf_s21_singolo(riga_dict, df_tutti, anno_corrente)
+            sotto_cartella = _s21_cartella_per_riga(riga_dict)
+            nome_file = _s21_nome_file_sicuro(nome) + ".pdf"
+            zf.writestr(f"Anno {anno_cartella}/{sotto_cartella}/{nome_file}", pdf_bytes)
+
+        # 2) Cartoline di riepilogo aggregato, solo sugli Attivi, nella cartella principale.
+        if "Attivi / Inattivi" in df.columns:
+            categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+            df_attivi = df[categorie == "A"]
+        else:
+            df_attivi = df
+
+        def _nomi_per_tipo(tipo_cercato):
+            return [str(r.get("Cognome e Nome", "")).strip() for _, r in df_attivi.iterrows()
+                    if (r.get("Tipo") or "").strip() == tipo_cercato and str(r.get("Cognome e Nome", "")).strip()]
+
+        nomi_tutti_attivi = [str(n).strip() for n in df_attivi["Cognome e Nome"] if str(n).strip()]
+
+        riepiloghi = [
+            ("Tutti i proclamatori", nomi_tutti_attivi, "Riepilogo Tutti i Proclamatori.pdf"),
+            ("Tutti i pionieri regolari", _nomi_per_tipo("Pioniere Regolare"), "Riepilogo Pionieri Regolari.pdf"),
+            ("Tutti i pionieri speciali", _nomi_per_tipo("Pioniere speciale"), "Riepilogo Pionieri Speciali.pdf"),
+            ("Tutti i missionari sul campo", _nomi_per_tipo("Missionario sul campo"),
+             "Riepilogo Missionari sul Campo.pdf"),
+        ]
+        for titolo, nomi, nome_file in riepiloghi:
+            if not nomi:
+                continue
+            pdf_bytes = genera_pdf_s21_riepilogo(titolo, nomi, df_tutti, anno_corrente)
+            zf.writestr(f"Anno {anno_cartella}/{nome_file}", pdf_bytes)
+
     buf.seek(0)
     return buf.getvalue()
 
@@ -1428,6 +1565,32 @@ def mostra_cartoline_registrazione():
     )
     st.caption(f"La prima cartolina riporterà **{anno_scelto - 1}-{anno_scelto}**, "
                f"la seconda **{anno_scelto}-{anno_scelto + 1}**.")
+
+    st.divider()
+    st.markdown("#### 🗂️ Pacchetto completo")
+    st.caption("Genera in un colpo solo la cartolina di **ogni** Proclamatore Attivo o Inattivo "
+               "più le 4 cartoline di riepilogo (Tutti i proclamatori, Pionieri Regolari, Pionieri Speciali, "
+               "Missionari sul campo). Non dipende dalla selezione qui sotto: è il pacchetto ufficiale, "
+               "sempre completo e coerente.")
+    if st.button("🗂️ Crea tutti i PDF delle registrazioni", type="primary", use_container_width=True):
+        with st.spinner("Genero il pacchetto completo…"):
+            zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
+        st.session_state.cartoline_pacchetto_completo = zip_completo
+
+    if st.session_state.get("cartoline_pacchetto_completo"):
+        st.download_button(
+            "⬇️ Scarica il pacchetto completo (ZIP)",
+            data=st.session_state.cartoline_pacchetto_completo,
+            file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
+            mime="application/zip",
+            key="download_pacchetto_completo",
+            use_container_width=True,
+        )
+    st.divider()
+    st.markdown("#### ✏️ Rigenera solo una selezione")
+    st.caption("Utile per rigenerare rapidamente una o poche cartoline dopo una correzione. "
+               "Non sostituisce il pacchetto completo qui sopra: se rigeneri qui, ricordati di "
+               "aggiornare anche il pacchetto ufficiale, altrimenti lo ZIP già distribuito resta disallineato.")
 
     df_lista = df.reset_index(drop=True)
     if "Attivi / Inattivi" in df_lista.columns:
