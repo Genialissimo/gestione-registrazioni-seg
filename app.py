@@ -86,18 +86,48 @@ S21_OFFSET_PANNELLO = 421.0  # distanza verticale tra il pannello alto e quello 
 S21_ORDINE_MESI = ["Settembre", "Ottobre", "Novembre", "Dicembre", "Gennaio", "Febbraio",
                     "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto"]
 
-S21_RIGHE_TOP = {
-    "Settembre": 158.4, "Ottobre": 176.2, "Novembre": 193.9, "Dicembre": 211.6,
-    "Gennaio": 229.4, "Febbraio": 247.1, "Marzo": 264.8, "Aprile": 282.6,
-    "Maggio": 300.3, "Giugno": 318.0, "Luglio": 335.8, "Agosto": 353.5,
+# Coordinate (top, bottom) di ciascuna riga mensile, misurate sui quadratini
+# reali del modello (non sulle etichette) per un allineamento preciso.
+S21_RIGHE = {
+    "Settembre": (158.44, 171.09), "Ottobre": (176.17, 188.83), "Novembre": (193.90, 206.56),
+    "Dicembre": (211.64, 224.29), "Gennaio": (229.37, 242.02), "Febbraio": (247.10, 259.75),
+    "Marzo": (264.83, 277.48), "Aprile": (282.56, 295.21), "Maggio": (300.29, 312.94),
+    "Giugno": (318.02, 330.68), "Luglio": (335.75, 348.41), "Agosto": (353.48, 366.14),
 }
-S21_TOTALE_TOP = 377.8
+S21_TOTALE_RIGA = (371.9, 389.5)
 
-S21_COL_MINISTERO_X = 131.5
-S21_COL_AUSILIARIO_X = 272.7
-S21_COL_STUDI_X = 203.0
-S21_COL_ORE_X = 336.0
-S21_COL_OSSERVAZIONI_X = 451.0
+# Colonne della tabella mensile: (x0, x1) dei quadratini o del corpo colonna.
+S21_COL_MINISTERO = (130.28, 143.01)
+S21_COL_AUSILIARIO = (271.52, 284.25)
+S21_COL_STUDI = (172.0, 242.6)
+S21_COL_ORE = (313.2, 383.8)
+S21_COL_OSSERVAZIONI_X = 388.5  # allineato a sinistra, con piccolo margine dal bordo colonna (383.8)
+
+# Quadratini della testata (sesso, classe spirituale, incarico/tipo), misurati
+# sui glifi reali del modello: (x0, x1, top, bottom).
+S21_BOX_SESSO_M = (384.18, 394.4, 53.12, 63.28)
+S21_BOX_SESSO_F = (485.58, 495.8, 53.12, 63.28)
+S21_BOX_ALTRE_PECORE = (384.18, 394.4, 67.65, 77.8)
+S21_BOX_UNTO = (485.58, 495.8, 67.65, 77.8)
+S21_BOX_ANZIANO = (17.03, 27.25, 82.08, 92.24)
+S21_BOX_SERVITORE = (80.58, 90.8, 82.08, 92.24)
+S21_BOX_PIONIERE_REGOLARE = (216.05, 226.27, 82.08, 92.24)
+S21_BOX_PIONIERE_SPECIALE = (327.5, 337.72, 82.08, 92.24)
+S21_BOX_MISSIONARIO = (436.37, 446.59, 82.08, 92.24)
+
+# Font (aumentati di 1-2 pt rispetto alla versione precedente).
+S21_COL_ANNO_SERVIZIO = (17.5, 101.4)  # colonna "Anno di servizio"
+S21_ANNO_LABEL_TOP = 145.5  # tra l'intestazione di colonna e la prima riga (Settembre)
+
+S21_FONT_VALORI = 10.5      # nome, date
+S21_FONT_CHECK_HEADER = 9.5  # X nei quadratini della testata
+S21_FONT_TABELLA = 9.5      # testo/numeri nella tabella mensile
+S21_FONT_CHECK_TABELLA = 10.5  # X nei quadratini della tabella mensile
+S21_FONT_ETA = 8.5          # età calcolata accanto alle date, in rosso
+
+S21_COLORE_ROSSO = (0.827, 0.125, 0.125)  # stesso rosso #D32F2F usato nel form web
+S21_COLORE_NERO = (0, 0, 0)
+
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -347,11 +377,38 @@ def _s21_y_da_bottom(bottom: float, offset: float = 0.0, alza: float = 1.5) -> f
     return S21_PAGE_H - (bottom + offset - alza)
 
 
+def _s21_centro_box(c: rl_canvas.Canvas, box: tuple, offset: float, testo: str = "X",
+                     font_name: str = "Helvetica-Bold", font_size: float = 10.0):
+    """Disegna 'testo' (di norma una 'X') perfettamente centrato — sia in
+    orizzontale che in verticale — dentro un quadratino le cui coordinate
+    reali (x0, x1, top, bottom) sono state misurate sul modello PDF."""
+    x0, x1, top, bottom = box
+    fattore_altezza_maiuscole = 0.717  # approssimazione per Helvetica-Bold
+    largo_testo = c.stringWidth(testo, font_name, font_size)
+    x = (x0 + x1) / 2 - largo_testo / 2
+    centro_verticale_top = (top + bottom) / 2 + offset
+    baseline_top = centro_verticale_top + (font_size * fattore_altezza_maiuscole) / 2
+    y = S21_PAGE_H - baseline_top
+    c.setFont(font_name, font_size)
+    c.drawString(x, y, testo)
+
+
+def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top: float, bottom: float,
+                                 offset: float, font_name: str = "Helvetica", font_size: float = 9.5):
+    """Scrive 'testo' centrato orizzontalmente in una colonna (x0, x1) e
+    centrato verticalmente in una riga (top, bottom)."""
+    x0, x1 = col
+    largo_testo = c.stringWidth(testo, font_name, font_size)
+    x = (x0 + x1) / 2 - largo_testo / 2
+    c.setFont(font_name, font_size)
+    c.drawString(x, _s21_y_da_top((top + bottom) / 2, offset, alza=font_size * 0.36), testo)
+
+
 def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico) -> dict:
     """Ritorna un dizionario {nome_mese: {ha_partecipato, pioniere_ausiliario,
-    studi, ore, osservazioni}} per un Proclamatore e un anno teocratico dati,
-    pescando dal DataFrame prodotto da leggi_foglio_tutti(). Ritorna un
-    dizionario vuoto se l'anno è None o non ci sono rapporti."""
+    studi, ore, cred_ore, osservazioni}} per un Proclamatore e un anno
+    teocratico dati, pescando dal DataFrame prodotto da leggi_foglio_tutti().
+    Ritorna un dizionario vuoto se l'anno è None o non ci sono rapporti."""
     if anno_teocratico is None or df_tutti.empty:
         return {}
     righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
@@ -364,77 +421,135 @@ def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico)
             "pioniere_ausiliario": bool(r["Pioniere ausiliario"]),
             "studi": r["Studi Biblici"],
             "ore": r["Ore"],
+            "cred_ore": r.get("Cred. Ore", ""),
             "osservazioni": r["Osservazioni"],
         }
     return risultato
 
 
-def _s21_anni_disponibili_per_nome(df_tutti: pd.DataFrame, nome: str) -> list:
-    """Ritorna gli anni teocratici (int) per cui esistono rapporti per un
-    Proclamatore, ordinati dal più recente al più vecchio."""
+def _s21_anni_teocratici_presenti(df_tutti: pd.DataFrame) -> list:
+    """Ritorna tutti gli anni teocratici (int) presenti nel foglio 'Tutti',
+    su tutti i Proclamatori, ordinati dal più recente al più vecchio. Usata
+    per popolare il menu a tendina di scelta dell'anno in Cartoline di
+    registrazione."""
     if df_tutti.empty:
         return []
-    righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
-    anni = sorted({a for a in righe_persona["Mese/Anno"].apply(anno_teocratico_di) if a is not None}, reverse=True)
+    anni = sorted({a for a in df_tutti["Mese/Anno"].apply(anno_teocratico_di) if a is not None}, reverse=True)
     return anni
 
 
-def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_anno: dict):
+def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_anno: dict,
+                           anno_teocratico=None):
     """Disegna un pannello completo (dati anagrafici + tabella mensile) sul
     canvas di overlay. 'offset' è 0 per il pannello alto, S21_OFFSET_PANNELLO
-    per quello basso."""
-    c.setFont("Helvetica", 9)
+    per quello basso. 'anno_teocratico' (es. 2025) viene mostrato come
+    intervallo (es. '2025-2026') sotto l'intestazione di colonna."""
+    c.setFillColorRGB(*S21_COLORE_NERO)
+    c.setFont("Helvetica", S21_FONT_VALORI)
     c.drawString(116, _s21_y_da_bottom(51.5, offset), dati.get("nome", ""))
-    c.drawString(104, _s21_y_da_bottom(65.9, offset), dati.get("data_nascita", ""))
-    c.drawString(125, _s21_y_da_bottom(80.4, offset), dati.get("data_battesimo", ""))
 
-    c.setFont("Helvetica-Bold", 9)
+    data_nascita_str = dati.get("data_nascita", "")
+    c.drawString(104, _s21_y_da_bottom(65.9, offset), data_nascita_str)
+    eta = calcola_eta_dettagliata(data_nascita_str)
+    if eta:
+        c.setFillColorRGB(*S21_COLORE_ROSSO)
+        c.setFont("Helvetica-Bold", S21_FONT_ETA)
+        larghezza_data = c.stringWidth(data_nascita_str, "Helvetica", S21_FONT_VALORI)
+        c.drawString(104 + larghezza_data + 6, _s21_y_da_bottom(65.9, offset), f"({eta})")
+        c.setFillColorRGB(*S21_COLORE_NERO)
+
+    data_battesimo_str = dati.get("data_battesimo", "")
+    c.setFont("Helvetica", S21_FONT_VALORI)
+    c.drawString(125, _s21_y_da_bottom(80.4, offset), data_battesimo_str)
+    eta_batt = calcola_eta_dettagliata(data_battesimo_str)
+    if eta_batt:
+        c.setFillColorRGB(*S21_COLORE_ROSSO)
+        c.setFont("Helvetica-Bold", S21_FONT_ETA)
+        larghezza_data_batt = c.stringWidth(data_battesimo_str, "Helvetica", S21_FONT_VALORI)
+        c.drawString(125 + larghezza_data_batt + 6, _s21_y_da_bottom(80.4, offset), f"({eta_batt})")
+        c.setFillColorRGB(*S21_COLORE_NERO)
+
     if dati.get("sesso") == "M":
-        c.drawString(386.5, _s21_y_da_bottom(65.9, offset), "X")
+        _s21_centro_box(c, S21_BOX_SESSO_M, offset, font_size=S21_FONT_CHECK_HEADER)
     elif dati.get("sesso") == "F":
-        c.drawString(488.0, _s21_y_da_bottom(65.9, offset), "X")
+        _s21_centro_box(c, S21_BOX_SESSO_F, offset, font_size=S21_FONT_CHECK_HEADER)
+
+    classe_spirituale = (dati.get("classe_spirituale") or "").strip().upper()
+    if classe_spirituale in ("U", "UNTO"):
+        _s21_centro_box(c, S21_BOX_UNTO, offset, font_size=S21_FONT_CHECK_HEADER)
+    elif classe_spirituale in ("AP", "A", "ALTRE PECORE"):
+        _s21_centro_box(c, S21_BOX_ALTRE_PECORE, offset, font_size=S21_FONT_CHECK_HEADER)
 
     incarico = dati.get("incarico", "")
     tipo = dati.get("tipo", "")
-    caselle_riga = [
-        (19.3, incarico == "Anziano"),
-        (82.9, incarico == "Servitore di ministero"),
-        (218.3, tipo == "Pioniere Regolare"),
-        (329.8, tipo == "Pioniere speciale"),
-        (438.7, tipo == "Missionario sul campo"),
-    ]
-    for x, selezionato in caselle_riga:
-        if selezionato:
-            c.drawString(x, _s21_y_da_top(82.1, offset), "X")
+    if incarico == "Anziano":
+        _s21_centro_box(c, S21_BOX_ANZIANO, offset, font_size=S21_FONT_CHECK_HEADER)
+    if incarico == "Servitore di ministero":
+        _s21_centro_box(c, S21_BOX_SERVITORE, offset, font_size=S21_FONT_CHECK_HEADER)
+    if tipo == "Pioniere Regolare":
+        _s21_centro_box(c, S21_BOX_PIONIERE_REGOLARE, offset, font_size=S21_FONT_CHECK_HEADER)
+    if tipo == "Pioniere speciale":
+        _s21_centro_box(c, S21_BOX_PIONIERE_SPECIALE, offset, font_size=S21_FONT_CHECK_HEADER)
+    if tipo == "Missionario sul campo":
+        _s21_centro_box(c, S21_BOX_MISSIONARIO, offset, font_size=S21_FONT_CHECK_HEADER)
 
-    c.setFont("Helvetica", 8)
+    c.setFillColorRGB(*S21_COLORE_NERO)
+
+    if anno_teocratico is not None:
+        etichetta_anno = f"{anno_teocratico}-{anno_teocratico + 1}"
+        c.setFont("Helvetica-Bold", S21_FONT_TABELLA)
+        largo_anno = c.stringWidth(etichetta_anno, "Helvetica-Bold", S21_FONT_TABELLA)
+        x0_col, x1_col = S21_COL_ANNO_SERVIZIO
+        x_anno = (x0_col + x1_col) / 2 - largo_anno / 2
+        c.drawString(x_anno, _s21_y_da_top(S21_ANNO_LABEL_TOP, offset, alza=S21_FONT_TABELLA * 0.36),
+                     etichetta_anno)
+
     totale_ore = 0.0
-    totale_studi = 0.0
+    totale_cred_ore = 0.0
     for mese in S21_ORDINE_MESI:
         riga = righe_anno.get(mese)
         if not riga:
             continue
-        top = S21_RIGHE_TOP[mese]
+        top, bottom = S21_RIGHE[mese]
         if riga.get("ha_partecipato"):
-            c.drawString(S21_COL_MINISTERO_X, _s21_y_da_top(top, offset, alza=9.5), "X")
+            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA)
         if riga.get("pioniere_ausiliario"):
-            c.drawString(S21_COL_AUSILIARIO_X, _s21_y_da_top(top, offset, alza=9.5), "X")
+            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA)
+
         studi_val = str(riga.get("studi") or "").strip()
         if studi_val and studi_val != "0":
-            c.drawString(S21_COL_STUDI_X, _s21_y_da_top(top, offset, alza=9.5), studi_val)
-            totale_studi += a_float_it(studi_val)
+            _s21_testo_centrato_colonna(c, studi_val, S21_COL_STUDI, top, bottom, offset,
+                                         font_size=S21_FONT_TABELLA)
+
         ore_val = str(riga.get("ore") or "").strip()
+        cred_ore_val = str(riga.get("cred_ore") or "").strip()
         if ore_val and ore_val != "0":
-            c.drawString(S21_COL_ORE_X, _s21_y_da_top(top, offset, alza=9.5), ore_val)
+            _s21_testo_centrato_colonna(c, ore_val, S21_COL_ORE, top, bottom, offset,
+                                         font_size=S21_FONT_TABELLA)
             totale_ore += a_float_it(ore_val)
+        if cred_ore_val and cred_ore_val != "0":
+            totale_cred_ore += a_float_it(cred_ore_val)
+
         osservazioni_val = str(riga.get("osservazioni") or "").strip()
         if osservazioni_val:
-            c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top(top, offset, alza=9.5), osservazioni_val[:38])
+            c.setFont("Helvetica", S21_FONT_TABELLA)
+            c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top + bottom) / 2, offset,
+                                                                 alza=S21_FONT_TABELLA * 0.36),
+                         osservazioni_val[:44])
 
+    top_tot, bottom_tot = S21_TOTALE_RIGA
     if totale_ore:
-        c.drawString(S21_COL_ORE_X, _s21_y_da_top(S21_TOTALE_TOP, offset, alza=9.5), formatta_numero_it(totale_ore))
-    if totale_studi:
-        c.drawString(S21_COL_STUDI_X, _s21_y_da_top(S21_TOTALE_TOP, offset, alza=9.5), formatta_numero_it(totale_studi))
+        c.setFont("Helvetica-Bold", S21_FONT_TABELLA)
+        c.drawString(S21_COL_ORE[0], _s21_y_da_top((top_tot + bottom_tot) / 2, offset,
+                                                      alza=S21_FONT_TABELLA * 0.36), formatta_numero_it(totale_ore))
+    if totale_cred_ore:
+        totale_finale = totale_ore + totale_cred_ore
+        testo_crediti = (f"{formatta_numero_it(totale_ore)} + ({formatta_numero_it(totale_cred_ore)}) "
+                          f"= {formatta_numero_it(totale_finale)}")
+        c.setFont("Helvetica", S21_FONT_TABELLA)
+        c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top_tot + bottom_tot) / 2, offset,
+                                                             alza=S21_FONT_TABELLA * 0.36), testo_crediti)
+    # La somma degli Studi biblici non viene più riportata nel totale, su richiesta.
 
 
 def _s21_dati_da_riga_anagrafica(riga: dict) -> dict:
@@ -447,27 +562,27 @@ def _s21_dati_da_riga_anagrafica(riga: dict) -> dict:
         "sesso": (riga.get("Sesso", "") or "").strip().upper()[:1],
         "incarico": riga.get("Incarico", ""),
         "tipo": riga.get("Tipo", ""),
+        "classe_spirituale": riga.get("A/U", ""),
     }
 
 
-def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame) -> bytes:
+def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
     """Genera il PDF del modulo S-21 per un singolo Proclamatore: pannello
-    alto con l'anno di servizio più recente disponibile, pannello basso con
-    quello precedente. Ritorna i byte del PDF pronto da scaricare."""
+    basso con l'anno teocratico scelto dall'utente (es. 2025 → '2025-2026'),
+    pannello alto con l'anno precedente (es. 2024 → '2024-2025'). Ritorna i
+    byte del PDF pronto da scaricare."""
     nome = riga_anagrafica.get("Cognome e Nome", "")
     dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
 
-    anni = _s21_anni_disponibili_per_nome(df_tutti, nome)
-    anno_corrente = anni[0] if len(anni) >= 1 else None
-    anno_precedente = anni[1] if len(anni) >= 2 else None
+    anno_precedente = anno_corrente - 1
 
     righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
     righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
-    _s21_disegna_pannello(c, 0.0, dati, righe_precedente)
-    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente)
+    _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
+    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente)
     c.save()
     buf.seek(0)
 
@@ -484,7 +599,7 @@ def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame) -> byt
     return out.getvalue()
 
 
-def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame) -> bytes:
+def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
     """Genera un unico PDF con una pagina per ciascun Proclamatore passato
     in 'righe_anagrafica' (lista di dizionari, come per il singolo)."""
     writer = PdfWriter()
@@ -494,17 +609,15 @@ def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame) -> b
         nome = riga_anagrafica.get("Cognome e Nome", "")
         dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
 
-        anni = _s21_anni_disponibili_per_nome(df_tutti, nome)
-        anno_corrente = anni[0] if len(anni) >= 1 else None
-        anno_precedente = anni[1] if len(anni) >= 2 else None
+        anno_precedente = anno_corrente - 1
 
         righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
         righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
 
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
-        _s21_disegna_pannello(c, 0.0, dati, righe_precedente)
-        _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente)
+        _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
+        _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente)
         c.save()
         buf.seek(0)
 
@@ -564,19 +677,22 @@ def _s21_cartella_per_riga(riga: dict) -> str:
     return f"Attivi/Proclamatori/{gruppo}"
 
 
-def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame) -> bytes:
+def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
     """Genera uno ZIP con una scheda S-21 per ciascun Proclamatore in
     'righe_anagrafica', organizzate secondo la struttura di cartelle
     'Anno AAAA/Attivi/…', 'Anno AAAA/Inattivi/…' ecc., col nome del file
-    uguale al Cognome e Nome. Pronto da scompattare dentro Dropbox o Drive."""
-    anno_cartella = _s21_anno_cartella_corrente()
+    uguale al Cognome e Nome. 'anno_corrente' è l'anno teocratico scelto
+    dall'utente (es. 2025): la cartella principale sarà 'Anno 2026' (l'anno
+    in cui l'anno di servizio 2025-2026 termina). Pronto da scompattare
+    dentro Dropbox o Drive."""
+    anno_cartella = anno_corrente + 1
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for riga in righe_anagrafica:
             nome = (riga.get("Cognome e Nome") or "").strip()
             if not nome:
                 continue
-            pdf_bytes = genera_pdf_s21_singolo(riga, df_tutti)
+            pdf_bytes = genera_pdf_s21_singolo(riga, df_tutti, anno_corrente)
             sotto_cartella = _s21_cartella_per_riga(riga)
             nome_file = _s21_nome_file_sicuro(nome) + ".pdf"
             percorso = f"Anno {anno_cartella}/{sotto_cartella}/{nome_file}"
@@ -670,13 +786,16 @@ def mostra_home():
     st.title("Pannello di controllo")
 
     st.subheader("Sezioni")
-    c1, c2, c3 = st.columns(3)
     card_data = [
         ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni"),
         ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico"),
         ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche"),
+        ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline"),
     ]
-    for col, (icon, titolo, desc, pagina) in zip((c1, c2, c3), card_data):
+    riga1 = st.columns(2)
+    riga2 = st.columns(2)
+    colonne = riga1 + riga2
+    for col, (icon, titolo, desc, pagina) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
                 st.markdown(f"#### {icon}  {titolo}")
@@ -1138,35 +1257,9 @@ def mostra_anagrafiche():
         return
 
     # ── Elenco Proclamatori a riquadri pieghevoli ───────────────────────
-    col_nuovo, col_pdf_tutti = st.columns([2, 1])
-    with col_nuovo:
-        if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
-            st.session_state.anagrafica_nuovo = True
-            st.rerun()
-    with col_pdf_tutti:
-        if st.button("📦 Esporta ZIP schede S-21", use_container_width=True):
-            if not os.path.exists(PERCORSO_MODULO_S21):
-                st.error(f"Modulo S-21 non trovato: metti il file «S-21_s-Mlt_I.pdf» "
-                         f"nella stessa cartella di app.py.")
-            else:
-                df_tutti, err_tutti = leggi_foglio_tutti(workbook)
-                if err_tutti:
-                    st.error(err_tutti)
-                else:
-                    righe = [r.to_dict() for _, r in df.iterrows()]
-                    if not righe:
-                        st.warning("Nessun Proclamatore trovato in Anagrafica.")
-                    else:
-                        with st.spinner("Genero le schede…"):
-                            zip_bytes = genera_zip_s21(righe, df_tutti)
-                        st.download_button(
-                            "⬇️ Scarica ZIP",
-                            data=zip_bytes,
-                            file_name=f"Schede_S21_{_s21_anno_cartella_corrente()}.zip",
-                            mime="application/zip",
-                            key="download_s21_zip",
-                            use_container_width=True,
-                        )
+    if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+        st.session_state.anagrafica_nuovo = True
+        st.rerun()
 
     ricerca = st.text_input("🔍 Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
 
@@ -1238,26 +1331,116 @@ def mostra_anagrafiche():
                                   chiave=chiave_persona, modo_nuovo=False,
                                   chiave_expander="anagrafica_aperto")
 
-                if not os.path.exists(PERCORSO_MODULO_S21):
-                    st.caption("⚠️ Modulo S-21 non trovato accanto ad app.py: impossibile generare il PDF.")
-                elif st.button("📄 Genera scheda S-21", key=f"s21_genera_{chiave_persona}",
-                                use_container_width=True):
-                    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
-                    if err_tutti:
-                        st.error(err_tutti)
-                    else:
-                        pdf_bytes = genera_pdf_s21_singolo(riga.to_dict(), df_tutti)
-                        st.session_state[f"s21_pdf_{chiave_persona}"] = pdf_bytes
 
-                if st.session_state.get(f"s21_pdf_{chiave_persona}"):
-                    st.download_button(
-                        "⬇️ Scarica PDF",
-                        data=st.session_state[f"s21_pdf_{chiave_persona}"],
-                        file_name=f"{_s21_nome_file_sicuro(nome)}.pdf",
-                        mime="application/pdf",
-                        key=f"s21_download_{chiave_persona}",
-                        use_container_width=True,
-                    )
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
+# ─────────────────────────────────────────────────────────────────
+def mostra_cartoline_registrazione():
+    if st.button("🏠 Torna alla Home", key="home_da_cartoline", type="primary", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+    st.title("📇 Cartoline di registrazione")
+    st.caption("Scegli l'anno di servizio e i Proclamatori Attivi per cui generare la scheda S-21.")
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    if not os.path.exists(PERCORSO_MODULO_S21):
+        st.error("Modulo S-21 non trovato: metti il file «S-21_s-Mlt_I.pdf» nella stessa cartella di app.py.")
+        return
+
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err:
+        st.error(err)
+        return
+    if df.empty or "Cognome e Nome" not in df.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
+        return
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+
+    # ── Scelta dell'anno teocratico, come in Storico rapporti consegnati ──
+    anni_presenti = _s21_anni_teocratici_presenti(df_tutti)
+    if not anni_presenti:
+        anno_oggi = datetime.now().year
+        anni_presenti = [anno_oggi - 1, anno_oggi]
+    anno_scelto = st.selectbox(
+        "Anno teocratico da scrivere sulla cartolina",
+        anni_presenti,
+        format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+    )
+    st.caption(f"La prima cartolina riporterà **{anno_scelto - 1}-{anno_scelto}**, "
+               f"la seconda **{anno_scelto}-{anno_scelto + 1}**.")
+
+    df_attivi = df.reset_index(drop=True)
+    if "Attivi / Inattivi" in df_attivi.columns:
+        categorie = df_attivi["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+        df_attivi = df_attivi[categorie == "A"]
+    df_attivi = df_attivi[df_attivi["Cognome e Nome"].astype(str).str.strip() != ""]
+
+    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+    df_mostrato = df_attivi
+    if ricerca:
+        df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
+    df_mostrato = df_mostrato.sort_values("Cognome e Nome")
+
+    if "cartoline_selezionati" not in st.session_state:
+        st.session_state.cartoline_selezionati = set()
+
+    nomi_visibili = [str(n).strip() for n in df_mostrato["Cognome e Nome"] if str(n).strip()]
+
+    col_tutti, col_nessuno = st.columns(2)
+    with col_tutti:
+        if st.button("☑️ Seleziona tutti (visibili)", use_container_width=True):
+            st.session_state.cartoline_selezionati |= set(nomi_visibili)
+            st.rerun()
+    with col_nessuno:
+        if st.button("⬜ Deseleziona tutti", use_container_width=True):
+            st.session_state.cartoline_selezionati = set()
+            st.rerun()
+
+    st.caption(f"{len(st.session_state.cartoline_selezionati)} selezionati su {len(df_attivi)} Attivi totali.")
+    st.divider()
+
+    for _, riga in df_mostrato.iterrows():
+        nome = str(riga.get("Cognome e Nome", "")).strip()
+        selezionato_prima = nome in st.session_state.cartoline_selezionati
+        selezionato_ora = st.checkbox(nome, value=selezionato_prima, key=f"cb_cartolina_{nome}")
+        if selezionato_ora and not selezionato_prima:
+            st.session_state.cartoline_selezionati.add(nome)
+        elif not selezionato_ora and selezionato_prima:
+            st.session_state.cartoline_selezionati.discard(nome)
+
+    st.divider()
+
+    n_sel = len(st.session_state.cartoline_selezionati)
+    if st.button(f"📄 Genera {n_sel} cartolin{'a' if n_sel == 1 else 'e'} selezionat{'a' if n_sel == 1 else 'e'}",
+                 type="primary", use_container_width=True, disabled=n_sel == 0):
+        righe_sel = [r.to_dict() for _, r in df.iterrows()
+                     if str(r.get("Cognome e Nome", "")).strip() in st.session_state.cartoline_selezionati]
+        with st.spinner("Genero le cartoline…"):
+            if len(righe_sel) == 1:
+                pdf_bytes = genera_pdf_s21_singolo(righe_sel[0], df_tutti, anno_scelto)
+                st.session_state.cartoline_pronto = ("pdf", pdf_bytes, righe_sel[0].get("Cognome e Nome", ""))
+            else:
+                zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_scelto)
+                st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_scelto)
+
+    pronto = st.session_state.get("cartoline_pronto")
+    if pronto:
+        tipo, dati_file, extra = pronto
+        if tipo == "pdf":
+            st.download_button("⬇️ Scarica PDF", data=dati_file,
+                                file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
+                                mime="application/pdf", key="download_cartolina_pdf", use_container_width=True)
+        else:
+            st.download_button("⬇️ Scarica ZIP", data=dati_file,
+                                file_name=f"Schede_S21_{extra + 1}.zip",
+                                mime="application/zip", key="download_cartolina_zip", use_container_width=True)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1502,5 +1685,7 @@ elif st.session_state.pagina == "anagrafiche":
     mostra_anagrafiche()
 elif st.session_state.pagina == "storico":
     mostra_storico_proclamatori()
+elif st.session_state.pagina == "cartoline":
+    mostra_cartoline_registrazione()
 else:
     mostra_home()
