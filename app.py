@@ -118,6 +118,7 @@ S21_BOX_MISSIONARIO = (436.37, 446.59, 82.08, 92.24)
 # Font (aumentati di 1-2 pt rispetto alla versione precedente).
 S21_COL_ANNO_SERVIZIO = (17.5, 101.4)  # colonna "Anno di servizio"
 S21_ANNO_LABEL_TOP = 145.5  # tra l'intestazione di colonna e la prima riga (Settembre)
+S21_SPOSTAMENTO_RIGHE = 2.0  # piccolo spostamento verso il basso per le righe della tabella mensile
 
 S21_FONT_VALORI = 10.5      # nome, date
 S21_FONT_CHECK_HEADER = 9.5  # X nei quadratini della testata
@@ -378,30 +379,35 @@ def _s21_y_da_bottom(bottom: float, offset: float = 0.0, alza: float = 1.5) -> f
 
 
 def _s21_centro_box(c: rl_canvas.Canvas, box: tuple, offset: float, testo: str = "X",
-                     font_name: str = "Helvetica-Bold", font_size: float = 10.0):
+                     font_name: str = "Helvetica-Bold", font_size: float = 10.0, sposta: float = 0.0):
     """Disegna 'testo' (di norma una 'X') perfettamente centrato — sia in
     orizzontale che in verticale — dentro un quadratino le cui coordinate
-    reali (x0, x1, top, bottom) sono state misurate sul modello PDF."""
+    reali (x0, x1, top, bottom) sono state misurate sul modello PDF.
+    'sposta' aggiunge un piccolo spostamento verticale (positivo = più in
+    basso), usato per le righe della tabella mensile."""
     x0, x1, top, bottom = box
     fattore_altezza_maiuscole = 0.717  # approssimazione per Helvetica-Bold
     largo_testo = c.stringWidth(testo, font_name, font_size)
     x = (x0 + x1) / 2 - largo_testo / 2
     centro_verticale_top = (top + bottom) / 2 + offset
-    baseline_top = centro_verticale_top + (font_size * fattore_altezza_maiuscole) / 2
+    baseline_top = centro_verticale_top + (font_size * fattore_altezza_maiuscole) / 2 + sposta
     y = S21_PAGE_H - baseline_top
     c.setFont(font_name, font_size)
     c.drawString(x, y, testo)
 
 
 def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top: float, bottom: float,
-                                 offset: float, font_name: str = "Helvetica", font_size: float = 9.5):
+                                 offset: float, font_name: str = "Helvetica", font_size: float = 9.5,
+                                 sposta: float = 0.0):
     """Scrive 'testo' centrato orizzontalmente in una colonna (x0, x1) e
-    centrato verticalmente in una riga (top, bottom)."""
+    centrato verticalmente in una riga (top, bottom). 'sposta' aggiunge un
+    piccolo spostamento verticale (positivo = più in basso)."""
     x0, x1 = col
     largo_testo = c.stringWidth(testo, font_name, font_size)
     x = (x0 + x1) / 2 - largo_testo / 2
     c.setFont(font_name, font_size)
-    c.drawString(x, _s21_y_da_top((top + bottom) / 2, offset, alza=font_size * 0.36), testo)
+    c.drawString(x, _s21_y_da_top((top + bottom) / 2, offset, alza=font_size * 0.36 + sposta), testo)
+
 
 
 def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico) -> dict:
@@ -427,15 +433,24 @@ def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico)
     return risultato
 
 
-def _s21_anni_teocratici_presenti(df_tutti: pd.DataFrame) -> list:
-    """Ritorna tutti gli anni teocratici (int) presenti nel foglio 'Tutti',
-    su tutti i Proclamatori, ordinati dal più recente al più vecchio. Usata
-    per popolare il menu a tendina di scelta dell'anno in Cartoline di
-    registrazione."""
-    if df_tutti.empty:
-        return []
-    anni = sorted({a for a in df_tutti["Mese/Anno"].apply(anno_teocratico_di) if a is not None}, reverse=True)
-    return anni
+def anni_teocratici_per_menu(df_tutti: pd.DataFrame) -> list:
+    """Ritorna l'elenco degli anni teocratici (int) da proporre in un menu a
+    tendina: l'unione tra gli anni per cui esistono già rapporti nel foglio
+    'Tutti' e l'anno teocratico corrente + quello successivo, calcolati
+    dalla data odierna. Così un anno nuovo (es. 2026-2027) compare da solo
+    quando arriva, senza bisogno di aggiornare il codice ogni anno.
+    Ordinati dal più recente al più vecchio."""
+    anni = set()
+    if not df_tutti.empty and "Mese/Anno" in df_tutti.columns:
+        anni |= {a for a in df_tutti["Mese/Anno"].apply(anno_teocratico_di) if a is not None}
+    oggi = datetime.now()
+    anno_di_oggi = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+    if anno_di_oggi is not None:
+        anni.add(anno_di_oggi)
+        anni.add(anno_di_oggi + 1)  # anno successivo, per prepararsi in anticipo
+    if not anni:
+        anni = {oggi.year - 1, oggi.year}
+    return sorted(anni, reverse=True)
 
 
 def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_anno: dict,
@@ -512,20 +527,22 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
             continue
         top, bottom = S21_RIGHE[mese]
         if riga.get("ha_partecipato"):
-            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA)
+            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA,
+                             sposta=S21_SPOSTAMENTO_RIGHE)
         if riga.get("pioniere_ausiliario"):
-            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA)
+            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset, font_size=S21_FONT_CHECK_TABELLA,
+                             sposta=S21_SPOSTAMENTO_RIGHE)
 
         studi_val = str(riga.get("studi") or "").strip()
         if studi_val and studi_val != "0":
             _s21_testo_centrato_colonna(c, studi_val, S21_COL_STUDI, top, bottom, offset,
-                                         font_size=S21_FONT_TABELLA)
+                                         font_size=S21_FONT_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
 
         ore_val = str(riga.get("ore") or "").strip()
         cred_ore_val = str(riga.get("cred_ore") or "").strip()
         if ore_val and ore_val != "0":
             _s21_testo_centrato_colonna(c, ore_val, S21_COL_ORE, top, bottom, offset,
-                                         font_size=S21_FONT_TABELLA)
+                                         font_size=S21_FONT_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
             totale_ore += a_float_it(ore_val)
         if cred_ore_val and cred_ore_val != "0":
             totale_cred_ore += a_float_it(cred_ore_val)
@@ -534,21 +551,22 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         if osservazioni_val:
             c.setFont("Helvetica", S21_FONT_TABELLA)
             c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top + bottom) / 2, offset,
-                                                                 alza=S21_FONT_TABELLA * 0.36),
+                                                                 alza=S21_FONT_TABELLA * 0.36 + S21_SPOSTAMENTO_RIGHE),
                          osservazioni_val[:44])
 
     top_tot, bottom_tot = S21_TOTALE_RIGA
     if totale_ore:
-        c.setFont("Helvetica-Bold", S21_FONT_TABELLA)
-        c.drawString(S21_COL_ORE[0], _s21_y_da_top((top_tot + bottom_tot) / 2, offset,
-                                                      alza=S21_FONT_TABELLA * 0.36), formatta_numero_it(totale_ore))
+        _s21_testo_centrato_colonna(c, formatta_numero_it(totale_ore), S21_COL_ORE, top_tot, bottom_tot, offset,
+                                     font_name="Helvetica-Bold", font_size=S21_FONT_TABELLA,
+                                     sposta=S21_SPOSTAMENTO_RIGHE)
     if totale_cred_ore:
         totale_finale = totale_ore + totale_cred_ore
         testo_crediti = (f"{formatta_numero_it(totale_ore)} + ({formatta_numero_it(totale_cred_ore)}) "
                           f"= {formatta_numero_it(totale_finale)}")
         c.setFont("Helvetica", S21_FONT_TABELLA)
         c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top_tot + bottom_tot) / 2, offset,
-                                                             alza=S21_FONT_TABELLA * 0.36), testo_crediti)
+                                                             alza=S21_FONT_TABELLA * 0.36 + S21_SPOSTAMENTO_RIGHE),
+                     testo_crediti)
     # La somma degli Studi biblici non viene più riportata nel totale, su richiesta.
 
 
@@ -1364,12 +1382,9 @@ def mostra_cartoline_registrazione():
         return
 
     # ── Scelta dell'anno teocratico, come in Storico rapporti consegnati ──
-    anni_presenti = _s21_anni_teocratici_presenti(df_tutti)
-    if not anni_presenti:
-        anno_oggi = datetime.now().year
-        anni_presenti = [anno_oggi - 1, anno_oggi]
+    anni_presenti = anni_teocratici_per_menu(df_tutti)
     anno_scelto = st.selectbox(
-        "Anno teocratico da scrivere sulla cartolina",
+        "Seleziona anno teocratico",
         anni_presenti,
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
@@ -1388,40 +1403,39 @@ def mostra_cartoline_registrazione():
         df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
     df_mostrato = df_mostrato.sort_values("Cognome e Nome")
 
-    if "cartoline_selezionati" not in st.session_state:
-        st.session_state.cartoline_selezionati = set()
-
+    nomi_tutti_attivi = [str(n).strip() for n in df_attivi["Cognome e Nome"] if str(n).strip()]
     nomi_visibili = [str(n).strip() for n in df_mostrato["Cognome e Nome"] if str(n).strip()]
+
+    def _chiave_cb(nome: str) -> str:
+        return f"cb_cartolina_{nome}"
 
     col_tutti, col_nessuno = st.columns(2)
     with col_tutti:
         if st.button("☑️ Seleziona tutti (visibili)", use_container_width=True):
-            st.session_state.cartoline_selezionati |= set(nomi_visibili)
+            for nome in nomi_visibili:
+                st.session_state[_chiave_cb(nome)] = True
             st.rerun()
     with col_nessuno:
         if st.button("⬜ Deseleziona tutti", use_container_width=True):
-            st.session_state.cartoline_selezionati = set()
+            for nome in nomi_tutti_attivi:
+                st.session_state[_chiave_cb(nome)] = False
             st.rerun()
 
-    st.caption(f"{len(st.session_state.cartoline_selezionati)} selezionati su {len(df_attivi)} Attivi totali.")
+    selezionati = [nome for nome in nomi_tutti_attivi if st.session_state.get(_chiave_cb(nome), False)]
+    st.caption(f"{len(selezionati)} selezionati su {len(df_attivi)} Attivi totali.")
     st.divider()
 
-    for _, riga in df_mostrato.iterrows():
-        nome = str(riga.get("Cognome e Nome", "")).strip()
-        selezionato_prima = nome in st.session_state.cartoline_selezionati
-        selezionato_ora = st.checkbox(nome, value=selezionato_prima, key=f"cb_cartolina_{nome}")
-        if selezionato_ora and not selezionato_prima:
-            st.session_state.cartoline_selezionati.add(nome)
-        elif not selezionato_ora and selezionato_prima:
-            st.session_state.cartoline_selezionati.discard(nome)
+    for nome in nomi_visibili:
+        st.checkbox(nome, key=_chiave_cb(nome))
 
     st.divider()
 
-    n_sel = len(st.session_state.cartoline_selezionati)
+    selezionati = [nome for nome in nomi_tutti_attivi if st.session_state.get(_chiave_cb(nome), False)]
+    n_sel = len(selezionati)
     if st.button(f"📄 Genera {n_sel} cartolin{'a' if n_sel == 1 else 'e'} selezionat{'a' if n_sel == 1 else 'e'}",
                  type="primary", use_container_width=True, disabled=n_sel == 0):
         righe_sel = [r.to_dict() for _, r in df.iterrows()
-                     if str(r.get("Cognome e Nome", "")).strip() in st.session_state.cartoline_selezionati]
+                     if str(r.get("Cognome e Nome", "")).strip() in selezionati]
         with st.spinner("Genero le cartoline…"):
             if len(righe_sel) == 1:
                 pdf_bytes = genera_pdf_s21_singolo(righe_sel[0], df_tutti, anno_scelto)
@@ -1539,13 +1553,8 @@ def mostra_storico_proclamatori():
         st.error(err_tutti)
         return
 
-    # ── Elenco anni teocratici disponibili, calcolati dai dati presenti ──
-    anni_presenti = sorted({
-        a for a in (anno_teocratico_di(m) for m in df_tutti["Mese/Anno"]) if a is not None
-    }, reverse=True)
-    if not anni_presenti:
-        anno_corrente = datetime.now().year
-        anni_presenti = [anno_corrente - 1, anno_corrente]
+    # ── Elenco anni teocratici disponibili (dati presenti + anno corrente/successivo) ──
+    anni_presenti = anni_teocratici_per_menu(df_tutti)
 
     col_anno, col_ricerca = st.columns([1, 3])
     with col_anno:
