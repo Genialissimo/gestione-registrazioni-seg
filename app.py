@@ -436,10 +436,12 @@ def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico)
 
 def _s21_righe_anno_aggregate(df_tutti: pd.DataFrame, nomi: list, anno_teocratico) -> dict:
     """Come _s21_righe_anno_per_nome, ma aggrega più Proclamatori insieme:
-    Ore/Studi/Cred. Ore sono la somma del mese, mentre 'ha_partecipato' e
-    'pioniere_ausiliario' diventano il CONTEGGIO di quante persone quel mese
-    avevano quella casella spuntata (int invece di bool). Usata per le
-    cartoline di riepilogo (Tutti i proclamatori, Pionieri Regolari, ecc.)."""
+    Ore/Studi/Cred. Ore sono la somma del mese. Le caselle Ministero e
+    Pioniere ausiliario vengono marcate con una X se quel mese almeno una
+    persona della categoria ha partecipato/fatto l'ausiliario, e il
+    conteggio esatto (quante persone) viene scritto come testo nella
+    colonna Osservazioni. Usata per le cartoline di riepilogo (Tutti i
+    proclamatori, Pionieri Regolari, ecc.)."""
     if anno_teocratico is None or df_tutti.empty or not nomi:
         return {}
     nomi_lower = {n.strip().lower() for n in nomi if n and n.strip()}
@@ -460,13 +462,66 @@ def _s21_righe_anno_aggregate(df_tutti: pd.DataFrame, nomi: list, anno_teocratic
         studi_tot = sum(a_float_it(v) for v in righe_mese["Studi Biblici"])
         ore_tot = sum(a_float_it(v) for v in righe_mese["Ore"])
         cred_tot = sum(a_float_it(v) for v in righe_mese["Cred. Ore"]) if "Cred. Ore" in righe_mese.columns else 0.0
+
+        parti_osservazioni = []
+        if conteggio_ministero:
+            parti_osservazioni.append(f"{conteggio_ministero} nel ministero")
+        if conteggio_ausiliario:
+            parti_osservazioni.append(f"{conteggio_ausiliario} ausiliari")
+
         risultato[mese] = {
-            "ha_partecipato": conteggio_ministero,
-            "pioniere_ausiliario": conteggio_ausiliario,
+            "ha_partecipato": conteggio_ministero > 0,
+            "pioniere_ausiliario": conteggio_ausiliario > 0,
             "studi": formatta_numero_it(studi_tot) if studi_tot else "",
             "ore": formatta_numero_it(ore_tot) if ore_tot else "",
             "cred_ore": formatta_numero_it(cred_tot) if cred_tot else "",
-            "osservazioni": "",
+            "osservazioni": " · ".join(parti_osservazioni),
+        }
+    return risultato
+
+
+def _s21_righe_anno_aggregate_ausiliari(df_tutti: pd.DataFrame, nomi_pool: list, anno_teocratico) -> dict:
+    """Come _s21_righe_anno_aggregate, ma per 'Riepilogo Pionieri Ausiliari':
+    a differenza di Pionieri Regolari/Speciali (lista fissa presa dal Tipo
+    in Anagrafica), qui la lista di chi conta cambia MESE PER MESE, perché
+    'Pioniere ausiliario' è una spunta mensile nel foglio Tutti, non un Tipo
+    fisso. 'nomi_pool' è l'insieme di persone tra cui cercare (di norma
+    tutti gli Attivi); per ogni mese si tengono solo le righe di chi quel
+    mese aveva la spunta, e si sommano/contano solo quelle."""
+    if anno_teocratico is None or df_tutti.empty or not nomi_pool:
+        return {}
+    nomi_lower = {n.strip().lower() for n in nomi_pool if n and n.strip()}
+    if not nomi_lower:
+        return {}
+    righe = df_tutti[df_tutti["Nome"].str.strip().str.lower().isin(nomi_lower)]
+    righe = righe[righe["Mese/Anno"].apply(anno_teocratico_di) == anno_teocratico]
+    righe = righe[righe["Pioniere ausiliario"].astype(bool)]
+    if righe.empty:
+        return {}
+
+    risultato = {}
+    for mese in S21_ORDINE_MESI:
+        righe_mese = righe[righe["Anno di servizio"] == mese]
+        if righe_mese.empty:
+            continue
+        conteggio_ausiliario = len(righe_mese)
+        conteggio_ministero = int(righe_mese["Ha partecipato al ministero"].astype(bool).sum())
+        studi_tot = sum(a_float_it(v) for v in righe_mese["Studi Biblici"])
+        ore_tot = sum(a_float_it(v) for v in righe_mese["Ore"])
+        cred_tot = sum(a_float_it(v) for v in righe_mese["Cred. Ore"]) if "Cred. Ore" in righe_mese.columns else 0.0
+
+        parti_osservazioni = []
+        if conteggio_ministero and conteggio_ministero != conteggio_ausiliario:
+            parti_osservazioni.append(f"{conteggio_ministero} nel ministero")
+        parti_osservazioni.append(f"{conteggio_ausiliario} ausiliari")
+
+        risultato[mese] = {
+            "ha_partecipato": conteggio_ministero > 0,
+            "pioniere_ausiliario": True,  # per definizione: filtrato solo su chi ha questa spunta
+            "studi": formatta_numero_it(studi_tot) if studi_tot else "",
+            "ore": formatta_numero_it(ore_tot) if ore_tot else "",
+            "cred_ore": formatta_numero_it(cred_tot) if cred_tot else "",
+            "osservazioni": " · ".join(parti_osservazioni),
         }
     return risultato
 
@@ -607,15 +662,11 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         if not riga:
             continue
         top, bottom = S21_RIGHE[mese]
-        valore_ministero = riga.get("ha_partecipato")
-        if valore_ministero:
-            testo_ministero = "X" if isinstance(valore_ministero, bool) else str(valore_ministero)
-            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset, testo=testo_ministero,
+        if riga.get("ha_partecipato") is True:
+            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset,
                              font_size=S21_FONT_CHECK_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
-        valore_ausiliario = riga.get("pioniere_ausiliario")
-        if valore_ausiliario:
-            testo_ausiliario = "X" if isinstance(valore_ausiliario, bool) else str(valore_ausiliario)
-            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset, testo=testo_ausiliario,
+        if riga.get("pioniere_ausiliario") is True:
+            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset,
                              font_size=S21_FONT_CHECK_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
 
         studi_val = str(riga.get("studi") or "").strip()
@@ -812,15 +863,20 @@ def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente
     return buf.getvalue()
 
 
-def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
+def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, anno_corrente: int,
+                              solo_ausiliari: bool = False) -> bytes:
     """Genera una cartolina S-21 di riepilogo aggregato per una categoria
     (es. 'Tutti i proclamatori', 'Tutti i pionieri regolari'): stessa
     grafica delle cartoline individuali, ma con conteggi e somme al posto
-    dei dati di una singola persona."""
+    dei dati di una singola persona. Se 'solo_ausiliari' è True, 'nomi' è
+    inteso come il bacino in cui cercare (di norma tutti gli Attivi) e per
+    ogni mese si contano solo quelli che quel mese erano Pionieri
+    Ausiliari (vedi _s21_righe_anno_aggregate_ausiliari)."""
     anno_precedente = anno_corrente - 1
     dati = _s21_dati_riepilogo(titolo)
-    righe_corrente = _s21_righe_anno_aggregate(df_tutti, nomi, anno_corrente)
-    righe_precedente = _s21_righe_anno_aggregate(df_tutti, nomi, anno_precedente)
+    funzione_aggregazione = _s21_righe_anno_aggregate_ausiliari if solo_ausiliari else _s21_righe_anno_aggregate
+    righe_corrente = funzione_aggregazione(df_tutti, nomi, anno_corrente)
+    righe_precedente = funzione_aggregazione(df_tutti, nomi, anno_precedente)
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
@@ -877,16 +933,21 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
         nomi_tutti_attivi = [str(n).strip() for n in df_attivi["Cognome e Nome"] if str(n).strip()]
 
         riepiloghi = [
-            ("Tutti i proclamatori", nomi_tutti_attivi, "Riepilogo Tutti i Proclamatori.pdf"),
-            ("Tutti i pionieri regolari", _nomi_per_tipo("Pioniere Regolare"), "Riepilogo Pionieri Regolari.pdf"),
-            ("Tutti i pionieri speciali", _nomi_per_tipo("Pioniere speciale"), "Riepilogo Pionieri Speciali.pdf"),
+            ("Tutti i proclamatori", nomi_tutti_attivi, "Riepilogo Tutti i Proclamatori.pdf", False),
+            ("Tutti i pionieri regolari", _nomi_per_tipo("Pioniere Regolare"),
+             "Riepilogo Pionieri Regolari.pdf", False),
+            ("Tutti i pionieri speciali", _nomi_per_tipo("Pioniere speciale"),
+             "Riepilogo Pionieri Speciali.pdf", False),
             ("Tutti i missionari sul campo", _nomi_per_tipo("Missionario sul campo"),
-             "Riepilogo Missionari sul Campo.pdf"),
+             "Riepilogo Missionari sul Campo.pdf", False),
+            ("Tutti i pionieri ausiliari", nomi_tutti_attivi,
+             "Riepilogo Pionieri Ausiliari.pdf", True),
         ]
-        for titolo, nomi, nome_file in riepiloghi:
+        for titolo, nomi, nome_file, solo_ausiliari in riepiloghi:
             if not nomi:
                 continue
-            pdf_bytes = genera_pdf_s21_riepilogo(titolo, nomi, df_tutti, anno_corrente)
+            pdf_bytes = genera_pdf_s21_riepilogo(titolo, nomi, df_tutti, anno_corrente,
+                                                  solo_ausiliari=solo_ausiliari)
             zf.writestr(f"Anno {anno_cartella}/{nome_file}", pdf_bytes)
 
     buf.seek(0)
@@ -1569,9 +1630,9 @@ def mostra_cartoline_registrazione():
     st.divider()
     st.markdown("#### 🗂️ Pacchetto completo")
     st.caption("Genera in un colpo solo la cartolina di **ogni** Proclamatore Attivo o Inattivo "
-               "più le 4 cartoline di riepilogo (Tutti i proclamatori, Pionieri Regolari, Pionieri Speciali, "
-               "Missionari sul campo). Non dipende dalla selezione qui sotto: è il pacchetto ufficiale, "
-               "sempre completo e coerente.")
+               "più le 5 cartoline di riepilogo (Tutti i proclamatori, Pionieri Regolari, Pionieri Speciali, "
+               "Missionari sul campo, Pionieri Ausiliari). Non dipende dalla selezione qui sotto: è il "
+               "pacchetto ufficiale, sempre completo e coerente.")
     if st.button("🗂️ Crea tutti i PDF delle registrazioni", type="primary", use_container_width=True):
         with st.spinner("Genero il pacchetto completo…"):
             zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
