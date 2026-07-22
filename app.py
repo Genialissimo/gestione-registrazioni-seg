@@ -1064,31 +1064,10 @@ def mostra_home():
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                           use_container_width=True, on_click=vai_a, args=(pagina,))
 
-    col_refresh, col_didascalia = st.columns([0.4, 8])
-    with col_refresh:
-        st.markdown('<div class="marcatore-refresh"></div>', unsafe_allow_html=True)
-        st.markdown(
-            """
-            <style>
-            .marcatore-refresh + div[data-testid="stButton"] button {
-                background: transparent !important;
-                border: none !important;
-                padding: 0 !important;
-                box-shadow: none !important;
-                min-height: 0 !important;
-            }
-            .marcatore-refresh + div[data-testid="stButton"] button:hover {
-                color: #999 !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button("🔄", key="refresh_home", help="Aggiorna i dati dal foglio Google"):
-            st.cache_data.clear()
-            st.rerun()
-    with col_didascalia:
-        st.caption(f"Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+                 key="refresh_home", help="Aggiorna i dati dal foglio Google"):
+        st.cache_data.clear()
+        st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1623,7 +1602,6 @@ def mostra_anagrafiche():
 def mostra_cartoline_registrazione():
     st.title("📇 Cartoline di registrazione")
     contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
-    st.caption("Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
