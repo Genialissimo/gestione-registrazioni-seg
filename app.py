@@ -1597,12 +1597,9 @@ def mostra_anagrafiche():
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
-    if st.button("🏠 Torna alla Home", key="home_da_cartoline", type="primary", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    contenitore_pulsanti = st.container()  # riserva lo spazio in cima per i 3 pulsanti
     st.title("📇 Cartoline di registrazione")
-    st.caption("Scegli l'anno di servizio e i Proclamatori per cui generare la scheda S-21. "
-               "Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
+    st.caption("Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -1632,8 +1629,6 @@ def mostra_cartoline_registrazione():
         anni_presenti,
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
-    st.caption(f"La prima cartolina riporterà **{anno_scelto - 1}-{anno_scelto}**, "
-               f"la seconda **{anno_scelto}-{anno_scelto + 1}**.")
 
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
@@ -1662,49 +1657,60 @@ def mostra_cartoline_registrazione():
         etichetta = f"🔺 {nome}" if stato_per_nome.get(nome) == "I" else nome
         st.checkbox(etichetta, key=_chiave_cb(nome))
 
-    st.divider()
-
-    # ── Generazione ──────────────────────────────────────────────────
-    if st.button("🗂️ Crea tutti i PDF delle registrazioni", type="primary", use_container_width=True):
-        with st.spinner("Genero il pacchetto completo…"):
-            zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
-        st.session_state.cartoline_pacchetto_completo = zip_completo
-
-    if st.session_state.get("cartoline_pacchetto_completo"):
-        st.download_button(
-            "⬇️ Scarica il pacchetto completo (ZIP)",
-            data=st.session_state.cartoline_pacchetto_completo,
-            file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
-            mime="application/zip",
-            key="download_pacchetto_completo",
-            use_container_width=True,
-        )
-
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
-    if st.button(f"📄 Genera {n_sel} cartolin{'a' if n_sel == 1 else 'e'} selezionat{'a' if n_sel == 1 else 'e'}",
-                 use_container_width=True, disabled=n_sel == 0):
-        righe_sel = [r.to_dict() for _, r in df.iterrows()
-                     if str(r.get("Cognome e Nome", "")).strip() in selezionati]
-        with st.spinner("Genero le cartoline…"):
-            if len(righe_sel) == 1:
-                pdf_bytes = genera_pdf_s21_singolo(righe_sel[0], df_tutti, anno_scelto)
-                st.session_state.cartoline_pronto = ("pdf", pdf_bytes, righe_sel[0].get("Cognome e Nome", ""))
-            else:
-                zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_scelto)
-                st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_scelto)
 
-    pronto = st.session_state.get("cartoline_pronto")
-    if pronto:
-        tipo, dati_file, extra = pronto
-        if tipo == "pdf":
-            st.download_button("⬇️ Scarica PDF", data=dati_file,
-                                file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
-                                mime="application/pdf", key="download_cartolina_pdf", use_container_width=True)
-        else:
-            st.download_button("⬇️ Scarica ZIP", data=dati_file,
-                                file_name=f"Schede_S21_{extra + 1}.zip",
-                                mime="application/zip", key="download_cartolina_zip", use_container_width=True)
+    # ── I 3 pulsanti, affiancati in cima alla pagina ─────────────────
+    with contenitore_pulsanti:
+        col_home, col_tutti, col_sel = st.columns(3)
+        with col_home:
+            if st.button("🏠 Home", key="home_da_cartoline", use_container_width=True):
+                vai_a("home")
+                st.rerun()
+        with col_tutti:
+            genera_tutti = st.button("🗂️ S-21 Tutti", type="primary", use_container_width=True)
+        with col_sel:
+            genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel})", use_container_width=True, disabled=n_sel == 0)
+
+        if genera_tutti:
+            with st.spinner("Genero il pacchetto completo…"):
+                zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
+            st.session_state.cartoline_pacchetto_completo = zip_completo
+
+        if genera_sel:
+            righe_sel = [r.to_dict() for _, r in df.iterrows()
+                         if str(r.get("Cognome e Nome", "")).strip() in selezionati]
+            with st.spinner("Genero le cartoline…"):
+                if len(righe_sel) == 1:
+                    pdf_bytes = genera_pdf_s21_singolo(righe_sel[0], df_tutti, anno_scelto)
+                    st.session_state.cartoline_pronto = ("pdf", pdf_bytes, righe_sel[0].get("Cognome e Nome", ""))
+                else:
+                    zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_scelto)
+                    st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_scelto)
+
+        if st.session_state.get("cartoline_pacchetto_completo"):
+            st.download_button(
+                "⬇️ Scarica il pacchetto completo (ZIP)",
+                data=st.session_state.cartoline_pacchetto_completo,
+                file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
+                mime="application/zip",
+                key="download_pacchetto_completo",
+                use_container_width=True,
+            )
+
+        pronto = st.session_state.get("cartoline_pronto")
+        if pronto:
+            tipo, dati_file, extra = pronto
+            if tipo == "pdf":
+                st.download_button("⬇️ Scarica PDF", data=dati_file,
+                                    file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
+                                    mime="application/pdf", key="download_cartolina_pdf",
+                                    use_container_width=True)
+            else:
+                st.download_button("⬇️ Scarica ZIP", data=dati_file,
+                                    file_name=f"Schede_S21_{extra + 1}.zip",
+                                    mime="application/zip", key="download_cartolina_zip",
+                                    use_container_width=True)
 
 
 # ─────────────────────────────────────────────────────────────────
