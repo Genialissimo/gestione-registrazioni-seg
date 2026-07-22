@@ -1850,7 +1850,9 @@ def mostra_storico_proclamatori():
     if ricerca:
         nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
-    st.caption(f"{len(nomi)} Proclamatori. Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
+    conteggio_attivi = sum(1 for n in nomi if not e_inattivo(stato_per_nome.get(n, "")))
+    conteggio_inattivi = sum(1 for n in nomi if e_inattivo(stato_per_nome.get(n, "")))
+    st.caption(f"🟢 {conteggio_attivi} Proclamatori Attivi. 🔺 {conteggio_inattivi} Proclamatori Inattivi.")
 
     # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
     gruppi = {}
