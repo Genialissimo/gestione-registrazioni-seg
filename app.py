@@ -1064,7 +1064,13 @@ def mostra_home():
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                           use_container_width=True, on_click=vai_a, args=(pagina,))
 
-    st.caption(f"Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    col_refresh, col_didascalia = st.columns([1, 8])
+    with col_refresh:
+        if st.button("🔄", key="refresh_home", help="Aggiorna i dati dal foglio Google"):
+            st.cache_data.clear()
+            st.rerun()
+    with col_didascalia:
+        st.caption(f"Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
 
 # ─────────────────────────────────────────────────────────────────
