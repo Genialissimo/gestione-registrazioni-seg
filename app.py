@@ -477,25 +477,21 @@ def _s21_righe_anno_aggregate(df_tutti: pd.DataFrame, nomi: list, anno_teocratic
     return risultato
 
 
-def _s21_righe_anno_aggregate_per_tipo(df_tutti: pd.DataFrame, nomi_pool: list, anno_teocratico,
+def _s21_righe_anno_aggregate_per_tipo(df_tutti: pd.DataFrame, anno_teocratico,
                                         parola_chiave_tipo: str, etichetta_conteggio: str) -> dict:
     """Aggrega Ore/Studi/Cred. Ore mese per mese SOLO per le righe del
     foglio Tutti il cui 'Tipo di servizio' di quel mese (colonna D) contiene
     'parola_chiave_tipo' (es. 'pioniere regolare', 'pioniere speciale',
-    'missionario', 'pioniere ausiliario') — non una lista fissa presa dal
-    campo Tipo in Anagrafica. Così, ad esempio, chi un mese risulta
-    Pioniere Ausiliario in Tutti finisce SOLO nel riepilogo Ausiliari
-    quel mese, anche se è normalmente registrato come Pioniere Regolare.
-    'nomi_pool' limita la ricerca (di norma tutti gli Attivi). Nelle
+    'missionario', 'pioniere ausiliario'). Fotografa ESATTAMENTE quello che
+    trova nel foglio Tutti per quell'anno teocratico, su TUTTI i nominativi
+    presenti — anche chi nel frattempo è diventato Inattivo o è stato
+    Trasferito: non applica nessun filtro basato sullo stato attuale in
+    Anagrafica, solo sul periodo e sul Tipo di servizio di quel mese. Nelle
     Osservazioni viene scritto solo il conteggio trovato quel mese, con
     'etichetta_conteggio' (es. '11 pionieri regolari')."""
-    if anno_teocratico is None or df_tutti.empty or not nomi_pool:
+    if anno_teocratico is None or df_tutti.empty:
         return {}
-    nomi_lower = {n.strip().lower() for n in nomi_pool if n and n.strip()}
-    if not nomi_lower:
-        return {}
-    righe = df_tutti[df_tutti["Nome"].str.strip().str.lower().isin(nomi_lower)]
-    righe = righe[righe["Mese/Anno"].apply(anno_teocratico_di) == anno_teocratico]
+    righe = df_tutti[df_tutti["Mese/Anno"].apply(anno_teocratico_di) == anno_teocratico]
     righe = righe[righe["Tipo Servizio"].str.lower().str.contains(parola_chiave_tipo, na=False, regex=True)]
     if righe.empty:
         return {}
@@ -862,21 +858,20 @@ def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, an
     grafica delle cartoline individuali, ma con conteggi e somme al posto
     dei dati di una singola persona.
 
-    Se 'parola_chiave_tipo' è specificata (es. 'pioniere regolare'), 'nomi'
-    è inteso come il bacino in cui cercare (di norma tutti gli Attivi) e per
-    ogni mese si contano SOLO le righe del foglio Tutti il cui Tipo di
-    servizio di quel mese contiene quella parola chiave (vedi
-    _s21_righe_anno_aggregate_per_tipo) — non una lista fissa da Anagrafica.
-    Se invece è None, si usa la lista fissa 'nomi' per tutti i mesi senza
-    filtrare per Tipo (caso non usato di norma, tenuto per flessibilità).
-    'etichetta_conteggio' è la parola usata nelle Osservazioni
-    (es. '8 pionieri regolari')."""
+    Se 'parola_chiave_tipo' è specificata (es. 'pioniere regolare'), la
+    cartolina fotografa ESATTAMENTE il foglio Tutti per quell'anno
+    teocratico (vedi _s21_righe_anno_aggregate_per_tipo) — nessun filtro
+    sullo stato attuale in Anagrafica, quindi include anche chi nel
+    frattempo è diventato Inattivo o è stato Trasferito. Se invece è None,
+    si usa la lista fissa 'nomi' (caso non usato di norma, tenuto per
+    flessibilità). 'etichetta_conteggio' è la parola usata nelle
+    Osservazioni (es. '8 pionieri regolari')."""
     anno_precedente = anno_corrente - 1
     dati = _s21_dati_riepilogo(titolo)
     if parola_chiave_tipo:
-        righe_corrente = _s21_righe_anno_aggregate_per_tipo(df_tutti, nomi, anno_corrente,
+        righe_corrente = _s21_righe_anno_aggregate_per_tipo(df_tutti, anno_corrente,
                                                               parola_chiave_tipo, etichetta_conteggio)
-        righe_precedente = _s21_righe_anno_aggregate_per_tipo(df_tutti, nomi, anno_precedente,
+        righe_precedente = _s21_righe_anno_aggregate_per_tipo(df_tutti, anno_precedente,
                                                                 parola_chiave_tipo, etichetta_conteggio)
     else:
         righe_corrente = _s21_righe_anno_aggregate(df_tutti, nomi, anno_corrente, etichetta_conteggio)
@@ -904,9 +899,12 @@ def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, an
 def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
     """Genera il pacchetto ZIP completo e ufficiale: una cartolina per
     OGNI Proclamatore Attivo o Inattivo in Anagrafica (i Trasferiti sono
-    esclusi), più le quattro cartoline di riepilogo aggregato (solo sugli
-    Attivi) nella cartella principale. Non dipende da nessuna selezione: è
-    pensato per essere sempre coerente e completo."""
+    esclusi), più le cinque cartoline di riepilogo aggregato nella cartella
+    principale. Le cartoline di riepilogo NON dipendono dallo stato attuale
+    in Anagrafica: fotografano esattamente il foglio Tutti per ciascun
+    periodo, quindi includono anche chi nel frattempo è diventato Inattivo
+    o è stato Trasferito. Non dipende da nessuna selezione: è pensato per
+    essere sempre coerente e completo."""
     anno_cartella = anno_corrente + 1
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -923,37 +921,23 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
             nome_file = _s21_nome_file_sicuro(nome) + ".pdf"
             zf.writestr(f"Anno {anno_cartella}/{sotto_cartella}/{nome_file}", pdf_bytes)
 
-        # 2) Cartoline di riepilogo aggregato, solo sugli Attivi, nella cartella principale.
-        if "Attivi / Inattivi" in df.columns:
-            categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
-            df_attivi = df[categorie == "A"]
-        else:
-            df_attivi = df
-
-        nomi_tutti_attivi = [str(n).strip() for n in df_attivi["Cognome e Nome"] if str(n).strip()]
-
-        # Le 4 categorie "dinamiche" (Regolari, Speciali, Missionari, Ausiliari) non usano
-        # Tutte e 5 le categorie sono "dinamiche": non usano una lista fissa presa dal
-        # Tipo in Anagrafica, ma per ognuna, mese per mese, cercano nel foglio Tutti
-        # (colonna D, Tipo di servizio) solo le righe di chi QUEL MESE risulta in quella
-        # categoria — cercando tra tutti gli Attivi. Nessuna sovrapposizione tra cartoline:
-        # ogni riga del foglio Tutti finisce in una sola categoria per quel mese.
+        # 2) Cartoline di riepilogo: fotografia esatta del foglio Tutti per il periodo,
+        # nessun filtro sullo stato attuale in Anagrafica. Ogni riga del foglio Tutti
+        # finisce in una sola categoria per quel mese, in base al Tipo di servizio
+        # (colonna D) di quel mese — non alla lista fissa Attivi.
         riepiloghi = [
-            ("Tutti i proclamatori", nomi_tutti_attivi, "Riepilogo Tutti i Proclamatori.pdf",
-             "proclamatore", "proclamatori"),
-            ("Tutti i pionieri regolari", nomi_tutti_attivi, "Riepilogo Pionieri Regolari.pdf",
+            ("Tutti i proclamatori", "Riepilogo Tutti i Proclamatori.pdf", "proclamatore", "proclamatori"),
+            ("Tutti i pionieri regolari", "Riepilogo Pionieri Regolari.pdf",
              "pioniere regolare", "pionieri regolari"),
-            ("Tutti i pionieri speciali", nomi_tutti_attivi, "Riepilogo Pionieri Speciali.pdf",
+            ("Tutti i pionieri speciali", "Riepilogo Pionieri Speciali.pdf",
              "pioniere speciale", "pionieri speciali"),
-            ("Tutti i missionari sul campo", nomi_tutti_attivi, "Riepilogo Missionari sul Campo.pdf",
+            ("Tutti i missionari sul campo", "Riepilogo Missionari sul Campo.pdf",
              "missionario|rappresentante", "missionari sul campo"),
-            ("Tutti i pionieri ausiliari", nomi_tutti_attivi, "Riepilogo Pionieri Ausiliari.pdf",
+            ("Tutti i pionieri ausiliari", "Riepilogo Pionieri Ausiliari.pdf",
              "pioniere ausiliario", "ausiliari"),
         ]
-        for titolo, nomi, nome_file, parola_chiave_tipo, etichetta in riepiloghi:
-            if not nomi:
-                continue
-            pdf_bytes = genera_pdf_s21_riepilogo(titolo, nomi, df_tutti, anno_corrente,
+        for titolo, nome_file, parola_chiave_tipo, etichetta in riepiloghi:
+            pdf_bytes = genera_pdf_s21_riepilogo(titolo, [], df_tutti, anno_corrente,
                                                   parola_chiave_tipo=parola_chiave_tipo,
                                                   etichetta_conteggio=etichetta)
             zf.writestr(f"Anno {anno_cartella}/{nome_file}", pdf_bytes)
