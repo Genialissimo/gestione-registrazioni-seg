@@ -1686,6 +1686,7 @@ def mostra_cartoline_registrazione():
                 mime="application/zip",
                 key="download_pacchetto_completo",
                 use_container_width=True,
+                on_click=lambda: st.session_state.pop("cartoline_pacchetto_completo", None),
             )
 
         pronto = st.session_state.get("cartoline_pronto")
@@ -1695,12 +1696,14 @@ def mostra_cartoline_registrazione():
                 st.download_button("⬇️ Scarica PDF", data=dati_file,
                                     file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
                                     mime="application/pdf", key="download_cartolina_pdf",
-                                    use_container_width=True)
+                                    use_container_width=True,
+                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
             else:
                 st.download_button("⬇️ Scarica ZIP", data=dati_file,
                                     file_name=f"Schede_S21_{extra + 1}.zip",
                                     mime="application/zip", key="download_cartolina_zip",
-                                    use_container_width=True)
+                                    use_container_width=True,
+                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
 
 # ─────────────────────────────────────────────────────────────────
