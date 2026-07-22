@@ -578,11 +578,14 @@ def anni_teocratici_per_menu(df_tutti: pd.DataFrame) -> list:
 
 
 def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_anno: dict,
-                           anno_teocratico=None):
+                           anno_teocratico=None, mostra_equazione_crediti: bool = True):
     """Disegna un pannello completo (dati anagrafici + tabella mensile) sul
     canvas di overlay. 'offset' è 0 per il pannello alto, S21_OFFSET_PANNELLO
     per quello basso. 'anno_teocratico' (es. 2025) viene mostrato come
-    intervallo (es. '2025-2026') sotto l'intestazione di colonna."""
+    intervallo (es. '2025-2026') sotto l'intestazione di colonna.
+    'mostra_equazione_crediti' se False non scrive la formula
+    'ore + (crediti) = totale' nella riga Totale (usato per le cartoline di
+    riepilogo, dove può risultare fuorviante)."""
     c.setFillColorRGB(*S21_COLORE_NERO)
     c.setFont("Helvetica", S21_FONT_VALORI)
     c.drawString(116, _s21_y_da_bottom(51.5, offset), dati.get("nome", ""))
@@ -683,7 +686,7 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         _s21_testo_centrato_colonna(c, formatta_numero_it(totale_ore), S21_COL_ORE, top_tot, bottom_tot, offset,
                                      font_name="Helvetica-Bold", font_size=S21_FONT_TABELLA,
                                      sposta=S21_SPOSTAMENTO_RIGHE)
-    if totale_cred_ore:
+    if totale_cred_ore and mostra_equazione_crediti:
         totale_finale = totale_ore + totale_cred_ore
         testo_crediti = (f"{formatta_numero_it(totale_ore)} + ({formatta_numero_it(totale_cred_ore)}) "
                           f"= {formatta_numero_it(totale_finale)}")
@@ -879,8 +882,10 @@ def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, an
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
-    _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
-    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente)
+    _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente,
+                          mostra_equazione_crediti=False)
+    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente,
+                          mostra_equazione_crediti=False)
     c.save()
     buf.seek(0)
 
@@ -1141,12 +1146,12 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 
 def mostra_registrazioni():
-    if st.button("🏠 Torna alla Home", key="home_da_registrazioni", type="primary", use_container_width=True):
+    st.title("Rapporti consegnati")
+    if st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True):
         vai_a("home")
         st.rerun()
 
     if not collegato:
-        st.title("Rapporti consegnati")
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
@@ -1157,7 +1162,6 @@ def mostra_registrazioni():
         _form_modifica_rapporto_consegnato(st.session_state.rapporto_modifica_globale)
         return
 
-    st.title("Rapporti consegnati")
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_RISPOSTE}» (intestazione riga {RIGA_INTESTAZIONE_RISPOSTE}).")
 
     df_anagrafica, err_anagrafica = leggi_foglio_come_df(
@@ -1480,10 +1484,10 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 
 def mostra_anagrafiche():
-    if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", type="primary", use_container_width=True):
+    st.title("Anagrafiche")
+    if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True):
         vai_a("home")
         st.rerun()
-    st.title("Anagrafiche")
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_ANAGRAFICA}».")
 
     if not collegato:
@@ -1505,7 +1509,7 @@ def mostra_anagrafiche():
         return
 
     # ── Elenco Proclamatori a riquadri pieghevoli ───────────────────────
-    if st.button("➕ Nuovo Proclamatore", use_container_width=True, type="primary"):
+    if st.button("➕ Nuovo Proclamatore", use_container_width=True):
         st.session_state.anagrafica_nuovo = True
         st.rerun()
 
@@ -1766,10 +1770,10 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 
 
 def mostra_storico_proclamatori():
-    if st.button("🏠 Torna alla Home", key="home_da_storico", type="primary", use_container_width=True):
+    st.title("Storico rapporti consegnati")
+    if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
         vai_a("home")
         st.rerun()
-    st.title("Storico rapporti consegnati")
     st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
                f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
 
