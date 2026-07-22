@@ -16,6 +16,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas as rl_canvas
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIGURAZIONE PAGINA
@@ -79,6 +84,10 @@ def categoria_stato_proclamatore(valore: str) -> str:
 
 # ── Modulo S-21 (scheda di registrazione del proclamatore) ──────────
 # Il file del modello va messo nella stessa cartella di app.py.
+# ── Riepilogo attività (report libero, non modulo S-21) ──────────────
+# Modifica qui il nome della congregazione: appare nell'intestazione del PDF.
+NOME_CONGREGAZIONE = "Vibo Marina"
+
 PERCORSO_MODULO_S21 = os.path.join(os.path.dirname(__file__), "S-21_s-Mlt_I.pdf")
 S21_PAGE_W, S21_PAGE_H = 595.2, 841.9
 S21_OFFSET_PANNELLO = 421.0  # distanza verticale tra il pannello alto e quello basso
@@ -951,6 +960,185 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
     return buf.getvalue()
 
 
+# ─────────────────────────────────────────────────────────────────
+# RIEPILOGO ATTIVITÀ (report libero per sorveglianti di gruppo/categoria)
+# ─────────────────────────────────────────────────────────────────
+CATEGORIE_RIEPILOGO_ATTIVITA = {
+    "Tutti": None,
+    "Solo Proclamatori": "proclamatore",
+    "Solo Pionieri Ausiliari": "pioniere ausiliario",
+    "Solo Pionieri Regolari": "pioniere regolare",
+    "Solo Pionieri Speciali": "pioniere speciale",
+    "Solo Missionari sul campo": "missionario|rappresentante",
+}
+
+
+def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
+    """Ritorna (anno, mese) del mese più recente per cui esiste almeno un
+    rapporto nel foglio Tutti, o None se il foglio è vuoto."""
+    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
+        return None
+    validi = []
+    for m in df_tutti["Mese/Anno"].dropna().unique():
+        try:
+            a, mm = str(m).split("-")
+            validi.append((int(a), int(mm)))
+        except Exception:
+            continue
+    if not validi:
+        return None
+    return max(validi)
+
+
+def _riepilogo_finestra_ultimi_n_mesi(anno_fine: int, mese_fine: int, n: int = 6) -> set:
+    """Ritorna l'insieme (anno, mese) degli ultimi 'n' mesi, contando a
+    ritroso da (anno_fine, mese_fine) incluso."""
+    risultato = set()
+    a, m = anno_fine, mese_fine
+    for _ in range(n):
+        risultato.add((a, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            a -= 1
+    return risultato
+
+
+def _riepilogo_costruisci_blocchi(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, periodo: str,
+                                   gruppo_scelto: str, categoria: str) -> list:
+    """Costruisce la lista dei blocchi persona per il Riepilogo attività,
+    già filtrati per periodo, categoria (Tipo di servizio di quel mese) ed
+    eventualmente Gruppo (assegnazione attuale in Anagrafica — è l'unico
+    filtro di questa funzione che dipende da Anagrafica, perché il Gruppo
+    non esiste nel foglio Tutti). Ogni blocco: {'nome', 'righe', 'totale_ore',
+    'totale_crediti', 'totale_studi', 'media_ore', 'media_crediti',
+    'media_studi'}."""
+    df = df_tutti.copy()
+    if df.empty:
+        return []
+
+    if periodo == "6 mesi":
+        ultimo = _riepilogo_ultimo_mese_con_dati(df_tutti)
+        if not ultimo:
+            return []
+        finestra = _riepilogo_finestra_ultimi_n_mesi(ultimo[0], ultimo[1], 6)
+
+        def _dentro_finestra(mese_anno):
+            try:
+                a, m = str(mese_anno).split("-")
+                return (int(a), int(m)) in finestra
+            except Exception:
+                return False
+
+        df = df[df["Mese/Anno"].apply(_dentro_finestra)]
+
+    parola_categoria = CATEGORIE_RIEPILOGO_ATTIVITA.get(categoria)
+    if parola_categoria:
+        df = df[df["Tipo Servizio"].str.lower().str.contains(parola_categoria, na=False, regex=True)]
+
+    if gruppo_scelto and gruppo_scelto != "Tutti i gruppi" and "Gruppo" in df_anagrafica.columns:
+        nomi_gruppo = set(
+            df_anagrafica.loc[df_anagrafica["Gruppo"].astype(str).str.strip() == gruppo_scelto, "Cognome e Nome"]
+            .astype(str).str.strip()
+        )
+        df = df[df["Nome"].str.strip().isin(nomi_gruppo)]
+
+    if df.empty:
+        return []
+
+    blocchi = []
+    for nome, gruppo_df in df.groupby("Nome"):
+        gruppo_df = gruppo_df.sort_values("Mese/Anno")
+        righe = []
+        tot_ore = tot_cred = tot_studi = 0.0
+        for _, r in gruppo_df.iterrows():
+            ore_val = a_float_it(r.get("Ore", ""))
+            cred_val = a_float_it(r.get("Cred. Ore", ""))
+            studi_val = a_float_it(r.get("Studi Biblici", ""))
+            tot_ore += ore_val
+            tot_cred += cred_val
+            tot_studi += studi_val
+            righe.append({
+                "mese_anno": r.get("Mese/Anno", ""),
+                "tipo": r.get("Tipo Servizio", "") or "",
+                "ministero": "Sì" if r.get("Ha partecipato al ministero") else "No",
+                "ore": formatta_numero_it(ore_val) if ore_val else "",
+                "crediti": formatta_numero_it(cred_val) if cred_val else "",
+                "studi": formatta_numero_it(studi_val) if studi_val else "",
+                "note": r.get("Osservazioni", "") or "",
+            })
+        n = len(righe)
+        blocchi.append({
+            "nome": nome,
+            "righe": righe,
+            "totale_ore": tot_ore,
+            "totale_crediti": tot_cred,
+            "totale_studi": tot_studi,
+            "media_ore": tot_ore / n if n else 0.0,
+            "media_crediti": tot_cred / n if n else 0.0,
+            "media_studi": tot_studi / n if n else 0.0,
+        })
+    blocchi.sort(key=lambda b: b["nome"])
+    return blocchi
+
+
+def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
+                                   etichetta_gruppo: str = None) -> bytes:
+    """Genera il PDF del Riepilogo attività: un documento libero (non un
+    modulo prestampato) con un blocco per Proclamatore — mese, tipo di
+    servizio, ministero, ore, crediti, studi, note — più Totale e Media,
+    con interruzioni di pagina automatiche."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+                             leftMargin=1.3 * cm, rightMargin=1.3 * cm)
+    stili = getSampleStyleSheet()
+    elementi = []
+
+    elementi.append(Paragraph("Attività dei proclamatori", stili["Title"]))
+    sottotitolo = f"Congregazione: {NOME_CONGREGAZIONE} · Periodo: {etichetta_periodo} · {etichetta_categoria}"
+    if etichetta_gruppo:
+        sottotitolo += f" · Gruppo: {etichetta_gruppo}"
+    elementi.append(Paragraph(sottotitolo, stili["Normal"]))
+    elementi.append(Spacer(1, 14))
+
+    if not blocchi:
+        elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
+
+    intestazione = ["Mese", "Servizio", "Ministero", "Ore", "Crediti", "Studi", "Note"]
+    larghezze = [1.9 * cm, 3.0 * cm, 1.7 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm, 4.7 * cm]
+
+    for blocco in blocchi:
+        elementi.append(Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]))
+        dati_tabella = [intestazione]
+        for r in blocco["righe"]:
+            dati_tabella.append([r["mese_anno"], r["tipo"], r["ministero"], r["ore"], r["crediti"],
+                                  r["studi"], r["note"]])
+        dati_tabella.append(["Totale", "", "", formatta_numero_it(blocco["totale_ore"]),
+                              formatta_numero_it(blocco["totale_crediti"]),
+                              formatta_numero_it(blocco["totale_studi"]), ""])
+        dati_tabella.append(["Media", "", "", formatta_numero_it(blocco["media_ore"]),
+                              formatta_numero_it(blocco["media_crediti"]),
+                              formatta_numero_it(blocco["media_studi"]), ""])
+
+        tabella = Table(dati_tabella, colWidths=larghezze, repeatRows=1)
+        tabella.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E0E0E0")),
+            ("FONTNAME", (0, -2), (-1, -1), "Helvetica-Bold"),
+            ("BACKGROUND", (0, -2), (-1, -1), colors.HexColor("#F2F2F2")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("ALIGN", (3, 0), (5, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        elementi.append(tabella)
+        elementi.append(Spacer(1, 16))
+
+    doc.build(elementi)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
     if "ID" not in df.columns or df.empty:
         return 1
@@ -1704,6 +1892,50 @@ def mostra_cartoline_registrazione():
                                     mime="application/zip", key="download_cartolina_zip",
                                     use_container_width=True,
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
+
+    st.divider()
+    with st.expander("📊 Riepilogo attività"):
+        st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
+                   "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
+                   "spedire ai sorveglianti di gruppo.")
+
+        periodo_scelto = st.radio("Periodo", ["Tutto lo storico", "6 mesi"], horizontal=True,
+                                   key="riepilogo_periodo")
+
+        gruppi_disponibili = ["Tutti i gruppi"]
+        if "Gruppo" in df.columns:
+            gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
+        gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
+
+        categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
+                                         key="riepilogo_categoria")
+
+        if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
+            with st.spinner("Genero il riepilogo…"):
+                blocchi = _riepilogo_costruisci_blocchi(df_tutti, df, periodo_scelto, gruppo_scelto,
+                                                         categoria_scelta)
+                pdf_bytes = genera_pdf_riepilogo_attivita(
+                    blocchi, periodo_scelto, categoria_scelta,
+                    gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                )
+            if not blocchi:
+                st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
+            st.session_state.riepilogo_pdf_pronto = pdf_bytes
+
+        if st.session_state.get("riepilogo_pdf_pronto"):
+            nome_file = "Riepilogo_Attivita"
+            if gruppo_scelto != "Tutti i gruppi":
+                nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
+            nome_file += f"_{categoria_scelta.replace(' ', '_')}.pdf"
+            st.download_button(
+                "⬇️ Scarica Riepilogo attività (PDF)",
+                data=st.session_state.riepilogo_pdf_pronto,
+                file_name=nome_file,
+                mime="application/pdf",
+                key="download_riepilogo_attivita",
+                use_container_width=True,
+                on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
+            )
 
 
 # ─────────────────────────────────────────────────────────────────
