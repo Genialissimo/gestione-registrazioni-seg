@@ -1625,7 +1625,7 @@ def mostra_cartoline_registrazione():
         st.error(err_tutti)
         return
 
-    # ── Scelta dell'anno teocratico, come in Storico rapporti consegnati ──
+    # ── Anno teocratico ───────────────────────────────────────────────
     anni_presenti = anni_teocratici_per_menu(df_tutti)
     anno_scelto = st.selectbox(
         "Seleziona anno teocratico",
@@ -1635,32 +1635,7 @@ def mostra_cartoline_registrazione():
     st.caption(f"La prima cartolina riporterà **{anno_scelto - 1}-{anno_scelto}**, "
                f"la seconda **{anno_scelto}-{anno_scelto + 1}**.")
 
-    st.divider()
-    st.markdown("#### 🗂️ Pacchetto completo")
-    st.caption("Genera in un colpo solo la cartolina di **ogni** Proclamatore Attivo o Inattivo "
-               "più le 5 cartoline di riepilogo (Tutti i proclamatori, Pionieri Regolari, Pionieri Speciali, "
-               "Missionari sul campo, Pionieri Ausiliari). Non dipende dalla selezione qui sotto: è il "
-               "pacchetto ufficiale, sempre completo e coerente.")
-    if st.button("🗂️ Crea tutti i PDF delle registrazioni", type="primary", use_container_width=True):
-        with st.spinner("Genero il pacchetto completo…"):
-            zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
-        st.session_state.cartoline_pacchetto_completo = zip_completo
-
-    if st.session_state.get("cartoline_pacchetto_completo"):
-        st.download_button(
-            "⬇️ Scarica il pacchetto completo (ZIP)",
-            data=st.session_state.cartoline_pacchetto_completo,
-            file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
-            mime="application/zip",
-            key="download_pacchetto_completo",
-            use_container_width=True,
-        )
-    st.divider()
-    st.markdown("#### ✏️ Rigenera solo una selezione")
-    st.caption("Utile per rigenerare rapidamente una o poche cartoline dopo una correzione. "
-               "Non sostituisce il pacchetto completo qui sopra: se rigeneri qui, ricordati di "
-               "aggiornare anche il pacchetto ufficiale, altrimenti lo ZIP già distribuito resta disallineato.")
-
+    # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
     if "Attivi / Inattivi" in df_lista.columns:
         categorie = df_lista["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
@@ -1683,32 +1658,32 @@ def mostra_cartoline_registrazione():
     def _chiave_cb(nome: str) -> str:
         return f"cb_cartolina_{nome}"
 
-    col_tutti, col_nessuno = st.columns(2)
-    with col_tutti:
-        if st.button("☑️ Seleziona tutti (visibili)", use_container_width=True):
-            for nome in nomi_visibili:
-                st.session_state[_chiave_cb(nome)] = True
-            st.rerun()
-    with col_nessuno:
-        if st.button("⬜ Deseleziona tutti", use_container_width=True):
-            for nome in nomi_tutti:
-                st.session_state[_chiave_cb(nome)] = False
-            st.rerun()
-
-    selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
-    st.caption(f"{len(selezionati)} selezionati su {len(df_lista)} Proclamatori totali (Attivi + Inattivi).")
-    st.divider()
-
     for nome in nomi_visibili:
         etichetta = f"🔺 {nome}" if stato_per_nome.get(nome) == "I" else nome
         st.checkbox(etichetta, key=_chiave_cb(nome))
 
     st.divider()
 
+    # ── Generazione ──────────────────────────────────────────────────
+    if st.button("🗂️ Crea tutti i PDF delle registrazioni", type="primary", use_container_width=True):
+        with st.spinner("Genero il pacchetto completo…"):
+            zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
+        st.session_state.cartoline_pacchetto_completo = zip_completo
+
+    if st.session_state.get("cartoline_pacchetto_completo"):
+        st.download_button(
+            "⬇️ Scarica il pacchetto completo (ZIP)",
+            data=st.session_state.cartoline_pacchetto_completo,
+            file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
+            mime="application/zip",
+            key="download_pacchetto_completo",
+            use_container_width=True,
+        )
+
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
     if st.button(f"📄 Genera {n_sel} cartolin{'a' if n_sel == 1 else 'e'} selezionat{'a' if n_sel == 1 else 'e'}",
-                 type="primary", use_container_width=True, disabled=n_sel == 0):
+                 use_container_width=True, disabled=n_sel == 0):
         righe_sel = [r.to_dict() for _, r in df.iterrows()
                      if str(r.get("Cognome e Nome", "")).strip() in selezionati]
         with st.spinner("Genero le cartoline…"):
