@@ -1064,8 +1064,26 @@ def mostra_home():
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                           use_container_width=True, on_click=vai_a, args=(pagina,))
 
-    col_refresh, col_didascalia = st.columns([1, 8])
+    col_refresh, col_didascalia = st.columns([0.4, 8])
     with col_refresh:
+        st.markdown('<div class="marcatore-refresh"></div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <style>
+            .marcatore-refresh + div[data-testid="stButton"] button {
+                background: transparent !important;
+                border: none !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                min-height: 0 !important;
+            }
+            .marcatore-refresh + div[data-testid="stButton"] button:hover {
+                color: #999 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         if st.button("🔄", key="refresh_home", help="Aggiorna i dati dal foglio Google"):
             st.cache_data.clear()
             st.rerun()
@@ -1603,8 +1621,8 @@ def mostra_anagrafiche():
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
-    contenitore_pulsanti = st.container()  # riserva lo spazio in cima per i 3 pulsanti
     st.title("📇 Cartoline di registrazione")
+    contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
     st.caption("Il triangolo rosso 🔺 indica i Proclamatori Inattivi.")
 
     if not collegato:
@@ -1674,7 +1692,7 @@ def mostra_cartoline_registrazione():
                 vai_a("home")
                 st.rerun()
         with col_tutti:
-            genera_tutti = st.button("🗂️ S-21 Tutti", type="primary", use_container_width=True)
+            genera_tutti = st.button("🗂️ S-21 Tutti", use_container_width=True)
         with col_sel:
             genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel})", use_container_width=True, disabled=n_sel == 0)
 
