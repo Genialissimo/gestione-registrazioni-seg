@@ -1129,6 +1129,8 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("FONTNAME", (0, -2), (-1, -1), "Helvetica-Bold"),
             ("BACKGROUND", (0, -2), (-1, -1), colors.HexColor("#F2F2F2")),
             ("GRID", (0, -2), (-1, -1), 0.4, colors.grey),
+            ("LINEBEFORE", (1, -2), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
+            ("LINEAFTER", (1, -2), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
             ("ROWBACKGROUNDS", (0, 1), (-1, -3), [colors.white, colors.HexColor("#DCEEF9")]),
             ("ALIGN", (3, 0), (5, -1), "RIGHT"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
