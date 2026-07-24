@@ -1227,7 +1227,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                     formatta_numero_it(cat["totale_ore"]),
                     formatta_numero_it(cat["totale_crediti"]),
                     formatta_numero_it(cat["totale_studi"]), 
-                    str(cat["conteggio"]) # <-- Il numero esatto inserito nella colonna Note
+                    f"{cat['categoria']} n. {cat['conteggio']}" # <-- MODIFICA QUI: "Categoria n. X"
                 ])
                 dati_tabella.append([
                     "Media", cat["categoria"], "", 
