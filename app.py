@@ -2157,7 +2157,7 @@ def mostra_cartoline_registrazione():
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
-    with st.expander("📊 Riepilogo attività"):
+with st.expander("📊 Riepilogo attività"):
             st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
                        "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
                        "spedire ai sorveglianti di gruppo.")
@@ -2233,7 +2233,7 @@ def mostra_cartoline_registrazione():
                     key="download_riepilogo_attivita",
                     use_container_width=True,
                     on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
-                )
+                )    
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
