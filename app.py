@@ -2008,7 +2008,11 @@ def mostra_cartoline_registrazione():
     n_sel = len(selezionati)
 
     
-# ── I 4 pulsanti in cima alla pagina (Home, Tutti, Selezionati, Riepilogo) ──
+# Inizializziamo lo stato se non esiste
+    if "mostra_riepilogo" not in st.session_state:
+        st.session_state.mostra_riepilogo = False
+
+    # ── I 4 pulsanti in cima alla pagina (Home, Tutti, Selezionati, Riepilogo) ──
     with contenitore_pulsanti:
         col_home, col_tutti, col_sel, col_riepilogo = st.columns(4)
         
@@ -2024,11 +2028,9 @@ def mostra_cartoline_registrazione():
             genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel})", use_container_width=True, disabled=n_sel == 0)
             
         with col_riepilogo:
-            apri_riepilogo = st.button("📊 Riepilogo", use_container_width=True, key="btn_apri_riepilogo")
-
-        # Gestione apertura/chiusura del form sotto i pulsanti
-        if apri_riepilogo:
-            st.session_state.mostra_riepilogo = not st.session_state.get("mostra_riepilogo", False)
+            if st.button("📊 Riepilogo", use_container_width=True, key="btn_apri_riepilogo"):
+                st.session_state.mostra_riepilogo = not st.session_state.mostra_riepilogo
+                st.rerun()
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
@@ -2073,8 +2075,8 @@ def mostra_cartoline_registrazione():
                                    use_container_width=True,
                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
-    # ── Form del Riepilogo Attività (compare subito sotto i 4 bottoni se attivo) ──
-    if st.session_state.get("mostra_riepilogo", False):
+    # ── Form del Riepilogo Attività (compare fuori dal contenitore pulsanti, subito sotto) ──
+    if st.session_state.mostra_riepilogo:
         st.divider()
         with st.container():
             st.subheader("📊 Riepilogo attività")
