@@ -2007,7 +2007,8 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── I 3 pulsanti, affiancati in cima alla pagina ─────────────────
+    
+# ── I 3 pulsanti, affiancati in cima alla pagina ─────────────────
     with contenitore_pulsanti:
         col_home, col_tutti, col_sel = st.columns(3)
         with col_home:
@@ -2051,16 +2052,16 @@ def mostra_cartoline_registrazione():
             tipo, dati_file, extra = pronto
             if tipo == "pdf":
                 st.download_button("⬇️ Scarica PDF", data=dati_file,
-                                    file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
-                                    mime="application/pdf", key="download_cartolina_pdf",
-                                    use_container_width=True,
-                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
+                                   file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
+                                   mime="application/pdf", key="download_cartolina_pdf",
+                                   use_container_width=True,
+                                   on_click=lambda: st.session_state.pop("cartoline_pronto", None))
             else:
                 st.download_button("⬇️ Scarica ZIP", data=dati_file,
-                                    file_name=f"Schede_S21_{extra + 1}.zip",
-                                    mime="application/zip", key="download_cartolina_zip",
-                                    use_container_width=True,
-                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
+                                   file_name=f"Schede_S21_{extra + 1}.zip",
+                                   mime="application/zip", key="download_cartolina_zip",
+                                   use_container_width=True,
+                                   on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
     with st.expander("📊 Riepilogo attività"):
@@ -2069,12 +2070,13 @@ def mostra_cartoline_registrazione():
                    "spedire ai sorveglianti di gruppo.")
 
         periodo_scelto = st.radio("Periodo", ["Tutto lo storico", "6 mesi"], horizontal=True,
-                                   key="riepilogo_periodo")
+                                  key="riepilogo_periodo")
 
-        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
+        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico", "Tutti i gruppi (comparati)"], horizontal=True,
                                key="riepilogo_tipo_vista",
                                help="Dettagliato: un blocco per ciascun Proclamatore. "
-                                    "Sintetico: un unico blocco con i totali della categoria scelta.")
+                                    "Sintetico: un unico blocco con i totali della categoria scelta. "
+                                    "Tutti i gruppi (comparati): tabella comparativa divisa per gruppo sotto ogni categoria.")
 
         gruppi_disponibili = ["Tutti i gruppi"]
         if "Gruppo" in df.columns:
@@ -2086,9 +2088,20 @@ def mostra_cartoline_registrazione():
 
         if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
             with st.spinner("Genero il riepilogo…"):
-                if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
+                if tipo_vista == "Tutti i gruppi (comparati)":
+                    df_periodo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, "Tutti i gruppi", "Tutti")
+                    blocchi_comparati = _riepilogo_costruisci_blocchi_comparati(df_periodo, df)
+                    trovato_qualcosa = bool(blocchi_comparati)
+                    pdf_bytes = genera_pdf_riepilogo_attivita(
+                        blocchi=[],
+                        etichetta_periodo=periodo_scelto,
+                        etichetta_categoria="Tutti",
+                        etichetta_vista=tipo_vista,
+                        blocchi_comparati=blocchi_comparati
+                    )
+                elif tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
                     df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
-                                                                gruppo_scelto, "Tutti")
+                                                               gruppo_scelto, "Tutti")
                     totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
                     trovato_qualcosa = bool(totali_categoria)
                     pdf_bytes = genera_pdf_riepilogo_attivita(
@@ -2098,7 +2111,7 @@ def mostra_cartoline_registrazione():
                     )
                 else:
                     df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
-                                                          categoria_scelta)
+                                                         categoria_scelta)
                     if tipo_vista == "Sintetico":
                         blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
                     else:
@@ -2117,7 +2130,7 @@ def mostra_cartoline_registrazione():
             nome_file = "Riepilogo_Attivita"
             if gruppo_scelto != "Tutti i gruppi":
                 nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
-            nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+            nome_file += f"_{tipo_vista.replace(' ', '_').replace('(', '').replace(')', '')}_{categoria_scelta.replace(' ', '_')}.pdf"
             st.download_button(
                 "⬇️ Scarica Riepilogo attività (PDF)",
                 data=st.session_state.riepilogo_pdf_pronto,
@@ -2127,7 +2140,6 @@ def mostra_cartoline_registrazione():
                 use_container_width=True,
                 on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
             )
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
