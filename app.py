@@ -1300,17 +1300,13 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
-        # KeepTogether: se il blocco non entra nello spazio rimasto in pagina, passa
-        # intero alla pagina successiva invece di spezzarsi — altrimenti reportlab
-        # ricalcola male i colori alternati e la griglia di Totale/Media sul pezzo
-        # che continua nella pagina dopo.
+        
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
  
     doc.build(elementi)
     buf.seek(0)
     return buf.getvalue()
-
 
 def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
     if "ID" not in df.columns or df.empty:
