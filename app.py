@@ -2024,9 +2024,9 @@ def mostra_cartoline_registrazione():
             genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel})", use_container_width=True, disabled=n_sel == 0)
             
         with col_riepilogo:
-            apri_riepilogo = st.button("📊 Riepilogo Attività", use_container_width=True, key="btn_apri_riepilogo")
+            apri_riepilogo = st.button("📊 Riepilogo", use_container_width=True, key="btn_apri_riepilogo")
 
-        # Se viene premuto il quarto pulsante, attiviamo uno stato per mostrare l'expander/filtri
+        # Gestione apertura/chiusura del form sotto i pulsanti
         if apri_riepilogo:
             st.session_state.mostra_riepilogo = not st.session_state.get("mostra_riepilogo", False)
 
@@ -2073,7 +2073,7 @@ def mostra_cartoline_registrazione():
                                    use_container_width=True,
                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
-    # Il pannello del riepilogo si apre se l'utente ha cliccato sul quarto pulsante
+    # ── Form del Riepilogo Attività (compare subito sotto i 4 bottoni se attivo) ──
     if st.session_state.get("mostra_riepilogo", False):
         st.divider()
         with st.container():
