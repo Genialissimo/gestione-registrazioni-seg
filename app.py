@@ -1149,7 +1149,6 @@ def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria:
         "media_studi": tot_studi / n_mesi if n_mesi else 0.0,
     }]
 
-
 def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
     """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
     mensili, solo il gran totale (e la media) per ciascuna delle categorie
@@ -1158,10 +1157,10 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
     filtrato per periodo ed eventuale Gruppo, ma NON per categoria. Salta
     le categorie senza nessuna riga. Ritorna una lista di dict:
     {'categoria', 'totale_ore', 'totale_crediti', 'totale_studi',
-    'media_ore', 'media_crediti', 'media_studi'}."""
+    'media_ore', 'media_crediti', 'media_studi', 'conteggio'}."""
     if df_periodo_gruppo.empty:
         return []
-
+ 
     risultati = []
     for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
         if chiave == "Tutti" or not parola:
@@ -1182,10 +1181,11 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
             "media_ore": tot_ore / n if n else 0.0,
             "media_crediti": tot_cred / n if n else 0.0,
             "media_studi": tot_studi / n if n else 0.0,
+            "conteggio": n, # <-- AGGIUNTO: passiamo il numero per la colonna Note
         })
     return risultati
-
-
+ 
+ 
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
                                    totali_per_categoria: list = None) -> bytes:
@@ -1194,7 +1194,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     o un unico blocco per categoria (vista Sintetico) — mese, tipo di
     servizio, ministero, ore, crediti, studi, note — più Totale e Media,
     con interruzioni di pagina automatiche.
-
+ 
     Se 'totali_per_categoria' è specificato (caso Sintetico + Categoria
     'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
     media per ciascuna categoria, senza righe mensili."""
@@ -1203,7 +1203,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                              leftMargin=1.3 * cm, rightMargin=1.3 * cm)
     stili = getSampleStyleSheet()
     elementi = []
-
+ 
     elementi.append(Paragraph("Attività dei proclamatori", stili["Title"]))
     sottotitolo = (f"Congregazione: {NOME_CONGREGAZIONE} · Periodo: {etichetta_periodo} · "
                    f"{etichetta_vista} - {etichetta_categoria}")
@@ -1211,46 +1211,64 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         sottotitolo += f" · Gruppo: {etichetta_gruppo}"
     elementi.append(Paragraph(sottotitolo, stili["Normal"]))
     elementi.append(Spacer(1, 14))
-
+ 
+    # INIZIO BLOCCO MODIFICATO
     if totali_per_categoria is not None:
         if not totali_per_categoria:
             elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
         else:
-            dati_tabella = []
+            intestazione = ["Mese", "Servizio", "Ministero", "Ore", "Crediti", "Studi", "Note"]
+            larghezze = [1.9 * cm, 3.0 * cm, 1.7 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm, 4.7 * cm]
+            
             for cat in totali_per_categoria:
-                dati_tabella.append(["Totale", cat["categoria"], formatta_numero_it(cat["totale_ore"]),
-                                      formatta_numero_it(cat["totale_crediti"]),
-                                      formatta_numero_it(cat["totale_studi"])])
-                dati_tabella.append(["Media", cat["categoria"], formatta_numero_it(cat["media_ore"]),
-                                      formatta_numero_it(cat["media_crediti"]),
-                                      formatta_numero_it(cat["media_studi"])])
-            tabella = Table(dati_tabella, colWidths=[2.2 * cm, 4.5 * cm, 2.3 * cm, 2.3 * cm, 2.3 * cm])
-            stile_righe = [
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-                ("ALIGN", (2, 0), (4, -1), "RIGHT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ]
-            # Ogni coppia Totale/Media di una categoria ha lo sfondo alternato,
-            # per distinguere a colpo d'occhio dove finisce una categoria e inizia l'altra.
-            for i in range(0, len(dati_tabella), 2):
-                colore = colors.HexColor("#F2F2F2") if (i // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
-                stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
-                stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
-            tabella.setStyle(TableStyle(stile_righe))
-            elementi.append(tabella)
+                dati_tabella = [intestazione]
+                dati_tabella.append([
+                    "Totale", cat["categoria"], "", 
+                    formatta_numero_it(cat["totale_ore"]),
+                    formatta_numero_it(cat["totale_crediti"]),
+                    formatta_numero_it(cat["totale_studi"]), 
+                    str(cat["conteggio"]) # <-- Il numero esatto inserito nella colonna Note
+                ])
+                dati_tabella.append([
+                    "Media", cat["categoria"], "", 
+                    formatta_numero_it(cat["media_ore"]),
+                    formatta_numero_it(cat["media_crediti"]),
+                    formatta_numero_it(cat["media_studi"]), 
+                    ""
+                ])
+                
+                tabella = Table(dati_tabella, colWidths=larghezze)
+                tabella.setStyle(TableStyle([
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")), # Intestazione celeste scuro
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),                # Testo bianco
+                    ("FONTNAME", (0, 1), (-1, -1), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F2F2F2")),
+                    ("GRID", (0, 1), (-1, -1), 0.4, colors.grey),
+                    ("LINEBEFORE", (1, 1), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
+                    ("LINEAFTER", (1, 1), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
+                    ("ALIGN", (3, 0), (5, -1), "RIGHT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                elementi.append(tabella)
+                elementi.append(Spacer(1, 16)) # Spazio vuoto inserito tra una categoria e l'altra
+
         doc.build(elementi)
         buf.seek(0)
         return buf.getvalue()
-
+    # FINE BLOCCO MODIFICATO
+ 
     if not blocchi:
         elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
-
+ 
     intestazione = ["Mese", "Servizio", "Ministero", "Ore", "Crediti", "Studi", "Note"]
     larghezze = [1.9 * cm, 3.0 * cm, 1.7 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm, 4.7 * cm]
-
+ 
     for blocco in blocchi:
         dati_tabella = [intestazione]
         for r in blocco["righe"]:
@@ -1262,7 +1280,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         dati_tabella.append(["Media", "", "", formatta_numero_it(blocco["media_ore"]),
                               formatta_numero_it(blocco["media_crediti"]),
                               formatta_numero_it(blocco["media_studi"]), ""])
-
+ 
         tabella = Table(dati_tabella, colWidths=larghezze, repeatRows=1)
         tabella.setStyle(TableStyle([
             ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -1288,7 +1306,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         # che continua nella pagina dopo.
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
-
+ 
     doc.build(elementi)
     buf.seek(0)
     return buf.getvalue()
