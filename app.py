@@ -1969,46 +1969,7 @@ def mostra_cartoline_registrazione():
         st.error(err_tutti)
         return
 
-    # ── Anno teocratico ───────────────────────────────────────────────
-    anni_presenti = anni_teocratici_per_menu(df_tutti)
-    anno_scelto = st.selectbox(
-        "Seleziona anno teocratico",
-        anni_presenti,
-        format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
-    )
-
-    # ── Ricerca ed elenco con checkbox ───────────────────────────────
-    df_lista = df.reset_index(drop=True)
-    if "Attivi / Inattivi" in df_lista.columns:
-        categorie = df_lista["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
-        df_lista = df_lista[categorie.isin(["A", "I"])]
-        stato_per_nome = dict(zip(df_lista["Cognome e Nome"].astype(str).str.strip(),
-                                   categorie[df_lista.index]))
-    else:
-        stato_per_nome = {}
-    df_lista = df_lista[df_lista["Cognome e Nome"].astype(str).str.strip() != ""]
-
-    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
-    df_mostrato = df_lista
-    if ricerca:
-        df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
-    df_mostrato = df_mostrato.sort_values("Cognome e Nome")
-
-    nomi_tutti = [str(n).strip() for n in df_lista["Cognome e Nome"] if str(n).strip()]
-    nomi_visibili = [str(n).strip() for n in df_mostrato["Cognome e Nome"] if str(n).strip()]
-
-    def _chiave_cb(nome: str) -> str:
-        return f"cb_cartolina_{nome}"
-
-    for nome in nomi_visibili:
-        etichetta = f"🔺 {nome}" if stato_per_nome.get(nome) == "I" else nome
-        st.checkbox(etichetta, key=_chiave_cb(nome))
-
-    selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
-    n_sel = len(selezionati)
-
-    
-# Inizializziamo lo stato se non esiste
+    # Inizializziamo lo stato se non esiste
     if "mostra_riepilogo" not in st.session_state:
         st.session_state.mostra_riepilogo = False
 
@@ -2024,8 +1985,14 @@ def mostra_cartoline_registrazione():
         with col_tutti:
             genera_tutti = st.button("🗂️ S-21 Tutti", use_container_width=True)
             
+        # Calcoliamo temporaneamente il numero di selezionati per abilitare il bottone
+        df_temp = df.reset_index(drop=True)
+        df_temp = df_temp[df_temp["Cognome e Nome"].astype(str).str.strip() != ""]
+        n_sel_temp = sum(1 for nome in [str(n).strip() for n in df_temp["Cognome e Nome"] if str(n).strip()] 
+                         if st.session_state.get(f"cb_cartolina_{nome}", False))
+            
         with col_sel:
-            genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel})", use_container_width=True, disabled=n_sel == 0)
+            genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel_temp})", use_container_width=True, disabled=n_sel_temp == 0)
             
         with col_riepilogo:
             if st.button("📊 Riepilogo", use_container_width=True, key="btn_apri_riepilogo"):
@@ -2034,25 +2001,28 @@ def mostra_cartoline_registrazione():
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
-                zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
+                zip_completo = genera_zip_s21_completo(df, df_tutti, st.session_state.get("anno_scelto_s21", 0)) # Gestito sotto
             st.session_state.cartoline_pacchetto_completo = zip_completo
 
         if genera_sel:
+            # Recuperiamo i selezionati reali
+            selezionati_temp = [str(n).strip() for n in df_temp["Cognome e Nome"] if str(n).strip() and st.session_state.get(f"cb_cartolina_{str(n).strip()}", False)]
             righe_sel = [r.to_dict() for _, r in df.iterrows()
-                         if str(r.get("Cognome e Nome", "")).strip() in selezionati]
+                         if str(r.get("Cognome e Nome", "")).strip() in selezionati_temp]
+            anno_corrente = st.session_state.get("anno_scelto_s21", 0)
             with st.spinner("Genero le cartoline…"):
                 if len(righe_sel) == 1:
-                    pdf_bytes = genera_pdf_s21_singolo(righe_sel[0], df_tutti, anno_scelto)
+                    pdf_bytes = genera_pdf_s21_singolo(righe_sel[0], df_tutti, anno_corrente)
                     st.session_state.cartoline_pronto = ("pdf", pdf_bytes, righe_sel[0].get("Cognome e Nome", ""))
                 else:
-                    zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_scelto)
-                    st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_scelto)
+                    zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_corrente)
+                    st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_corrente)
 
         if st.session_state.get("cartoline_pacchetto_completo"):
             st.download_button(
                 "⬇️ Scarica il pacchetto completo (ZIP)",
                 data=st.session_state.cartoline_pacchetto_completo,
-                file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
+                file_name=f"Registrazioni_Complete.zip",
                 mime="application/zip",
                 key="download_pacchetto_completo",
                 use_container_width=True,
@@ -2070,12 +2040,12 @@ def mostra_cartoline_registrazione():
                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
             else:
                 st.download_button("⬇️ Scarica ZIP", data=dati_file,
-                                   file_name=f"Schede_S21_{extra + 1}.zip",
+                                   file_name=f"Schede_S21.zip",
                                    mime="application/zip", key="download_cartolina_zip",
                                    use_container_width=True,
                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
-    # ── Form del Riepilogo Attività (compare fuori dal contenitore pulsanti, subito sotto) ──
+    # ── Form del Riepilogo Attività (SUBITO SOTTO I PULSANTI) ──
     if st.session_state.mostra_riepilogo:
         st.divider()
         with st.container():
@@ -2155,6 +2125,46 @@ def mostra_cartoline_registrazione():
                     use_container_width=True,
                     on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
                 )
+        st.divider()
+
+    # ── Anno teocratico (ORA SI TROVA SOTTO IL FORM) ───────────────────────────────────────────────
+    anni_presenti = anni_teocratici_per_menu(df_tutti)
+    anno_scelto = st.selectbox(
+        "Seleziona anno teocratico",
+        anni_presenti,
+        format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+    )
+    st.session_state.anno_scelto_s21 = anno_scelto
+
+    # ── Ricerca ed elenco con checkbox ───────────────────────────────
+    df_lista = df.reset_index(drop=True)
+    if "Attivi / Inattivi" in df_lista.columns:
+        categorie = df_lista["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+        df_lista = df_lista[categorie.isin(["A", "I"])]
+        stato_per_nome = dict(zip(df_lista["Cognome e Nome"].astype(str).str.strip(),
+                                   categorie[df_lista.index]))
+    else:
+        stato_per_nome = {}
+    df_lista = df_lista[df_lista["Cognome e Nome"].astype(str).str.strip() != ""]
+
+    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+    df_mostrato = df_lista
+    if ricerca:
+        df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
+    df_mostrato = df_mostrato.sort_values("Cognome e Nome")
+
+    nomi_tutti = [str(n).strip() for n in df_lista["Cognome e Nome"] if str(n).strip()]
+    nomi_visibili = [str(n).strip() for n in df_mostrato["Cognome e Nome"] if str(n).strip()]
+
+    def _chiave_cb(nome: str) -> str:
+        return f"cb_cartolina_{nome}"
+
+    for nome in nomi_visibili:
+        etichetta = f"🔺 {nome}" if stato_per_nome.get(nome) == "I" else nome
+        st.checkbox(etichetta, key=_chiave_cb(nome))
+
+    selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
+    n_sel = len(selezionati)
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
