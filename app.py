@@ -1149,7 +1149,6 @@ def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria:
         "media_studi": tot_studi / n_mesi if n_mesi else 0.0,
     }]
 
-
 def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
     """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
     mensili, solo il gran totale (e la media) per ciascuna delle categorie
@@ -1182,61 +1181,14 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
             "media_ore": tot_ore / n if n else 0.0,
             "media_crediti": tot_cred / n if n else 0.0,
             "media_studi": tot_studi / n if n else 0.0,
-            "conteggio": n,
+            "conteggio": n, # <-- AGGIUNTO: passiamo il numero per la colonna Note
         })
-    return risultati
-
-
-def _riepilogo_costruisci_blocchi_comparati(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFrame) -> list:
-    """Nuova funzione: Usata per la vista 'Tutti i gruppi (comparati)'.
-    Esegue il merge con Anagrafica per recuperare il Gruppo di appartenenza, 
-    quindi raggruppa per Categoria e per Gruppo, calcolando i totali."""
-    if df_periodo.empty or df_anagrafica.empty:
-        return []
-        
-    df = df_periodo.merge(df_anagrafica[["Nome", "Gruppo"]], on="Nome", how="left")
-    df["Gruppo"] = df["Gruppo"].fillna("Nessun Gruppo")
-    
-    risultati = []
-    
-    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
-        if chiave == "Tutti" or not parola:
-            continue
-            
-        df_cat = df[df["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
-        if df_cat.empty:
-            continue
-            
-        gruppi_stats = []
-        for gruppo_nome, gruppo_df in df_cat.groupby("Gruppo"):
-            tot_ore = sum(a_float_it(v) for v in gruppo_df.get("Ore", []))
-            tot_cred = sum(a_float_it(v) for v in gruppo_df.get("Cred. Ore", []))
-            tot_studi = sum(a_float_it(v) for v in gruppo_df.get("Studi Biblici", []))
-            conteggio = len(gruppo_df)
-            
-            gruppi_stats.append({
-                "gruppo": gruppo_nome,
-                "totale_ore": tot_ore,
-                "totale_crediti": tot_cred,
-                "totale_studi": tot_studi,
-                "media_ore": tot_ore / conteggio if conteggio else 0.0,
-                "media_crediti": tot_cred / conteggio if conteggio else 0.0,
-                "media_studi": tot_studi / conteggio if conteggio else 0.0,
-            })
-            
-        gruppi_stats.sort(key=lambda x: str(x["gruppo"]))
-        
-        risultati.append({
-            "categoria": ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave),
-            "gruppi": gruppi_stats
-        })
-        
     return risultati
  
  
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
-                                   totali_per_categoria: list = None, blocchi_comparati: list = None) -> bytes:
+                                   totali_per_categoria: list = None) -> bytes:
     """Genera il PDF del Riepilogo attività: un documento libero (non un
     modulo prestampato) con un blocco per Proclamatore (vista Dettagliato)
     o un unico blocco per categoria (vista Sintetico) — mese, tipo di
@@ -1245,10 +1197,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
  
     Se 'totali_per_categoria' è specificato (caso Sintetico + Categoria
     'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
-    media per ciascuna categoria, senza righe mensili.
-    
-    Se 'blocchi_comparati' è specificato, genera la vista con le tabelle 
-    divise per Gruppo sotto ogni Categoria."""
+    media per ciascuna categoria, senza righe mensili."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
                              leftMargin=1.3 * cm, rightMargin=1.3 * cm)
@@ -1263,49 +1212,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     elementi.append(Paragraph(sottotitolo, stili["Normal"]))
     elementi.append(Spacer(1, 14))
  
-    # NUOVO BLOCCO: Tutti i gruppi (comparati)
-    if blocchi_comparati is not None:
-        if not blocchi_comparati:
-            elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
-        else:
-            for cat_data in blocchi_comparati:
-                elementi.append(Paragraph(f"<b>{cat_data['categoria']}</b>", stili["Heading3"]))
-                elementi.append(Spacer(1, 8))
-                
-                for grp in cat_data["gruppi"]:
-                    elementi.append(Paragraph(f"<b>Gruppo: {grp['gruppo']}</b>", stili["Normal"]))
-                    elementi.append(Spacer(1, 4))
-                    
-                    dati_tabella = [
-                        ["Totale Ore", "Media Ore", "Totale Studi", "Totale Crediti"],
-                        [formatta_numero_it(grp['totale_ore']), 
-                         formatta_numero_it(grp['media_ore']), 
-                         formatta_numero_it(grp['totale_studi']), 
-                         formatta_numero_it(grp['totale_crediti'])]
-                    ]
-                    
-                    tabella = Table(dati_tabella, colWidths=[3.5*cm, 3.5*cm, 3.5*cm, 3.5*cm])
-                    tabella.setStyle(TableStyle([
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F2F2F2")),
-                        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                        ("ALIGN", (0,0), (-1,-1), "CENTER"),
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("TOPPADDING", (0, 0), (-1, -1), 3),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                    ]))
-                    blocco_pdf = [tabella, Spacer(1, 10)]
-                    elementi.append(KeepTogether(blocco_pdf))
-                    
-                elementi.append(Spacer(1, 14))
-                
-        doc.build(elementi)
-        buf.seek(0)
-        return buf.getvalue()
-
     # INIZIO BLOCCO MODIFICATO
     if totali_per_categoria is not None:
         if not totali_per_categoria:
@@ -1321,7 +1227,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                     formatta_numero_it(cat["totale_ore"]),
                     formatta_numero_it(cat["totale_crediti"]),
                     formatta_numero_it(cat["totale_studi"]), 
-                    f"{cat['categoria']} n. {cat['conteggio']}"
+                    f"{cat['categoria']} n. {cat['conteggio']}" # <-- MODIFICA QUI: "Categoria n. X"
                 ])
                 dati_tabella.append([
                     "Media", cat["categoria"], "", 
@@ -1335,8 +1241,8 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 tabella.setStyle(TableStyle([
                     ("FONTSIZE", (0, 0), (-1, -1), 8),
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),                
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")), # Intestazione celeste scuro
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),                # Testo bianco
                     ("FONTNAME", (0, 1), (-1, -1), "Helvetica-Bold"),
                     ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F2F2F2")),
                     ("GRID", (0, 1), (-1, -1), 0.4, colors.grey),
@@ -1350,7 +1256,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ]))
                 elementi.append(tabella)
-                elementi.append(Spacer(1, 16))
+                elementi.append(Spacer(1, 16)) # Spazio vuoto inserito tra una categoria e l'altra
 
         doc.build(elementi)
         buf.seek(0)
@@ -1394,6 +1300,10 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
+        # KeepTogether: se il blocco non entra nello spazio rimasto in pagina, passa
+        # intero alla pagina successiva invece di spezzarsi — altrimenti reportlab
+        # ricalcola male i colori alternati e la griglia di Totale/Media sul pezzo
+        # che continua nella pagina dopo.
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
  
@@ -1461,7 +1371,8 @@ def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = Non
     """Scorciatoia per salvare una riga nel foglio Anagrafica (vedi
     'salva_riga_foglio' per i dettagli)."""
     return salva_riga_foglio(_workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA,
-                           valori, riga_da_aggiornare)
+                              valori, riga_da_aggiornare)
+
 
 # ─────────────────────────────────────────────────────────────────
 # CONNESSIONE (navigazione tramite le card)
@@ -2155,83 +2066,71 @@ def mostra_cartoline_registrazione():
                                     use_container_width=True,
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
-   with st.expander("📊 Riepilogo attività"):
-            st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
-                       "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
-                       "spedire ai sorveglianti di gruppo.")
+    st.divider()
+    with st.expander("📊 Riepilogo attività"):
+        st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
+                   "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
+                   "spedire ai sorveglianti di gruppo.")
 
-            periodo_scelto = st.radio("Periodo", ["Tutto lo storico", "6 mesi"], horizontal=True,
-                                      key="riepilogo_periodo")
+        periodo_scelto = st.radio("Periodo", ["Tutto lo storico", "6 mesi"], horizontal=True,
+                                   key="riepilogo_periodo")
 
-            tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico", "Tutti i grupos (comparati)" if "Tutti i grupos..." else "Tutti i gruppi (comparati)"], horizontal=True,
-                                   key="riepilogo_tipo_vista",
-                                   help="Dettagliato: un blocco per ciascun Proclamatore. "
-                                        "Sintetico: un unico blocco con i totali della categoria scelta. "
-                                        "Tutti i gruppi (comparati): tabella comparativa divisa per gruppo sotto ogni categoria.")
+        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
+                               key="riepilogo_tipo_vista",
+                               help="Dettagliato: un blocco per ciascun Proclamatore. "
+                                    "Sintetico: un unico blocco con i totali della categoria scelta.")
 
-            gruppi_disponibili = ["Tutti i gruppi"]
-            if "Gruppo" in df.columns:
-                gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
-            gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
+        gruppi_disponibili = ["Tutti i gruppi"]
+        if "Gruppo" in df.columns:
+            gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
+        gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
 
-            categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
-                                             key="riepilogo_categoria")
+        categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
+                                         key="riepilogo_categoria")
 
-            if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
-                with st.spinner("Genero il riepilogo…"):
-                    if tipo_vista == "Tutti i gruppi (comparati)":
-                        # Filtriamo solo per periodo, ignorando il gruppo e la singola categoria (li elabora tutti la funzione)
-                        df_periodo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, "Tutti i gruppi", "Tutti")
-                        blocchi_comparati = _riepilogo_costruisci_blocchi_comparati(df_periodo, df)
-                        trovato_qualcosa = bool(blocchi_comparati)
-                        pdf_bytes = genera_pdf_riepilogo_attivita(
-                            blocchi=[],
-                            etichetta_periodo=periodo_scelto,
-                            etichetta_categoria="Tutti",
-                            etichetta_vista=tipo_vista,
-                            blocchi_comparati=blocchi_comparati
-                        )
-                    elif tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
-                        df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
-                                                                   gruppo_scelto, "Tutti")
-                        totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
-                        trovato_qualcosa = bool(totali_categoria)
-                        pdf_bytes = genera_pdf_riepilogo_attivita(
-                            [], periodo_scelto, categoria_scelta,
-                            gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                            etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
-                        )
+        if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
+            with st.spinner("Genero il riepilogo…"):
+                if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
+                    df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
+                                                                gruppo_scelto, "Tutti")
+                    totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
+                    trovato_qualcosa = bool(totali_categoria)
+                    pdf_bytes = genera_pdf_riepilogo_attivita(
+                        [], periodo_scelto, categoria_scelta,
+                        gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                        etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
+                    )
+                else:
+                    df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
+                                                          categoria_scelta)
+                    if tipo_vista == "Sintetico":
+                        blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
                     else:
-                        df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
-                                                             categoria_scelta)
-                        if tipo_vista == "Sintetico":
-                            blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
-                        else:
-                            blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
-                        trovato_qualcosa = bool(blocchi)
-                        pdf_bytes = genera_pdf_riepilogo_attivita(
-                            blocchi, periodo_scelto, categoria_scelta,
-                            gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                            etichetta_vista=tipo_vista,
-                        )
-                if not trovato_qualcosa:
-                    st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
-                st.session_state.riepilogo_pdf_pronto = pdf_bytes
+                        blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
+                    trovato_qualcosa = bool(blocchi)
+                    pdf_bytes = genera_pdf_riepilogo_attivita(
+                        blocchi, periodo_scelto, categoria_scelta,
+                        gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                        etichetta_vista=tipo_vista,
+                    )
+            if not trovato_qualcosa:
+                st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
+            st.session_state.riepilogo_pdf_pronto = pdf_bytes
 
-            if st.session_state.get("riepilogo_pdf_pronto"):
-                nome_file = "Riepilogo_Attivita"
-                if gruppo_scelto != "Tutti i gruppi":
-                    nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
-                nome_file += f"_{tipo_vista.replace(' ', '_').replace('(', '').replace(')', '')}_{categoria_scelta.replace(' ', '_')}.pdf"
-                st.download_button(
-                    "⬇️ Scarica Riepilogo attività (PDF)",
-                    data=st.session_state.riepilogo_pdf_pronto,
-                    file_name=nome_file,
-                    mime="application/pdf",
-                    key="download_riepilogo_attivita",
-                    use_container_width=True,
-                    on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
-                )
+        if st.session_state.get("riepilogo_pdf_pronto"):
+            nome_file = "Riepilogo_Attivita"
+            if gruppo_scelto != "Tutti i gruppi":
+                nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
+            nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+            st.download_button(
+                "⬇️ Scarica Riepilogo attività (PDF)",
+                data=st.session_state.riepilogo_pdf_pronto,
+                file_name=nome_file,
+                mime="application/pdf",
+                key="download_riepilogo_attivita",
+                use_container_width=True,
+                on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
+            )
 
 
 # ─────────────────────────────────────────────────────────────────
