@@ -959,6 +959,233 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
     buf.seek(0)
     return buf.getvalue()
 
+
+# ─────────────────────────────────────────────────────────────────
+# RIEPILOGO ATTIVITÀ (report libero per sorveglianti di gruppo/categoria)
+# ─────────────────────────────────────────────────────────────────
+CATEGORIE_RIEPILOGO_ATTIVITA = {
+    "Tutti": None,
+    "Solo Proclamatori": "proclamatore",
+    "Solo Pionieri Ausiliari": "pioniere ausiliario",
+    "Solo Pionieri Regolari": "pioniere regolare",
+    "Solo Pionieri Speciali": "pioniere speciale",
+    "Solo Missionari sul campo": "missionario|rappresentante",
+}
+
+
+def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
+    """Ritorna (anno, mese) del mese più recente per cui esiste almeno un
+    rapporto nel foglio Tutti, o None se il foglio è vuoto."""
+    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
+        return None
+    validi = []
+    for m in df_tutti["Mese/Anno"].dropna().unique():
+        try:
+            a, mm = str(m).split("-")
+            validi.append((int(a), int(mm)))
+        except Exception:
+            continue
+    if not validi:
+        return None
+    return max(validi)
+
+
+def _riepilogo_finestra_ultimi_n_mesi(anno_fine: int, mese_fine: int, n: int = 6) -> set:
+    """Ritorna l'insieme (anno, mese) degli ultimi 'n' mesi, contando a
+    ritroso da (anno_fine, mese_fine) incluso."""
+    risultato = set()
+    a, m = anno_fine, mese_fine
+    for _ in range(n):
+        risultato.add((a, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            a -= 1
+    return risultato
+
+
+ETICHETTE_SINTETICO_CATEGORIA = {
+    "Tutti": "Tutti i proclamatori",
+    "Solo Proclamatori": "Proclamatori",
+    "Solo Pionieri Ausiliari": "Pionieri Ausiliari",
+    "Solo Pionieri Regolari": "Pionieri Regolari",
+    "Solo Pionieri Speciali": "Pionieri Speciali",
+    "Solo Missionari sul campo": "Missionari sul campo",
+}
+
+
+def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, periodo: str,
+                            gruppo_scelto: str, categoria: str) -> pd.DataFrame:
+    """Filtra il foglio Tutti per periodo, categoria (Tipo di servizio di
+    quel mese) ed eventualmente Gruppo (assegnazione attuale in Anagrafica
+    — è l'unico filtro che dipende da Anagrafica, perché il Gruppo non
+    esiste nel foglio Tutti). Usata sia dalla vista Dettagliato che da
+    quella Sintetico del Riepilogo attività."""
+    df = df_tutti.copy()
+    if df.empty:
+        return df
+
+    if periodo == "6 mesi":
+        ultimo = _riepilogo_ultimo_mese_con_dati(df_tutti)
+        if not ultimo:
+            return df.iloc[0:0]
+        finestra = _riepilogo_finestra_ultimi_n_mesi(ultimo[0], ultimo[1], 6)
+
+        def _dentro_finestra(mese_anno):
+            try:
+                a, m = str(mese_anno).split("-")
+                return (int(a), int(m)) in finestra
+            except Exception:
+                return False
+
+        df = df[df["Mese/Anno"].apply(_dentro_finestra)]
+
+    parola_categoria = CATEGORIE_RIEPILOGO_ATTIVITA.get(categoria)
+    if parola_categoria:
+        df = df[df["Tipo Servizio"].str.lower().str.contains(parola_categoria, na=False, regex=True)]
+
+    if gruppo_scelto and gruppo_scelto != "Tutti i gruppi" and "Gruppo" in df_anagrafica.columns:
+        nomi_gruppo = set(
+            df_anagrafica.loc[df_anagrafica["Gruppo"].astype(str).str.strip() == gruppo_scelto, "Cognome e Nome"]
+            .astype(str).str.strip()
+        )
+        df = df[df["Nome"].str.strip().isin(nomi_gruppo)]
+
+    return df
+
+
+def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list:
+    """Un blocco per ciascun Proclamatore presente in 'df_filtrato' (già
+    filtrato per periodo/categoria/gruppo). Ogni blocco: {'nome', 'righe',
+    'totale_ore', 'totale_crediti', 'totale_studi', 'media_ore',
+    'media_crediti', 'media_studi'}."""
+    if df_filtrato.empty:
+        return []
+
+    blocchi = []
+    for nome, gruppo_df in df_filtrato.groupby("Nome"):
+        gruppo_df = gruppo_df.sort_values("Mese/Anno")
+        righe = []
+        tot_ore = tot_cred = tot_studi = 0.0
+        for _, r in gruppo_df.iterrows():
+            ore_val = a_float_it(r.get("Ore", ""))
+            cred_val = a_float_it(r.get("Cred. Ore", ""))
+            studi_val = a_float_it(r.get("Studi Biblici", ""))
+            tot_ore += ore_val
+            tot_cred += cred_val
+            tot_studi += studi_val
+            righe.append({
+                "mese_anno": r.get("Mese/Anno", ""),
+                "tipo": r.get("Tipo Servizio", "") or "",
+                "ministero": "Sì" if r.get("Ha partecipato al ministero") else "No",
+                "ore": formatta_numero_it(ore_val) if ore_val else "",
+                "crediti": formatta_numero_it(cred_val) if cred_val else "",
+                "studi": formatta_numero_it(studi_val) if studi_val else "",
+                "note": r.get("Osservazioni", "") or "",
+            })
+        n = len(righe)
+        blocchi.append({
+            "nome": nome,
+            "righe": righe,
+            "totale_ore": tot_ore,
+            "totale_crediti": tot_cred,
+            "totale_studi": tot_studi,
+            "media_ore": tot_ore / n if n else 0.0,
+            "media_crediti": tot_cred / n if n else 0.0,
+            "media_studi": tot_studi / n if n else 0.0,
+        })
+    blocchi.sort(key=lambda b: b["nome"])
+    return blocchi
+
+
+def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria: str) -> list:
+    """Un UNICO blocco, intestato con il nome della categoria (es. 'Pionieri
+    Ausiliari') invece che con un nome di persona: raggruppa 'df_filtrato'
+    (già filtrato per periodo/categoria/gruppo) per mese, sommando
+    Ore/Crediti/Studi e mettendo nelle Note il conteggio di quante persone
+    quel mese risultano in quella categoria. Totale e Media in fondo, come
+    nella vista Dettagliato."""
+    if df_filtrato.empty:
+        return []
+
+    etichetta = ETICHETTE_SINTETICO_CATEGORIA.get(categoria, categoria)
+    righe = []
+    tot_ore = tot_cred = tot_studi = 0.0
+    for mese_anno, gruppo_mese in df_filtrato.groupby("Mese/Anno"):
+        ore_val = sum(a_float_it(v) for v in gruppo_mese.get("Ore", []))
+        cred_val = sum(a_float_it(v) for v in gruppo_mese.get("Cred. Ore", []))
+        studi_val = sum(a_float_it(v) for v in gruppo_mese.get("Studi Biblici", []))
+        conteggio = len(gruppo_mese)
+        tot_ore += ore_val
+        tot_cred += cred_val
+        tot_studi += studi_val
+        righe.append({
+            "mese_anno": mese_anno,
+            "tipo": etichetta,
+            "ministero": "",
+            "ore": formatta_numero_it(ore_val) if ore_val else "",
+            "crediti": formatta_numero_it(cred_val) if cred_val else "",
+            "studi": formatta_numero_it(studi_val) if studi_val else "",
+            "note": f"{conteggio} {etichetta.lower()}" if conteggio else "",
+        })
+
+    def _chiave_ordinamento(riga):
+        try:
+            a, m = str(riga["mese_anno"]).split("-")
+            return (int(a), int(m))
+        except Exception:
+            return (0, 0)
+
+    righe.sort(key=_chiave_ordinamento)
+    n_mesi = len(righe)
+    return [{
+        "nome": etichetta,
+        "righe": righe,
+        "totale_ore": tot_ore,
+        "totale_crediti": tot_cred,
+        "totale_studi": tot_studi,
+        "media_ore": tot_ore / n_mesi if n_mesi else 0.0,
+        "media_crediti": tot_cred / n_mesi if n_mesi else 0.0,
+        "media_studi": tot_studi / n_mesi if n_mesi else 0.0,
+    }]
+
+def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
+    """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
+    mensili, solo il gran totale (e la media) per ciascuna delle categorie
+    (Proclamatori, Pionieri Regolari, Pionieri Speciali, Missionari sul
+    campo, Pionieri Ausiliari) trovate in 'df_periodo_gruppo' — già
+    filtrato per periodo ed eventuale Gruppo, ma NON per categoria. Salta
+    le categorie senza nessuna riga. Ritorna una lista di dict:
+    {'categoria', 'totale_ore', 'totale_crediti', 'totale_studi',
+    'media_ore', 'media_crediti', 'media_studi', 'conteggio'}."""
+    if df_periodo_gruppo.empty:
+        return []
+ 
+    risultati = []
+    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
+        if chiave == "Tutti" or not parola:
+            continue
+        df_cat = df_periodo_gruppo[df_periodo_gruppo["Tipo Servizio"].str.lower().str.contains(
+            parola, na=False, regex=True)]
+        if df_cat.empty:
+            continue
+        tot_ore = sum(a_float_it(v) for v in df_cat.get("Ore", []))
+        tot_cred = sum(a_float_it(v) for v in df_cat.get("Cred. Ore", []))
+        tot_studi = sum(a_float_it(v) for v in df_cat.get("Studi Biblici", []))
+        n = len(df_cat)
+        risultati.append({
+            "categoria": ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave),
+            "totale_ore": tot_ore,
+            "totale_crediti": tot_cred,
+            "totale_studi": tot_studi,
+            "media_ore": tot_ore / n if n else 0.0,
+            "media_crediti": tot_cred / n if n else 0.0,
+            "media_studi": tot_studi / n if n else 0.0,
+            "conteggio": n, # <-- AGGIUNTO: passiamo il numero per la colonna Note
+        })
+    return risultati
+ 
+ 
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
                                    totali_per_categoria: list = None) -> bytes:
@@ -1073,7 +1300,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
-
         # KeepTogether: se il blocco non entra nello spazio rimasto in pagina, passa
         # intero alla pagina successiva invece di spezzarsi — altrimenti reportlab
         # ricalcola male i colori alternati e la griglia di Totale/Media sul pezzo
