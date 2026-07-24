@@ -1149,6 +1149,7 @@ def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria:
         "media_studi": tot_studi / n_mesi if n_mesi else 0.0,
     }]
 
+
 def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
     """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
     mensili, solo il gran totale (e la media) per ciascuna delle categorie
@@ -1181,14 +1182,61 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
             "media_ore": tot_ore / n if n else 0.0,
             "media_crediti": tot_cred / n if n else 0.0,
             "media_studi": tot_studi / n if n else 0.0,
-            "conteggio": n, # <-- AGGIUNTO: passiamo il numero per la colonna Note
+            "conteggio": n,
         })
+    return risultati
+
+
+def _riepilogo_costruisci_blocchi_comparati(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFrame) -> list:
+    """Nuova funzione: Usata per la vista 'Tutti i gruppi (comparati)'.
+    Esegue il merge con Anagrafica per recuperare il Gruppo di appartenenza, 
+    quindi raggruppa per Categoria e per Gruppo, calcolando i totali."""
+    if df_periodo.empty or df_anagrafica.empty:
+        return []
+        
+    df = df_periodo.merge(df_anagrafica[["Nome", "Gruppo"]], on="Nome", how="left")
+    df["Gruppo"] = df["Gruppo"].fillna("Nessun Gruppo")
+    
+    risultati = []
+    
+    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
+        if chiave == "Tutti" or not parola:
+            continue
+            
+        df_cat = df[df["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
+        if df_cat.empty:
+            continue
+            
+        gruppi_stats = []
+        for gruppo_nome, gruppo_df in df_cat.groupby("Gruppo"):
+            tot_ore = sum(a_float_it(v) for v in gruppo_df.get("Ore", []))
+            tot_cred = sum(a_float_it(v) for v in gruppo_df.get("Cred. Ore", []))
+            tot_studi = sum(a_float_it(v) for v in gruppo_df.get("Studi Biblici", []))
+            conteggio = len(gruppo_df)
+            
+            gruppi_stats.append({
+                "gruppo": gruppo_nome,
+                "totale_ore": tot_ore,
+                "totale_crediti": tot_cred,
+                "totale_studi": tot_studi,
+                "media_ore": tot_ore / conteggio if conteggio else 0.0,
+                "media_crediti": tot_cred / conteggio if conteggio else 0.0,
+                "media_studi": tot_studi / conteggio if conteggio else 0.0,
+            })
+            
+        gruppi_stats.sort(key=lambda x: str(x["gruppo"]))
+        
+        risultati.append({
+            "categoria": ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave),
+            "gruppi": gruppi_stats
+        })
+        
     return risultati
  
  
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
-                                   totali_per_categoria: list = None) -> bytes:
+                                   totali_per_categoria: list = None, blocchi_comparati: list = None) -> bytes:
     """Genera il PDF del Riepilogo attività: un documento libero (non un
     modulo prestampato) con un blocco per Proclamatore (vista Dettagliato)
     o un unico blocco per categoria (vista Sintetico) — mese, tipo di
@@ -1197,7 +1245,10 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
  
     Se 'totali_per_categoria' è specificato (caso Sintetico + Categoria
     'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
-    media per ciascuna categoria, senza righe mensili."""
+    media per ciascuna categoria, senza righe mensili.
+    
+    Se 'blocchi_comparati' è specificato, genera la vista con le tabelle 
+    divise per Gruppo sotto ogni Categoria."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
                              leftMargin=1.3 * cm, rightMargin=1.3 * cm)
@@ -1212,6 +1263,49 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     elementi.append(Paragraph(sottotitolo, stili["Normal"]))
     elementi.append(Spacer(1, 14))
  
+    # NUOVO BLOCCO: Tutti i gruppi (comparati)
+    if blocchi_comparati is not None:
+        if not blocchi_comparati:
+            elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
+        else:
+            for cat_data in blocchi_comparati:
+                elementi.append(Paragraph(f"<b>{cat_data['categoria']}</b>", stili["Heading3"]))
+                elementi.append(Spacer(1, 8))
+                
+                for grp in cat_data["gruppi"]:
+                    elementi.append(Paragraph(f"<b>Gruppo: {grp['gruppo']}</b>", stili["Normal"]))
+                    elementi.append(Spacer(1, 4))
+                    
+                    dati_tabella = [
+                        ["Totale Ore", "Media Ore", "Totale Studi", "Totale Crediti"],
+                        [formatta_numero_it(grp['totale_ore']), 
+                         formatta_numero_it(grp['media_ore']), 
+                         formatta_numero_it(grp['totale_studi']), 
+                         formatta_numero_it(grp['totale_crediti'])]
+                    ]
+                    
+                    tabella = Table(dati_tabella, colWidths=[3.5*cm, 3.5*cm, 3.5*cm, 3.5*cm])
+                    tabella.setStyle(TableStyle([
+                        ("FONTSIZE", (0, 0), (-1, -1), 9),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F2F2F2")),
+                        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("TOPPADDING", (0, 0), (-1, -1), 3),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ]))
+                    blocco_pdf = [tabella, Spacer(1, 10)]
+                    elementi.append(KeepTogether(blocco_pdf))
+                    
+                elementi.append(Spacer(1, 14))
+                
+        doc.build(elementi)
+        buf.seek(0)
+        return buf.getvalue()
+
     # INIZIO BLOCCO MODIFICATO
     if totali_per_categoria is not None:
         if not totali_per_categoria:
@@ -1227,7 +1321,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                     formatta_numero_it(cat["totale_ore"]),
                     formatta_numero_it(cat["totale_crediti"]),
                     formatta_numero_it(cat["totale_studi"]), 
-                    f"{cat['categoria']} n. {cat['conteggio']}" # <-- MODIFICA QUI: "Categoria n. X"
+                    f"{cat['categoria']} n. {cat['conteggio']}"
                 ])
                 dati_tabella.append([
                     "Media", cat["categoria"], "", 
@@ -1241,8 +1335,8 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 tabella.setStyle(TableStyle([
                     ("FONTSIZE", (0, 0), (-1, -1), 8),
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")), # Intestazione celeste scuro
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),                # Testo bianco
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),                
                     ("FONTNAME", (0, 1), (-1, -1), "Helvetica-Bold"),
                     ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F2F2F2")),
                     ("GRID", (0, 1), (-1, -1), 0.4, colors.grey),
@@ -1256,7 +1350,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ]))
                 elementi.append(tabella)
-                elementi.append(Spacer(1, 16)) # Spazio vuoto inserito tra una categoria e l'altra
+                elementi.append(Spacer(1, 16))
 
         doc.build(elementi)
         buf.seek(0)
@@ -1300,13 +1394,13 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
-        
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
  
     doc.build(elementi)
     buf.seek(0)
     return buf.getvalue()
+
 
 def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
     if "ID" not in df.columns or df.empty:
@@ -1367,7 +1461,7 @@ def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = Non
     """Scorciatoia per salvare una riga nel foglio Anagrafica (vedi
     'salva_riga_foglio' per i dettagli)."""
     return salva_riga_foglio(_workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA,
-                              valori, riga_da_aggiornare)
+                           valori, riga_da_aggiornare)
 
 
 # ─────────────────────────────────────────────────────────────────
