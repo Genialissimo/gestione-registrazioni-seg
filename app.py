@@ -1657,6 +1657,12 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+import os
+import datetime
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
 # ─────────────────────────────────────────────────────────────────
@@ -1842,15 +1848,17 @@ def mostra_anagrafiche():
         st.rerun()
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_ANAGRAFICA}».")
 
+    # ── Inizializzazione sicura degli stati di sessione ──
+    if "anagrafica_nuovo" not in st.session_state:
+        st.session_state.anagrafica_nuovo = False
+    if "anagrafica_aperto" not in st.session_state:
+        st.session_state.anagrafica_aperto = None
+    if "mostra_opzioni_gruppo" not in st.session_state:
+        st.session_state.mostra_opzioni_gruppo = False
+
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
-
-    if "anagrafica_nuovo" not in st.session_state:
-        st.session_state.anagrafica_nuovo = False
-
-    if "mostra_opzioni_gruppo" not in st.session_state:
-        st.session_state.mostra_opzioni_gruppo = False
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
     if err:
@@ -1973,7 +1981,9 @@ def mostra_anagrafiche():
         nome = riga.get("Cognome e Nome", "(senza nome)").strip()
         numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
         chiave_persona = str(riga.get("ID") or idx)
-        aperto = (st.session_state.anagrafica_aperto == chiave_persona)
+        
+        # Uso sicuro di .get() per prevenire l'AttributeError
+        aperto = (st.session_state.get("anagrafica_aperto") == chiave_persona)
         freccia = "▼" if aperto else "▶"
 
         col_chk, col_btn = st.columns([1, 11])
@@ -2007,7 +2017,6 @@ def aggiorna_gruppo_massivo(workbook, elenco_nomi: list, nuovo_gruppo: str):
         idx_nome_anag = intestazioni_anag.index("Cognome e Nome")
         idx_gruppo_anag = 10  # Colonna K (indice 0-based: 10)
 
-        celle_da_aggiornare_anag = []
         for i, riga in enumerate(dati_anag[RIGA_INTESTAZIONE_ANAGRAFICA + 1:], start=RIGA_INTESTAZIONE_ANAGRAFICA + 2):
             if len(riga) > idx_nome_anag:
                 nome_riga = riga[idx_nome_anag].strip()
@@ -2033,7 +2042,6 @@ def aggiorna_gruppo_massivo(workbook, elenco_nomi: list, nuovo_gruppo: str):
         return True, None
     except Exception as e:
         return False, str(e)
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
