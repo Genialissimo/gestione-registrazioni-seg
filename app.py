@@ -139,33 +139,7 @@ S21_FONT_ETA = 8.5          # età calcolata accanto alle date, in rosso
 S21_COLORE_ROSSO = (0.827, 0.125, 0.125)  # stesso rosso #D32F2F usato nel form web
 S21_COLORE_NERO = (0, 0, 0)
 
-# ─────────────────────────────────────────────────────────────────
-# UTILITY PER IL MENU POPOVER
-# ─────────────────────────────────────────────────────────────────
-def menu_principale():
-    """Menu a comparsa con tre puntini per le opzioni principali."""
-    with st.popover("⋮", use_container_width=True):
-        st.caption("Menu principale")
-        st.divider()
-        
-        # Opzioni dirette alle pagine
-        if st.button("📖 Rapporti consegnati", use_container_width=True):
-            vai_a("registrazioni")
-            st.rerun()
-        if st.button("📚 Storico rapporti", use_container_width=True):
-            vai_a("storico")
-            st.rerun()
-        if st.button("🗂️ Anagrafiche", use_container_width=True):
-            vai_a("anagrafiche")
-            st.rerun()
-        if st.button("📇 Cartoline di registrazione", use_container_width=True):
-            vai_a("cartoline")
-            st.rerun()
-        
-        st.divider()
-        if st.button("🔄 Aggiorna dati", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+
 
 # ─────────────────────────────────────────────────────────────────
 # CONNESSIONE A GOOGLE
@@ -444,6 +418,7 @@ def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top
     x = (x0 + x1) / 2 - largo_testo / 2
     c.setFont(font_name, font_size)
     c.drawString(x, _s21_y_da_top((top + bottom) / 2, offset, alza=font_size * 0.36 + sposta), testo)
+
 
 
 def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico) -> dict:
@@ -1409,16 +1384,8 @@ collegato = workbook is not None
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
-    
-    # Layout con Home e menu popover affiancati
-    col_home, col_menu, col_spazio = st.columns([1, 1, 8])
-    with col_home:
-        st.markdown("### 🏠 Pannello di controllo")
-    with col_menu:
-        menu_principale()
-    
-    st.divider()
-    
+    st.title("Pannello di controllo")
+
     st.subheader("Sezioni")
     card_data = [
         ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni"),
@@ -1437,8 +1404,6 @@ def mostra_home():
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                           use_container_width=True, on_click=vai_a, args=(pagina,))
 
-    st.divider()
-    
     if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
         st.cache_data.clear()
@@ -1532,12 +1497,7 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 
 def mostra_registrazioni():
-    col_titolo, col_menu = st.columns([6, 1])
-    with col_titolo:
-        st.title("📖 Rapporti consegnati")
-    with col_menu:
-        menu_principale()
-    
+    st.title("Rapporti consegnati")
     if st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -1875,12 +1835,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 
 def mostra_anagrafiche():
-    col_titolo, col_menu = st.columns([6, 1])
-    with col_titolo:
-        st.title("🗂️ Anagrafiche")
-    with col_menu:
-        menu_principale()
-    
+    st.title("Anagrafiche")
     if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -2016,7 +1971,7 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (si apre dal menu "⋯" ma il menu rimane aperto) ──
+    # ── Riepilogo attività (aperto/chiuso dal pulsante 📊 in alto) ────
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -2040,7 +1995,6 @@ def mostra_cartoline_registrazione():
             categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
                                              key="riepilogo_categoria")
 
-            # Quando clicchi su "Crea PDF", il form si chiude e il PDF viene generato
             if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
                 with st.spinner("Genero il riepilogo…"):
                     if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
@@ -2069,10 +2023,6 @@ def mostra_cartoline_registrazione():
                 if not trovato_qualcosa:
                     st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
                 st.session_state.riepilogo_pdf_pronto = pdf_bytes
-                
-                # Chiudi il form del riepilogo DOPO aver generato il PDF
-                st.session_state.cartoline_mostra_riepilogo = False
-                st.rerun()
 
             if st.session_state.get("riepilogo_pdf_pronto"):
                 nome_file = "Riepilogo_Attivita"
@@ -2119,7 +2069,7 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + menu a comparsa con le opzioni della pagina ──────────────
+    # ── Home + menu a comparsa con le altre opzioni, compatti e affiancati ──
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
@@ -2128,31 +2078,22 @@ def mostra_cartoline_registrazione():
                 vai_a("home")
                 st.rerun()
         with col_menu:
-            # QUI c'è il menu a tre puntini (⋮) - COMPATTO, senza separatori né intestazione
-            with st.popover("⋮", use_container_width=True):
-                # Opzione 1: Crea tutti i PDF
-                if st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True):
-                    st.session_state.cartoline_genera_tutti = True
-                    st.rerun()
-                
-                # Opzione 2: Genera cartoline selezionate
-                if st.button(f"📄 Genera cartoline selezionate ({n_sel})", use_container_width=True, disabled=n_sel == 0):
-                    st.session_state.cartoline_genera_sel = True
-                    st.rerun()
-                
-                # Opzione 3: Apre il form Riepilogo attività (il menu rimane APERTO)
-                if st.button("📊 Riepilogo attività", use_container_width=True):
-                    st.session_state.cartoline_mostra_riepilogo = True
-                    # NON faccio st.rerun() qui, così il menu rimane aperto!
+            with st.popover("⋯", use_container_width=True):
+                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni",
+                                          use_container_width=True)
+                genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
+                                        use_container_width=True, disabled=n_sel == 0)
+                if st.button("📊 Riepilogo attività", use_container_width=True,
+                             key="toggle_riepilogo_attivita"):
+                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get(
+                        "cartoline_mostra_riepilogo", False)
 
-        # Eseguo le azioni selezionate dal menu
-        if st.session_state.get("cartoline_genera_tutti"):
+        if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
                 zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
             st.session_state.cartoline_pacchetto_completo = zip_completo
-            st.session_state.cartoline_genera_tutti = False
 
-        if st.session_state.get("cartoline_genera_sel"):
+        if genera_sel:
             righe_sel = [r.to_dict() for _, r in df.iterrows()
                          if str(r.get("Cognome e Nome", "")).strip() in selezionati]
             with st.spinner("Genero le cartoline…"):
@@ -2162,9 +2103,7 @@ def mostra_cartoline_registrazione():
                 else:
                     zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_scelto)
                     st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_scelto)
-            st.session_state.cartoline_genera_sel = False
 
-        # Tasto Scarica per "Crea tutti i PDF"
         if st.session_state.get("cartoline_pacchetto_completo"):
             st.download_button(
                 "⬇️ Scarica il pacchetto completo (ZIP)",
@@ -2176,7 +2115,6 @@ def mostra_cartoline_registrazione():
                 on_click=lambda: st.session_state.pop("cartoline_pacchetto_completo", None),
             )
 
-        # Tasto Scarica per "Genera cartoline selezionate"
         pronto = st.session_state.get("cartoline_pronto")
         if pronto:
             tipo, dati_file, extra = pronto
@@ -2194,6 +2132,8 @@ def mostra_cartoline_registrazione():
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
+
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
@@ -2261,12 +2201,7 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 
 
 def mostra_storico_proclamatori():
-    col_titolo, col_menu = st.columns([6, 1])
-    with col_titolo:
-        st.title("📚 Storico rapporti consegnati")
-    with col_menu:
-        menu_principale()
-    
+    st.title("Storico rapporti consegnati")
     if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -2430,7 +2365,7 @@ def mostra_storico_proclamatori():
 
 
 # ─────────────────────────────────────────────────────────────────
-# ROUTING — navigazione tramite le card della Home o popover
+# ROUTING — navigazione solo tramite le card della Home
 # ─────────────────────────────────────────────────────────────────
 if st.session_state.pagina == "registrazioni":
     mostra_registrazioni()
