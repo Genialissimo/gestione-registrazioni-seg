@@ -139,7 +139,33 @@ S21_FONT_ETA = 8.5          # età calcolata accanto alle date, in rosso
 S21_COLORE_ROSSO = (0.827, 0.125, 0.125)  # stesso rosso #D32F2F usato nel form web
 S21_COLORE_NERO = (0, 0, 0)
 
-
+# ─────────────────────────────────────────────────────────────────
+# UTILITY PER IL MENU POPOVER
+# ─────────────────────────────────────────────────────────────────
+def menu_principale():
+    """Menu a comparsa con tre puntini per le opzioni principali."""
+    with st.popover("⋮", use_container_width=True):
+        st.caption("Menu principale")
+        st.divider()
+        
+        # Opzioni dirette alle pagine
+        if st.button("📖 Rapporti consegnati", use_container_width=True):
+            vai_a("registrazioni")
+            st.rerun()
+        if st.button("📚 Storico rapporti", use_container_width=True):
+            vai_a("storico")
+            st.rerun()
+        if st.button("🗂️ Anagrafiche", use_container_width=True):
+            vai_a("anagrafiche")
+            st.rerun()
+        if st.button("📇 Cartoline di registrazione", use_container_width=True):
+            vai_a("cartoline")
+            st.rerun()
+        
+        st.divider()
+        if st.button("🔄 Aggiorna dati", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
 # ─────────────────────────────────────────────────────────────────
 # CONNESSIONE A GOOGLE
@@ -418,7 +444,6 @@ def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top
     x = (x0 + x1) / 2 - largo_testo / 2
     c.setFont(font_name, font_size)
     c.drawString(x, _s21_y_da_top((top + bottom) / 2, offset, alza=font_size * 0.36 + sposta), testo)
-
 
 
 def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico) -> dict:
@@ -1384,8 +1409,16 @@ collegato = workbook is not None
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
-    st.title("Pannello di controllo")
-
+    
+    # Layout con Home e menu popover affiancati
+    col_home, col_menu, col_spazio = st.columns([1, 1, 8])
+    with col_home:
+        st.markdown("### 🏠 Pannello di controllo")
+    with col_menu:
+        menu_principale()
+    
+    st.divider()
+    
     st.subheader("Sezioni")
     card_data = [
         ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni"),
@@ -1404,6 +1437,8 @@ def mostra_home():
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                           use_container_width=True, on_click=vai_a, args=(pagina,))
 
+    st.divider()
+    
     if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
         st.cache_data.clear()
@@ -1497,7 +1532,12 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 
 def mostra_registrazioni():
-    st.title("Rapporti consegnati")
+    col_titolo, col_menu = st.columns([6, 1])
+    with col_titolo:
+        st.title("📖 Rapporti consegnati")
+    with col_menu:
+        menu_principale()
+    
     if st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -1835,7 +1875,12 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 
 def mostra_anagrafiche():
-    st.title("Anagrafiche")
+    col_titolo, col_menu = st.columns([6, 1])
+    with col_titolo:
+        st.title("🗂️ Anagrafiche")
+    with col_menu:
+        menu_principale()
+    
     if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -1939,7 +1984,12 @@ def mostra_anagrafiche():
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
-    st.title("📇 Cartoline di registrazione")
+    col_titolo, col_menu = st.columns([6, 1])
+    with col_titolo:
+        st.title("📇 Cartoline di registrazione")
+    with col_menu:
+        menu_principale()
+    
     contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
 
     if not collegato:
@@ -2071,13 +2121,13 @@ def mostra_cartoline_registrazione():
 
     # ── Home + menu a comparsa con le altre opzioni, compatti e affiancati ──
     with contenitore_pulsanti:
-        col_home, col_menu, col_vuota = st.columns([1, 1, 5])
+        col_home, col_menu2, col_vuota = st.columns([1, 1, 5])
         with col_home:
             if st.button("🏠", key="home_da_cartoline", use_container_width=True,
                          help="Torna alla Home"):
                 vai_a("home")
                 st.rerun()
-        with col_menu:
+        with col_menu2:
             with st.popover("⋯", use_container_width=True):
                 genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni",
                                           use_container_width=True)
@@ -2201,7 +2251,12 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 
 
 def mostra_storico_proclamatori():
-    st.title("Storico rapporti consegnati")
+    col_titolo, col_menu = st.columns([6, 1])
+    with col_titolo:
+        st.title("📚 Storico rapporti consegnati")
+    with col_menu:
+        menu_principale()
+    
     if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
         vai_a("home")
         st.rerun()
@@ -2365,7 +2420,7 @@ def mostra_storico_proclamatori():
 
 
 # ─────────────────────────────────────────────────────────────────
-# ROUTING — navigazione solo tramite le card della Home
+# ROUTING — navigazione tramite le card della Home o popover
 # ─────────────────────────────────────────────────────────────────
 if st.session_state.pagina == "registrazioni":
     mostra_registrazioni()
