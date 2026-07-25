@@ -1971,7 +1971,7 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (aperto dal menu ⋯, si chiude al click su "Crea PDF") ────
+    # ── Riepilogo attività (mostrato se attivato dal menu) ────
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -1996,9 +1996,6 @@ def mostra_cartoline_registrazione():
                                              key="riepilogo_categoria")
 
             if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
-                # Chiude il form di opzioni al click
-                st.session_state.cartoline_mostra_riepilogo = False
-                
                 with st.spinner("Genero il riepilogo…"):
                     if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
                         df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
@@ -2026,29 +2023,21 @@ def mostra_cartoline_registrazione():
                 if not trovato_qualcosa:
                     st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
                 st.session_state.riepilogo_pdf_pronto = pdf_bytes
-                st.rerun()
 
-    # Mostra il pulsante di download se il PDF è pronto (anche a form chiuso)
-    if st.session_state.get("riepilogo_pdf_pronto"):
-        nome_file = "Riepilogo_Attivita"
-        # Recupera le ultime impostazioni se disponibili per il nome file
-        g_scelto = st.session_state.get("riepilogo_gruppo", "Tutti i gruppi")
-        t_vista = st.session_state.get("riepilogo_tipo_vista", "Dettagliato")
-        c_scelta = st.session_state.get("riepilogo_categoria", "Tutti")
-        
-        if g_scelto != "Tutti i gruppi":
-            nome_file += f"_{_s21_nome_file_sicuro(g_scelto)}"
-        nome_file += f"_{t_vista}_{c_scelta.replace(' ', '_')}.pdf"
-        
-        st.download_button(
-            "⬇️ Scarica Riepilogo attività (PDF)",
-            data=st.session_state.riepilogo_pdf_pronto,
-            file_name=nome_file,
-            mime="application/pdf",
-            key="download_riepilogo_attivita",
-            use_container_width=True,
-            on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
-        )
+            if st.session_state.get("riepilogo_pdf_pronto"):
+                nome_file = "Riepilogo_Attivita"
+                if gruppo_scelto != "Tutti i gruppi":
+                    nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
+                nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+                st.download_button(
+                    "⬇️ Scarica Riepilogo attività (PDF)",
+                    data=st.session_state.riepilogo_pdf_pronto,
+                    file_name=nome_file,
+                    mime="application/pdf",
+                    key="download_riepilogo_attivita",
+                    use_container_width=True,
+                    on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
+                )
 
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
@@ -2093,12 +2082,10 @@ def mostra_cartoline_registrazione():
                 genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
                                         use_container_width=True, disabled=n_sel == 0)
                 
-                stato_riepilogo = st.session_state.get("cartoline_mostra_riepilogo", False)
-                etichetta_riepilogo = "📊 Chiudi Riepilogo attività" if stato_riepilogo else "📊 Riepilogo attività"
-                
-                if st.button(etichetta_riepilogo, use_container_width=True, key="toggle_riepilogo_attivita"):
-                    st.session_state.cartoline_mostra_riepilogo = not stato_riepilogo
-                    st.rerun()
+                # Il pulsante resta sempre con il suo nome fisso "📊 Riepilogo attività"
+                if st.button("📊 Riepilogo attività", use_container_width=True, key="toggle_riepilogo_attivita"):
+                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get("cartoline_mostra_riepilogo", False)
+                    st.rerun()  # Forza la chiusura immediata del menu a tendina
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
