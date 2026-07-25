@@ -2077,7 +2077,7 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + menu a comparsa con le altre opzioni, compatti e affiancati ──
+    # ── Home + menu "⋯" (toggle mio, non st.popover) ─────────────────
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
@@ -2086,15 +2086,20 @@ def mostra_cartoline_registrazione():
                 vai_a("home")
                 st.rerun()
         with col_menu:
-            with st.popover("⋯", use_container_width=True):
-                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni",
-                                          use_container_width=True)
-                genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
-                                        use_container_width=True, disabled=n_sel == 0)
-                if st.button("📊 Riepilogo attività", use_container_width=True,
-                             key="toggle_riepilogo_attivita"):
-                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get(
-                        "cartoline_mostra_riepilogo", False)
+            if st.button("⋯", key="toggle_menu_cartoline", use_container_width=True):
+                st.session_state.cartoline_menu_aperto = not st.session_state.get(
+                    "cartoline_menu_aperto", False)
+
+        genera_tutti = genera_sel = False
+        if st.session_state.get("cartoline_menu_aperto"):
+            genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True)
+            genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
+                                    use_container_width=True, disabled=n_sel == 0)
+            if st.button("📊 Riepilogo attività", use_container_width=True, key="toggle_riepilogo_attivita"):
+                st.session_state.cartoline_mostra_riepilogo = not st.session_state.get(
+                    "cartoline_mostra_riepilogo", False)
+            if genera_tutti or genera_sel:
+                st.session_state.cartoline_menu_aperto = False
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
