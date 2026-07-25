@@ -1935,6 +1935,8 @@ def mostra_anagrafiche():
                                   chiave_expander="anagrafica_aperto")
 
 
+import streamlit.components.v1 as components
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
@@ -1971,7 +1973,7 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (mostrato se attivato dal menu) ────
+    # ── Riepilogo attività (aperto/chiuso dal pulsante) ────
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -2069,7 +2071,7 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + menu a comparsa ──
+    # ── Home + Popover con chiusura forzata via JS ──
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
@@ -2082,10 +2084,18 @@ def mostra_cartoline_registrazione():
                 genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
                                         use_container_width=True, disabled=n_sel == 0)
                 
-                # Il pulsante resta sempre con il suo nome fisso "📊 Riepilogo attività"
                 if st.button("📊 Riepilogo attività", use_container_width=True, key="toggle_riepilogo_attivita"):
                     st.session_state.cartoline_mostra_riepilogo = not st.session_state.get("cartoline_mostra_riepilogo", False)
-                    st.rerun()  # Forza la chiusura immediata del menu a tendina
+                    # Trucco JavaScript per simular un click all'esterno e chiudere la tendina st.popover
+                    components.html(
+                        """
+                        <script>
+                            window.parent.document.querySelector('body').click();
+                        </script>
+                        """,
+                        height=0
+                    )
+                    st.rerun()
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
