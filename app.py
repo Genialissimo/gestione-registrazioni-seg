@@ -1392,10 +1392,12 @@ def mostra_home():
         ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico"),
         ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche"),
         ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline"),
+        ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi"),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
-    colonne = riga1 + riga2
+    riga3 = st.columns(2)
+    colonne = riga1 + riga2 + riga3
     for col, (icon, titolo, desc, pagina) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
@@ -1935,23 +1937,12 @@ def mostra_anagrafiche():
                                   chiave_expander="anagrafica_aperto")
 
 
-import streamlit.components.v1 as components
-
-import os
-import streamlit as st
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
     st.title("📇 Cartoline di registrazione")
     contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
-
-    # ── RESET AUTOMATICO DELLO STATO QUANDO SI ENTRA/RIENTRA NELLA PAGINA ──
-    pagina_corrente = "cartoline_registrazione"
-    if st.session_state.get("ultima_pagina_visitata") != pagina_corrente:
-        st.session_state.ultima_pagina_visitata = pagina_corrente
-        _reset_stato_cartoline()
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -1982,75 +1973,78 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività ───────────────────────────────────────────
-    if st.session_state.get("cartoline_mostra_riepilogo"):
-        with st.container(border=True):
-            st.markdown("#### 📊 Riepilogo attività")
-            st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
-                       "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
-                       "spedire ai sorveglianti di gruppo.")
+    # ── Riepilogo attività (expander nativo: resta aperto durante l'uso) ──
+    with st.expander("📊 Riepilogo attività"):
+        st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
+                   "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
+                   "spedire ai sorveglianti di gruppo.")
 
-            periodo_scelto = st.radio("Periodo", ["12 mesi", "6 mesi"], horizontal=True,
-                                      key="riepilogo_periodo")
+        periodo_scelto = st.radio("Periodo", ["12 mesi", "6 mesi"], horizontal=True,
+                                   key="riepilogo_periodo")
 
-            tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
-                                  key="riepilogo_tipo_vista",
-                                  help="Dettagliato: un blocco per ciascun Proclamatore. "
-                                       "Sintetico: un unico blocco con i totali della categoria scelta.")
+        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
+                               key="riepilogo_tipo_vista",
+                               help="Dettagliato: un blocco per ciascun Proclamatore. "
+                                    "Sintetico: un unico blocco con i totali della categoria scelta.")
 
-            gruppi_disponibili = ["Tutti i gruppi"]
-            if "Gruppo" in df.columns:
-                gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
-            gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
+        gruppi_disponibili = ["Tutti i gruppi"]
+        if "Gruppo" in df.columns:
+            gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
+        gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
 
-            categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
-                                             key="riepilogo_categoria")
+        categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
+                                         key="riepilogo_categoria")
 
-            if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
-                with st.spinner("Genero il riepilogo…"):
-                    if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
-                        df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
-                                                                   gruppo_scelto, "Tutti")
-                        totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
-                        trovato_qualcosa = bool(totali_categoria)
-                        pdf_bytes = genera_pdf_riepilogo_attivita(
-                            [], periodo_scelto, categoria_scelta,
-                            gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                            etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
-                        )
+        if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
+            with st.spinner("Genero il riepilogo…"):
+                if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
+                    df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
+                                                                gruppo_scelto, "Tutti")
+                    totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
+                    trovato_qualcosa = bool(totali_categoria)
+                    pdf_bytes = genera_pdf_riepilogo_attivita(
+                        [], periodo_scelto, categoria_scelta,
+                        gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                        etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
+                    )
+                else:
+                    df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
+                                                          categoria_scelta)
+                    if tipo_vista == "Sintetico":
+                        blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
                     else:
-                        df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
-                                                              categoria_scelta)
-                        if tipo_vista == "Sintetico":
-                            blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
-                        else:
-                            blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
-                        trovato_qualcosa = bool(blocchi)
-                        pdf_bytes = genera_pdf_riepilogo_attivita(
-                            blocchi, periodo_scelto, categoria_scelta,
-                            gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                            etichetta_vista=tipo_vista,
-                        )
-                if not trovato_qualcosa:
-                    st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
-                st.session_state.riepilogo_pdf_pronto = pdf_bytes
+                        blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
+                    trovato_qualcosa = bool(blocchi)
+                    pdf_bytes = genera_pdf_riepilogo_attivita(
+                        blocchi, periodo_scelto, categoria_scelta,
+                        gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                        etichetta_vista=tipo_vista,
+                    )
+            if not trovato_qualcosa:
+                st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
+            st.session_state.riepilogo_pdf_pronto = pdf_bytes
 
-            # ── PULSANTE DOWNLOAD CHE AZZERA TUTTO AL CLICK ──
-            if st.session_state.get("riepilogo_pdf_pronto"):
-                nome_file = "Riepilogo_Attivita"
-                if gruppo_scelto != "Tutti i gruppi":
-                    nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
-                nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
-                
-                st.download_button(
-                    "⬇️ Scarica Riepilogo attività (PDF)",
-                    data=st.session_state.riepilogo_pdf_pronto,
-                    file_name=nome_file,
-                    mime="application/pdf",
-                    key="download_riepilogo_attivita",
-                    use_container_width=True,
-                    on_click=_reset_stato_cartoline,  # Azzera tutto e chiude il form al click
-                )
+        if st.session_state.get("riepilogo_pdf_pronto"):
+            nome_file = "Riepilogo_Attivita"
+            if gruppo_scelto != "Tutti i gruppi":
+                nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
+            nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+
+            def _chiudi_e_resetta_riepilogo():
+                st.session_state.pop("riepilogo_pdf_pronto", None)
+                for chiave in ("riepilogo_periodo", "riepilogo_tipo_vista",
+                               "riepilogo_gruppo", "riepilogo_categoria"):
+                    st.session_state.pop(chiave, None)
+
+            st.download_button(
+                "⬇️ Scarica Riepilogo attività (PDF)",
+                data=st.session_state.riepilogo_pdf_pronto,
+                file_name=nome_file,
+                mime="application/pdf",
+                key="download_riepilogo_attivita",
+                use_container_width=True,
+                on_click=_chiudi_e_resetta_riepilogo,
+            )
 
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
@@ -2082,24 +2076,26 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + Menu ──
+    # ── Home + menu "⋯" ────────────────────────────────────────────────
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
-            if st.button("🏠", key="home_da_cartoline", use_container_width=True, help="Torna alla Home"):
-                _reset_stato_cartoline()
+            if st.button("🏠", key="home_da_cartoline", use_container_width=True,
+                         help="Torna alla Home"):
                 vai_a("home")
                 st.rerun()
-                
         with col_menu:
-            with st.popover("⋯", use_container_width=True):
-                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True)
-                genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
-                                        use_container_width=True, disabled=n_sel == 0)
-                
-                if st.button("📊 Riepilogo attività", use_container_width=True, key="toggle_riepilogo_attivita"):
-                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get("cartoline_mostra_riepilogo", False)
-                    st.rerun()
+            if st.button("⋯", key="toggle_menu_cartoline", use_container_width=True):
+                st.session_state.cartoline_menu_aperto = not st.session_state.get(
+                    "cartoline_menu_aperto", False)
+
+        genera_tutti = genera_sel = False
+        if st.session_state.get("cartoline_menu_aperto"):
+            genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True)
+            genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
+                                    use_container_width=True, disabled=n_sel == 0)
+            if genera_tutti or genera_sel:
+                st.session_state.cartoline_menu_aperto = False
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
@@ -2125,7 +2121,7 @@ def mostra_cartoline_registrazione():
                 mime="application/zip",
                 key="download_pacchetto_completo",
                 use_container_width=True,
-                on_click=_reset_stato_cartoline,
+                on_click=lambda: st.session_state.pop("cartoline_pacchetto_completo", None),
             )
 
         pronto = st.session_state.get("cartoline_pronto")
@@ -2136,29 +2132,133 @@ def mostra_cartoline_registrazione():
                                     file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
                                     mime="application/pdf", key="download_cartolina_pdf",
                                     use_container_width=True,
-                                    on_click=_reset_stato_cartoline)
+                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
             else:
                 st.download_button("⬇️ Scarica ZIP", data=dati_file,
                                     file_name=f"Schede_S21_{extra + 1}.zip",
                                     mime="application/zip", key="download_cartolina_zip",
                                     use_container_width=True,
-                                    on_click=_reset_stato_cartoline)
+                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
 
 
-# ── FUNZIONE DI RESET COMPLETO DELLO STATO ──────────────────────
-def _reset_stato_cartoline():
-    """Azzera tutti i flag e gli stati salvati per far ripartire la pagina da zero."""
-    st.session_state.cartoline_mostra_riepilogo = False
-    st.session_state.pop("riepilogo_pdf_pronto", None)
-    st.session_state.pop("cartoline_pronto", None)
-    st.session_state.pop("cartoline_pacchetto_completo", None)
-    
-    # Rimuove anche eventuali spunte alle checkbox dei proclamatori
-    chiavi_da_rimuovere = [k for k in st.session_state if k.startswith("cb_cartolina_")]
-    for k in chiavi_da_rimuovere:
-        del st.session_state[k]
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: GRUPPI DI SERVIZIO
+# ─────────────────────────────────────────────────────────────────
+ETICHETTE_STATO_GRUPPI = {"A": "🟢 Attivi", "I": "🔺 Inattivi", "TR": "↔️ Trasferiti"}
+
+
+def mostra_gruppi_servizio():
+    st.title("👥 Gruppi di servizio")
+    if st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+    st.caption("Seleziona uno o più Proclamatori e abbinali a un sorvegliante di gruppo.")
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err:
+        st.error(err)
+        return
+    if df.empty or "Cognome e Nome" not in df.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
+        return
+
+    df = df.reset_index(drop=True)
+
+    # ── Filtro di stato: Attivi / Inattivi / Trasferiti ─────────────────
+    if "Attivi / Inattivi" in df.columns:
+        categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+    else:
+        categorie = pd.Series(["A"] * len(df), index=df.index)
+
+    stato_scelto = st.radio("Stato", list(ETICHETTE_STATO_GRUPPI.values()), horizontal=True,
+                             key="gruppi_stato_filtro")
+    codice_stato = {v: k for k, v in ETICHETTE_STATO_GRUPPI.items()}[stato_scelto]
+
+    def _chiave_cb(nome: str) -> str:
+        return f"cb_gruppi_{nome}"
+
+    # Se lo stato filtrato cambia rispetto all'ultima volta, la selezione si azzera.
+    if st.session_state.get("gruppi_stato_precedente") != codice_stato:
+        for chiave in list(st.session_state.keys()):
+            if chiave.startswith("cb_gruppi_"):
+                st.session_state[chiave] = False
+        st.session_state.gruppi_stato_precedente = codice_stato
+
+    df_filtrato = df[categorie == codice_stato]
+    df_filtrato = df_filtrato[df_filtrato["Cognome e Nome"].astype(str).str.strip() != ""]
+
+    if df_filtrato.empty:
+        st.info("Nessun Proclamatore in questa categoria.")
+        return
+
+    # ── Elenco con checkbox, raggruppato per sorvegliante di gruppo attuale ──
+    gruppi_vista = {}
+    for _, riga in df_filtrato.iterrows():
+        nome = str(riga.get("Cognome e Nome", "")).strip()
+        g = str(riga.get("Gruppo", "")).strip() or "(Senza gruppo)"
+        gruppi_vista.setdefault(g, []).append(nome)
+
+    for g in sorted(gruppi_vista.keys()):
+        st.markdown(f"#### 👤 {g}")
+        for nome in sorted(gruppi_vista[g]):
+            st.checkbox(nome, key=_chiave_cb(nome))
+        st.divider()
+
+    nomi_filtrati = [str(n).strip() for n in df_filtrato["Cognome e Nome"] if str(n).strip()]
+    selezionati = [nome for nome in nomi_filtrati if st.session_state.get(_chiave_cb(nome), False)]
+    n_sel = len(selezionati)
+
+    if st.button(f"🔗 Associa al gruppo ({n_sel})", type="primary", use_container_width=True,
+                 disabled=n_sel == 0):
+        st.session_state.gruppi_mostra_scelta = True
+
+    if st.session_state.get("gruppi_mostra_scelta") and n_sel > 0:
+        with st.container(border=True):
+            st.caption(f"{n_sel} Proclamatori selezionati.")
+            gruppi_esistenti = sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()}) \
+                if "Gruppo" in df.columns else []
+            opzioni = gruppi_esistenti + ["➕ Nuovo sorvegliante…"]
+            scelta = st.selectbox("Sorvegliante di gruppo", opzioni, key="gruppi_scelta_sorvegliante")
+            nuovo_nome_gruppo = ""
+            if scelta == "➕ Nuovo sorvegliante…":
+                nuovo_nome_gruppo = st.text_input("Nome del nuovo sorvegliante", key="gruppi_nuovo_nome")
+
+            if st.button("✔ Abbina", type="primary", use_container_width=True, key="gruppi_conferma_abbina"):
+                nome_gruppo_finale = nuovo_nome_gruppo.strip() if scelta == "➕ Nuovo sorvegliante…" else scelta
+                if not nome_gruppo_finale:
+                    st.error("Indica il nome del sorvegliante di gruppo.")
+                else:
+                    errori = []
+                    with st.spinner("Aggiorno l'Anagrafica…"):
+                        for nome in selezionati:
+                            idx_lista = df.index[df["Cognome e Nome"].astype(str).str.strip() == nome]
+                            if len(idx_lista) == 0:
+                                continue
+                            idx = idx_lista[0]
+                            numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
+                            valori = df.loc[idx].to_dict()
+                            valori["Gruppo"] = nome_gruppo_finale
+                            ok, err_salva = salva_riga_anagrafica(workbook, valori,
+                                                                   riga_da_aggiornare=numero_riga_foglio)
+                            if not ok:
+                                errori.append(f"{nome}: {err_salva}")
+                    if errori:
+                        st.error("Alcuni abbinamenti non sono riusciti:\n" + "\n".join(errori))
+                    else:
+                        st.cache_data.clear()
+                        for nome in selezionati:
+                            st.session_state.pop(_chiave_cb(nome), None)
+                        st.session_state.gruppi_mostra_scelta = False
+                        st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
+                        st.rerun()
+
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
@@ -2400,5 +2500,7 @@ elif st.session_state.pagina == "storico":
     mostra_storico_proclamatori()
 elif st.session_state.pagina == "cartoline":
     mostra_cartoline_registrazione()
+elif st.session_state.pagina == "gruppi":
+    mostra_gruppi_servizio()
 else:
     mostra_home()
