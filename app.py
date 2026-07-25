@@ -1025,7 +1025,15 @@ def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, 
     if df.empty:
         return df
 
-    if periodo == "6 mesi":
+    if periodo == "12 mesi":
+        oggi = datetime.now()
+        anno_teo_corrente = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+
+        def _dentro_anno_corrente(mese_anno):
+            return anno_teocratico_di(mese_anno) == anno_teo_corrente
+
+        df = df[df["Mese/Anno"].apply(_dentro_anno_corrente)]
+    elif periodo == "6 mesi":
         ultimo = _riepilogo_ultimo_mese_con_dati(df_tutti)
         if not ultimo:
             return df.iloc[0:0]
@@ -1149,6 +1157,7 @@ def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria:
         "media_studi": tot_studi / n_mesi if n_mesi else 0.0,
     }]
 
+
 def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
     """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
     mensili, solo il gran totale (e la media) per ciascuna delle categorie
@@ -1157,10 +1166,10 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
     filtrato per periodo ed eventuale Gruppo, ma NON per categoria. Salta
     le categorie senza nessuna riga. Ritorna una lista di dict:
     {'categoria', 'totale_ore', 'totale_crediti', 'totale_studi',
-    'media_ore', 'media_crediti', 'media_studi', 'conteggio'}."""
+    'media_ore', 'media_crediti', 'media_studi'}."""
     if df_periodo_gruppo.empty:
         return []
- 
+
     risultati = []
     for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
         if chiave == "Tutti" or not parola:
@@ -1181,11 +1190,10 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
             "media_ore": tot_ore / n if n else 0.0,
             "media_crediti": tot_cred / n if n else 0.0,
             "media_studi": tot_studi / n if n else 0.0,
-            "conteggio": n, # <-- AGGIUNTO: passiamo il numero per la colonna Note
         })
     return risultati
- 
- 
+
+
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
                                    totali_per_categoria: list = None) -> bytes:
@@ -1194,7 +1202,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     o un unico blocco per categoria (vista Sintetico) — mese, tipo di
     servizio, ministero, ore, crediti, studi, note — più Totale e Media,
     con interruzioni di pagina automatiche.
- 
+
     Se 'totali_per_categoria' è specificato (caso Sintetico + Categoria
     'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
     media per ciascuna categoria, senza righe mensili."""
@@ -1203,7 +1211,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                              leftMargin=1.3 * cm, rightMargin=1.3 * cm)
     stili = getSampleStyleSheet()
     elementi = []
- 
+
     elementi.append(Paragraph("Attività dei proclamatori", stili["Title"]))
     sottotitolo = (f"Congregazione: {NOME_CONGREGAZIONE} · Periodo: {etichetta_periodo} · "
                    f"{etichetta_vista} - {etichetta_categoria}")
@@ -1211,64 +1219,46 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         sottotitolo += f" · Gruppo: {etichetta_gruppo}"
     elementi.append(Paragraph(sottotitolo, stili["Normal"]))
     elementi.append(Spacer(1, 14))
- 
-    # INIZIO BLOCCO MODIFICATO
+
     if totali_per_categoria is not None:
         if not totali_per_categoria:
             elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
         else:
-            intestazione = ["Mese", "Servizio", "Ministero", "Ore", "Crediti", "Studi", "Note"]
-            larghezze = [1.9 * cm, 3.0 * cm, 1.7 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm, 4.7 * cm]
-            
+            dati_tabella = []
             for cat in totali_per_categoria:
-                dati_tabella = [intestazione]
-                dati_tabella.append([
-                    "Totale", cat["categoria"], "", 
-                    formatta_numero_it(cat["totale_ore"]),
-                    formatta_numero_it(cat["totale_crediti"]),
-                    formatta_numero_it(cat["totale_studi"]), 
-                    f"{cat['categoria']} n. {cat['conteggio']}" # <-- MODIFICA QUI: "Categoria n. X"
-                ])
-                dati_tabella.append([
-                    "Media", cat["categoria"], "", 
-                    formatta_numero_it(cat["media_ore"]),
-                    formatta_numero_it(cat["media_crediti"]),
-                    formatta_numero_it(cat["media_studi"]), 
-                    ""
-                ])
-                
-                tabella = Table(dati_tabella, colWidths=larghezze)
-                tabella.setStyle(TableStyle([
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")), # Intestazione celeste scuro
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),                # Testo bianco
-                    ("FONTNAME", (0, 1), (-1, -1), "Helvetica-Bold"),
-                    ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F2F2F2")),
-                    ("GRID", (0, 1), (-1, -1), 0.4, colors.grey),
-                    ("LINEBEFORE", (1, 1), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
-                    ("LINEAFTER", (1, 1), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
-                    ("ALIGN", (3, 0), (5, -1), "RIGHT"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ]))
-                elementi.append(tabella)
-                elementi.append(Spacer(1, 16)) # Spazio vuoto inserito tra una categoria e l'altra
-
+                dati_tabella.append(["Totale", cat["categoria"], formatta_numero_it(cat["totale_ore"]),
+                                      formatta_numero_it(cat["totale_crediti"]),
+                                      formatta_numero_it(cat["totale_studi"])])
+                dati_tabella.append(["Media", cat["categoria"], formatta_numero_it(cat["media_ore"]),
+                                      formatta_numero_it(cat["media_crediti"]),
+                                      formatta_numero_it(cat["media_studi"])])
+            tabella = Table(dati_tabella, colWidths=[2.2 * cm, 4.5 * cm, 2.3 * cm, 2.3 * cm, 2.3 * cm])
+            stile_righe = [
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("ALIGN", (2, 0), (4, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+            # Ogni coppia Totale/Media di una categoria ha lo sfondo alternato,
+            # per distinguere a colpo d'occhio dove finisce una categoria e inizia l'altra.
+            for i in range(0, len(dati_tabella), 2):
+                colore = colors.HexColor("#F2F2F2") if (i // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
+                stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
+                stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
+            tabella.setStyle(TableStyle(stile_righe))
+            elementi.append(tabella)
         doc.build(elementi)
         buf.seek(0)
         return buf.getvalue()
-    # FINE BLOCCO MODIFICATO
- 
+
     if not blocchi:
         elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
- 
+
     intestazione = ["Mese", "Servizio", "Ministero", "Ore", "Crediti", "Studi", "Note"]
     larghezze = [1.9 * cm, 3.0 * cm, 1.7 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm, 4.7 * cm]
- 
+
     for blocco in blocchi:
         dati_tabella = [intestazione]
         for r in blocco["righe"]:
@@ -1280,7 +1270,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         dati_tabella.append(["Media", "", "", formatta_numero_it(blocco["media_ore"]),
                               formatta_numero_it(blocco["media_crediti"]),
                               formatta_numero_it(blocco["media_studi"]), ""])
- 
+
         tabella = Table(dati_tabella, colWidths=larghezze, repeatRows=1)
         tabella.setStyle(TableStyle([
             ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -1306,7 +1296,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         # che continua nella pagina dopo.
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
- 
+
     doc.build(elementi)
     buf.seek(0)
     return buf.getvalue()
@@ -1981,6 +1971,74 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
+    # ── Riepilogo attività (aperto/chiuso dal pulsante 📊 in alto) ────
+    if st.session_state.get("cartoline_mostra_riepilogo"):
+        with st.container(border=True):
+            st.markdown("#### 📊 Riepilogo attività")
+            st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
+                       "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
+                       "spedire ai sorveglianti di gruppo.")
+
+            periodo_scelto = st.radio("Periodo", ["12 mesi", "6 mesi"], horizontal=True,
+                                       key="riepilogo_periodo")
+
+            tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
+                                   key="riepilogo_tipo_vista",
+                                   help="Dettagliato: un blocco per ciascun Proclamatore. "
+                                        "Sintetico: un unico blocco con i totali della categoria scelta.")
+
+            gruppi_disponibili = ["Tutti i gruppi"]
+            if "Gruppo" in df.columns:
+                gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
+            gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
+
+            categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
+                                             key="riepilogo_categoria")
+
+            if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
+                with st.spinner("Genero il riepilogo…"):
+                    if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
+                        df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
+                                                                    gruppo_scelto, "Tutti")
+                        totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
+                        trovato_qualcosa = bool(totali_categoria)
+                        pdf_bytes = genera_pdf_riepilogo_attivita(
+                            [], periodo_scelto, categoria_scelta,
+                            gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                            etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
+                        )
+                    else:
+                        df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
+                                                              categoria_scelta)
+                        if tipo_vista == "Sintetico":
+                            blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
+                        else:
+                            blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
+                        trovato_qualcosa = bool(blocchi)
+                        pdf_bytes = genera_pdf_riepilogo_attivita(
+                            blocchi, periodo_scelto, categoria_scelta,
+                            gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+                            etichetta_vista=tipo_vista,
+                        )
+                if not trovato_qualcosa:
+                    st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
+                st.session_state.riepilogo_pdf_pronto = pdf_bytes
+
+            if st.session_state.get("riepilogo_pdf_pronto"):
+                nome_file = "Riepilogo_Attivita"
+                if gruppo_scelto != "Tutti i gruppi":
+                    nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
+                nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+                st.download_button(
+                    "⬇️ Scarica Riepilogo attività (PDF)",
+                    data=st.session_state.riepilogo_pdf_pronto,
+                    file_name=nome_file,
+                    mime="application/pdf",
+                    key="download_riepilogo_attivita",
+                    use_container_width=True,
+                    on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
+                )
+
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
     if "Attivi / Inattivi" in df_lista.columns:
@@ -1992,7 +2050,7 @@ def mostra_cartoline_registrazione():
         stato_per_nome = {}
     df_lista = df_lista[df_lista["Cognome e Nome"].astype(str).str.strip() != ""]
 
-    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+    ricerca = st.text_input("Cerca per nome", placeholder="🔍 Cerca per nome…", label_visibility="collapsed")
     df_mostrato = df_lista
     if ricerca:
         df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
@@ -2011,17 +2069,24 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── I 3 pulsanti, affiancati in cima alla pagina ─────────────────
+    # ── Home + menu a comparsa con le altre opzioni, compatti e affiancati ──
     with contenitore_pulsanti:
-        col_home, col_tutti, col_sel = st.columns(3)
+        col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
-            if st.button("🏠 Home", key="home_da_cartoline", use_container_width=True):
+            if st.button("🏠", key="home_da_cartoline", use_container_width=True,
+                         help="Torna alla Home"):
                 vai_a("home")
                 st.rerun()
-        with col_tutti:
-            genera_tutti = st.button("🗂️ S-21 Tutti", use_container_width=True)
-        with col_sel:
-            genera_sel = st.button(f"📄 S-21 Selezionati ({n_sel})", use_container_width=True, disabled=n_sel == 0)
+        with col_menu:
+            with st.popover("⋯", use_container_width=True):
+                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni",
+                                          use_container_width=True)
+                genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
+                                        use_container_width=True, disabled=n_sel == 0)
+                if st.button("📊 Riepilogo attività", use_container_width=True,
+                             key="toggle_riepilogo_attivita"):
+                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get(
+                        "cartoline_mostra_riepilogo", False)
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
@@ -2067,70 +2132,6 @@ def mostra_cartoline_registrazione():
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
-    with st.expander("📊 Riepilogo attività"):
-        st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
-                   "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
-                   "spedire ai sorveglianti di gruppo.")
-
-        periodo_scelto = st.radio("Periodo", ["Tutto lo storico", "6 mesi"], horizontal=True,
-                                   key="riepilogo_periodo")
-
-        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
-                               key="riepilogo_tipo_vista",
-                               help="Dettagliato: un blocco per ciascun Proclamatore. "
-                                    "Sintetico: un unico blocco con i totali della categoria scelta.")
-
-        gruppi_disponibili = ["Tutti i gruppi"]
-        if "Gruppo" in df.columns:
-            gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
-        gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
-
-        categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
-                                         key="riepilogo_categoria")
-
-        if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
-            with st.spinner("Genero il riepilogo…"):
-                if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
-                    df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
-                                                                gruppo_scelto, "Tutti")
-                    totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
-                    trovato_qualcosa = bool(totali_categoria)
-                    pdf_bytes = genera_pdf_riepilogo_attivita(
-                        [], periodo_scelto, categoria_scelta,
-                        gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                        etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
-                    )
-                else:
-                    df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
-                                                          categoria_scelta)
-                    if tipo_vista == "Sintetico":
-                        blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria_scelta)
-                    else:
-                        blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
-                    trovato_qualcosa = bool(blocchi)
-                    pdf_bytes = genera_pdf_riepilogo_attivita(
-                        blocchi, periodo_scelto, categoria_scelta,
-                        gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                        etichetta_vista=tipo_vista,
-                    )
-            if not trovato_qualcosa:
-                st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
-            st.session_state.riepilogo_pdf_pronto = pdf_bytes
-
-        if st.session_state.get("riepilogo_pdf_pronto"):
-            nome_file = "Riepilogo_Attivita"
-            if gruppo_scelto != "Tutti i gruppi":
-                nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
-            nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
-            st.download_button(
-                "⬇️ Scarica Riepilogo attività (PDF)",
-                data=st.session_state.riepilogo_pdf_pronto,
-                file_name=nome_file,
-                mime="application/pdf",
-                key="download_riepilogo_attivita",
-                use_container_width=True,
-                on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
-            )
 
 
 # ─────────────────────────────────────────────────────────────────
