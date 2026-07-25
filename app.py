@@ -1663,6 +1663,12 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+import os
+import datetime
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
 # ─────────────────────────────────────────────────────────────────
@@ -1911,21 +1917,21 @@ def mostra_anagrafiche():
     df_mostrato = df_mostrato[categorie == codice_stato_scelto]
     df_mostrato = df_mostrato.sort_values("Cognome e Nome") if "Cognome e Nome" in df_mostrato.columns else df_mostrato
 
-    # ── RILEVAMENTO SELEZIONE (CHECKBOX) ──────────────────────────────
+    # ── 1. PRE-CALCOLO SELEZIONI DAL SESSION STATE ──────────────────────
     nomi_selezionati = []
     for idx, riga in df_mostrato.iterrows():
         nome_proc = str(riga.get("Cognome e Nome", "")).strip()
         if nome_proc and st.session_state.get(f"chk_anagrafica_{nome_proc}", False):
             nomi_selezionati.append(nome_proc)
 
-    # ── PULSANTE OPZIONI GRUPPI (ABILITATO SOLO SE C'È ALMENO UNA SELEZIONE) ──
     almeno_uno_selezionato = len(nomi_selezionati) > 0
 
+    # ── 2. PULSANTE OPZIONI GRUPPO ──────────────────────────────────────
     if st.button("👥 Opzioni gruppi", use_container_width=True, disabled=not almeno_uno_selezionato):
         st.session_state.mostra_opzioni_gruppo = not st.session_state.mostra_opzioni_gruppo
         st.rerun()
 
-    # ── FORM OPZIONI GRUPPO ──────────────────────────────────────────
+    # ── 3. PANNELLO RAGGRUPPAMENTO GRUPPI (SE APERTO) ───────────────────
     if st.session_state.mostra_opzioni_gruppo and almeno_uno_selezionato:
         with st.container(border=True):
             st.markdown(f"### 👥 Associa gruppo a **{len(nomi_selezionati)}** proclamatori selezionati")
@@ -1962,7 +1968,7 @@ def mostra_anagrafiche():
                     st.session_state.mostra_opzioni_gruppo = False
                     st.rerun()
 
-    st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Spunta la casella per selezionare, oppure tocca un nominativo per aprirne la scheda.")
+    st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Spunta la casella affianco al nome per selezionare, oppure tocca un nominativo per aprirne la scheda.")
 
     st.markdown(
         """
@@ -1971,29 +1977,41 @@ def mostra_anagrafiche():
             justify-content: flex-start !important;
             text-align: left !important;
         }
+        /* Allineamento verticale checkbox con bottone */
+        div[data-testid="stCheckbox"] {
+            margin-top: 5px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    # ── ELENCO PROCLAMATORI CON CHECKBOX E CARDS ──────────────────────
+    # ── 4. RENDER ELENCO PROCLAMATORI CON CHECKBOX AFFIANCATO ──────────
     for idx, riga in df_mostrato.iterrows():
         nome = riga.get("Cognome e Nome", "(senza nome)").strip()
         numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
         chiave_persona = str(riga.get("ID") or idx)
         
-        # Uso sicuro di .get() per prevenire l'AttributeError
         aperto = (st.session_state.get("anagrafica_aperto") == chiave_persona)
         freccia = "▼" if aperto else "▶"
 
+        # Affiancamento visivo: col_chk (checkbox) e col_btn (nome e pulsante)
         col_chk, col_btn = st.columns([1, 11])
+        
         with col_chk:
-            st.checkbox("", key=f"chk_anagrafica_{nome}", label_visibility="collapsed")
+            # Checkbox posizionata ESATTAMENTE affianco al nome
+            selezionato = st.checkbox(
+                "", 
+                key=f"chk_anagrafica_{nome}", 
+                label_visibility="collapsed"
+            )
+
         with col_btn:
             if st.button(f"{freccia}  {nome}", key=f"btn_anagrafica_{chiave_persona}", use_container_width=True):
                 st.session_state.anagrafica_aperto = None if aperto else chiave_persona
                 st.rerun()
 
+        # Dettaglio della scheda se aperta
         if aperto:
             with st.container(border=True):
                 _form_anagrafica(df, riga_esistente=riga.to_dict(), numero_riga_foglio=numero_riga_foglio,
@@ -2012,7 +2030,6 @@ def aggiorna_gruppo_massivo(workbook, elenco_nomi: list, nuovo_gruppo: str):
         foglio_anagrafica = workbook.worksheet(NOME_FOGLIO_ANAGRAFICA)
         dati_anag = foglio_anagrafica.get_all_values()
         
-        # Individua l'indice della colonna "Cognome e Nome" e della colonna K ("Gruppo")
         intestazioni_anag = dati_anag[RIGA_INTESTAZIONE_ANAGRAFICA]
         idx_nome_anag = intestazioni_anag.index("Cognome e Nome")
         idx_gruppo_anag = 10  # Colonna K (indice 0-based: 10)
