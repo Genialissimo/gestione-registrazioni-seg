@@ -2154,6 +2154,7 @@ def mostra_gruppi_servizio():
     if st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True):
         vai_a("home")
         st.rerun()
+    contenitore_associa = st.container()  # riserva lo spazio subito sotto Home
     st.caption("Seleziona uno o più Proclamatori e abbinali a un sorvegliante di gruppo.")
 
     if not collegato:
@@ -2170,13 +2171,13 @@ def mostra_gruppi_servizio():
 
     df = df.reset_index(drop=True)
 
-    # ── Filtro di stato: Attivi / Inattivi / Trasferiti ─────────────────
+    # ── Filtro di stato: Attivi / Inattivi ───────────────────────────────
     if "Attivi / Inattivi" in df.columns:
         categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
     else:
         categorie = pd.Series(["A"] * len(df), index=df.index)
 
-    stato_scelto = st.radio("Stato", list(ETICHETTE_STATO_GRUPPI.values()), horizontal=True,
+    stato_scelto = st.radio("Stato", ["🟢 Attivi", "🔺 Inattivi"], horizontal=True,
                              key="gruppi_stato_filtro")
     codice_stato = {v: k for k, v in ETICHETTE_STATO_GRUPPI.items()}[stato_scelto]
 
@@ -2197,6 +2198,16 @@ def mostra_gruppi_servizio():
         st.info("Nessun Proclamatore in questa categoria.")
         return
 
+    # ── Conteggio Attivi/Inattivi per ciascun sorvegliante (su tutti, non filtrati) ──
+    conteggi_per_gruppo = {}
+    for idx, riga in df.iterrows():
+        stato_riga = categorie.loc[idx]
+        if stato_riga not in ("A", "I"):
+            continue
+        g = str(riga.get("Gruppo", "")).strip() or "(Senza gruppo)"
+        conteggi_per_gruppo.setdefault(g, {"A": 0, "I": 0})
+        conteggi_per_gruppo[g][stato_riga] += 1
+
     # ── Elenco con checkbox, raggruppato per sorvegliante di gruppo attuale ──
     gruppi_vista = {}
     for _, riga in df_filtrato.iterrows():
@@ -2205,7 +2216,8 @@ def mostra_gruppi_servizio():
         gruppi_vista.setdefault(g, []).append(nome)
 
     for g in sorted(gruppi_vista.keys()):
-        st.markdown(f"#### 👤 {g}")
+        conteggi = conteggi_per_gruppo.get(g, {"A": 0, "I": 0})
+        st.markdown(f"#### 👤 {g} (Attivi {conteggi['A']} - Inattivi {conteggi['I']})")
         for nome in sorted(gruppi_vista[g]):
             st.checkbox(nome, key=_chiave_cb(nome))
         st.divider()
@@ -2214,49 +2226,52 @@ def mostra_gruppi_servizio():
     selezionati = [nome for nome in nomi_filtrati if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    if st.button(f"🔗 Associa al gruppo ({n_sel})", type="primary", use_container_width=True,
-                 disabled=n_sel == 0):
-        st.session_state.gruppi_mostra_scelta = True
+    with contenitore_associa:
+        if st.button(f"🔗 Associa al gruppo ({n_sel})", use_container_width=True, disabled=n_sel == 0):
+            st.session_state.gruppi_mostra_scelta = True
 
-    if st.session_state.get("gruppi_mostra_scelta") and n_sel > 0:
-        with st.container(border=True):
-            st.caption(f"{n_sel} Proclamatori selezionati.")
-            gruppi_esistenti = sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()}) \
-                if "Gruppo" in df.columns else []
-            opzioni = gruppi_esistenti + ["➕ Nuovo sorvegliante…"]
-            scelta = st.selectbox("Sorvegliante di gruppo", opzioni, key="gruppi_scelta_sorvegliante")
-            nuovo_nome_gruppo = ""
-            if scelta == "➕ Nuovo sorvegliante…":
-                nuovo_nome_gruppo = st.text_input("Nome del nuovo sorvegliante", key="gruppi_nuovo_nome")
+        if st.session_state.get("gruppi_mostra_scelta") and n_sel > 0:
+            with st.container(border=True):
+                st.caption(f"{n_sel} Proclamatori selezionati.")
+                gruppi_esistenti = sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()}) \
+                    if "Gruppo" in df.columns else []
+                opzioni = gruppi_esistenti + ["➕ Nuovo sorvegliante…"]
+                scelta = st.selectbox("Sorvegliante di gruppo", opzioni, key="gruppi_scelta_sorvegliante")
+                nuovo_nome_gruppo = ""
+                if scelta == "➕ Nuovo sorvegliante…":
+                    nuovo_nome_gruppo = st.text_input("Nome del nuovo sorvegliante", key="gruppi_nuovo_nome")
 
-            if st.button("✔ Abbina", type="primary", use_container_width=True, key="gruppi_conferma_abbina"):
-                nome_gruppo_finale = nuovo_nome_gruppo.strip() if scelta == "➕ Nuovo sorvegliante…" else scelta
-                if not nome_gruppo_finale:
-                    st.error("Indica il nome del sorvegliante di gruppo.")
-                else:
-                    errori = []
-                    with st.spinner("Aggiorno l'Anagrafica…"):
-                        for nome in selezionati:
-                            idx_lista = df.index[df["Cognome e Nome"].astype(str).str.strip() == nome]
-                            if len(idx_lista) == 0:
-                                continue
-                            idx = idx_lista[0]
-                            numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
-                            valori = df.loc[idx].to_dict()
-                            valori["Gruppo"] = nome_gruppo_finale
-                            ok, err_salva = salva_riga_anagrafica(workbook, valori,
-                                                                   riga_da_aggiornare=numero_riga_foglio)
-                            if not ok:
-                                errori.append(f"{nome}: {err_salva}")
-                    if errori:
-                        st.error("Alcuni abbinamenti non sono riusciti:\n" + "\n".join(errori))
+                if st.button("✔ Abbina", type="primary", use_container_width=True, key="gruppi_conferma_abbina"):
+                    nome_gruppo_finale = nuovo_nome_gruppo.strip() if scelta == "➕ Nuovo sorvegliante…" else scelta
+                    if not nome_gruppo_finale:
+                        st.error("Indica il nome del sorvegliante di gruppo.")
                     else:
-                        st.cache_data.clear()
+                        errori = []
+                        with st.spinner("Aggiorno l'Anagrafica…"):
+                            for nome in selezionati:
+                                idx_lista = df.index[df["Cognome e Nome"].astype(str).str.strip() == nome]
+                                if len(idx_lista) == 0:
+                                    continue
+                                idx = idx_lista[0]
+                                numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
+                                valori = df.loc[idx].to_dict()
+                                valori["Gruppo"] = nome_gruppo_finale
+                                ok, err_salva = salva_riga_anagrafica(workbook, valori,
+                                                                       riga_da_aggiornare=numero_riga_foglio)
+                                if not ok:
+                                    errori.append(f"{nome}: {err_salva}")
+                        # I checkbox si azzerano subito dopo il click su Abbina, a prescindere dall'esito.
                         for nome in selezionati:
                             st.session_state.pop(_chiave_cb(nome), None)
-                        st.session_state.gruppi_mostra_scelta = False
-                        st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
-                        st.rerun()
+                        if errori:
+                            st.error("Alcuni abbinamenti non sono riusciti:\n" + "\n".join(errori))
+                        else:
+                            st.cache_data.clear()
+                            for nome in selezionati:
+                                st.session_state.pop(_chiave_cb(nome), None)
+                            st.session_state.gruppi_mostra_scelta = False
+                            st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
+                            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────
