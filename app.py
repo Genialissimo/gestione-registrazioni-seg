@@ -1937,6 +1937,9 @@ def mostra_anagrafiche():
 
 import streamlit.components.v1 as components
 
+import os
+import streamlit as st
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
@@ -1945,21 +1948,10 @@ def mostra_cartoline_registrazione():
     contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
 
     # ── RESET AUTOMATICO DELLO STATO QUANDO SI ENTRA/RIENTRA NELLA PAGINA ──
-    # Se l'utente proviene da un'altra pagina (o dalla Home), azzeriamo tutto
     pagina_corrente = "cartoline_registrazione"
     if st.session_state.get("ultima_pagina_visitata") != pagina_corrente:
         st.session_state.ultima_pagina_visitata = pagina_corrente
-        
-        # Reset di tutti i flag e stati temporanei
-        st.session_state.cartoline_mostra_riepilogo = False
-        st.session_state.pop("riepilogo_pdf_pronto", None)
-        st.session_state.pop("cartoline_pronto", None)
-        st.session_state.pop("cartoline_pacchetto_completo", None)
-        
-        # Pulisce le checkbox di selezione proclamaotori
-        chiavi_da_rimuovere = [k for k in st.session_state if k.startswith("cb_cartolina_")]
-        for k in chiavi_da_rimuovere:
-            del st.session_state[k]
+        _reset_stato_cartoline()
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -1990,7 +1982,7 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (aperto/chiuso dal menu) ─────────────────
+    # ── Riepilogo attività ───────────────────────────────────────────
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -2043,11 +2035,13 @@ def mostra_cartoline_registrazione():
                     st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
                 st.session_state.riepilogo_pdf_pronto = pdf_bytes
 
+            # ── PULSANTE DOWNLOAD CHE AZZERA TUTTO AL CLICK ──
             if st.session_state.get("riepilogo_pdf_pronto"):
                 nome_file = "Riepilogo_Attivita"
                 if gruppo_scelto != "Tutti i gruppi":
                     nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
                 nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+                
                 st.download_button(
                     "⬇️ Scarica Riepilogo attività (PDF)",
                     data=st.session_state.riepilogo_pdf_pronto,
@@ -2055,7 +2049,7 @@ def mostra_cartoline_registrazione():
                     mime="application/pdf",
                     key="download_riepilogo_attivita",
                     use_container_width=True,
-                    on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
+                    on_click=_reset_stato_cartoline,  # Azzera tutto e chiude il form al click
                 )
 
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
@@ -2093,12 +2087,7 @@ def mostra_cartoline_registrazione():
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
             if st.button("🏠", key="home_da_cartoline", use_container_width=True, help="Torna alla Home"):
-                # Reset preventivo quando premi il pulsante Home
-                st.session_state.cartoline_mostra_riepilogo = False
-                st.session_state.pop("riepilogo_pdf_pronto", None)
-                st.session_state.pop("cartoline_pronto", None)
-                st.session_state.pop("cartoline_pacchetto_completo", None)
-                
+                _reset_stato_cartoline()
                 vai_a("home")
                 st.rerun()
                 
@@ -2136,7 +2125,7 @@ def mostra_cartoline_registrazione():
                 mime="application/zip",
                 key="download_pacchetto_completo",
                 use_container_width=True,
-                on_click=lambda: st.session_state.pop("cartoline_pacchetto_completo", None),
+                on_click=_reset_stato_cartoline,
             )
 
         pronto = st.session_state.get("cartoline_pronto")
@@ -2147,15 +2136,29 @@ def mostra_cartoline_registrazione():
                                     file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
                                     mime="application/pdf", key="download_cartolina_pdf",
                                     use_container_width=True,
-                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
+                                    on_click=_reset_stato_cartoline)
             else:
                 st.download_button("⬇️ Scarica ZIP", data=dati_file,
                                     file_name=f"Schede_S21_{extra + 1}.zip",
                                     mime="application/zip", key="download_cartolina_zip",
                                     use_container_width=True,
-                                    on_click=lambda: st.session_state.pop("cartoline_pronto", None))
+                                    on_click=_reset_stato_cartoline)
 
     st.divider()
+
+
+# ── FUNZIONE DI RESET COMPLETO DELLO STATO ──────────────────────
+def _reset_stato_cartoline():
+    """Azzera tutti i flag e gli stati salvati per far ripartire la pagina da zero."""
+    st.session_state.cartoline_mostra_riepilogo = False
+    st.session_state.pop("riepilogo_pdf_pronto", None)
+    st.session_state.pop("cartoline_pronto", None)
+    st.session_state.pop("cartoline_pacchetto_completo", None)
+    
+    # Rimuove anche eventuali spunte alle checkbox dei proclamatori
+    chiavi_da_rimuovere = [k for k in st.session_state if k.startswith("cb_cartolina_")]
+    for k in chiavi_da_rimuovere:
+        del st.session_state[k]
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
