@@ -1971,7 +1971,7 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (aperto/chiuso dal pulsante 📊 in alto) ────
+    # ── Riepilogo attività (aperto dal menu ⋯, si chiude al click su "Crea PDF") ────
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -1980,12 +1980,12 @@ def mostra_cartoline_registrazione():
                        "spedire ai sorveglianti di gruppo.")
 
             periodo_scelto = st.radio("Periodo", ["12 mesi", "6 mesi"], horizontal=True,
-                                       key="riepilogo_periodo")
+                                      key="riepilogo_periodo")
 
             tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
-                                   key="riepilogo_tipo_vista",
-                                   help="Dettagliato: un blocco per ciascun Proclamatore. "
-                                        "Sintetico: un unico blocco con i totali della categoria scelta.")
+                                  key="riepilogo_tipo_vista",
+                                  help="Dettagliato: un blocco per ciascun Proclamatore. "
+                                       "Sintetico: un unico blocco con i totali della categoria scelta.")
 
             gruppi_disponibili = ["Tutti i gruppi"]
             if "Gruppo" in df.columns:
@@ -1996,10 +1996,13 @@ def mostra_cartoline_registrazione():
                                              key="riepilogo_categoria")
 
             if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
+                # Chiude il form di opzioni al click
+                st.session_state.cartoline_mostra_riepilogo = False
+                
                 with st.spinner("Genero il riepilogo…"):
                     if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
                         df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
-                                                                    gruppo_scelto, "Tutti")
+                                                                   gruppo_scelto, "Tutti")
                         totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
                         trovato_qualcosa = bool(totali_categoria)
                         pdf_bytes = genera_pdf_riepilogo_attivita(
@@ -2023,21 +2026,29 @@ def mostra_cartoline_registrazione():
                 if not trovato_qualcosa:
                     st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
                 st.session_state.riepilogo_pdf_pronto = pdf_bytes
+                st.rerun()
 
-            if st.session_state.get("riepilogo_pdf_pronto"):
-                nome_file = "Riepilogo_Attivita"
-                if gruppo_scelto != "Tutti i gruppi":
-                    nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
-                nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
-                st.download_button(
-                    "⬇️ Scarica Riepilogo attività (PDF)",
-                    data=st.session_state.riepilogo_pdf_pronto,
-                    file_name=nome_file,
-                    mime="application/pdf",
-                    key="download_riepilogo_attivita",
-                    use_container_width=True,
-                    on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
-                )
+    # Mostra il pulsante di download se il PDF è pronto (anche a form chiuso)
+    if st.session_state.get("riepilogo_pdf_pronto"):
+        nome_file = "Riepilogo_Attivita"
+        # Recupera le ultime impostazioni se disponibili per il nome file
+        g_scelto = st.session_state.get("riepilogo_gruppo", "Tutti i gruppi")
+        t_vista = st.session_state.get("riepilogo_tipo_vista", "Dettagliato")
+        c_scelta = st.session_state.get("riepilogo_categoria", "Tutti")
+        
+        if g_scelto != "Tutti i gruppi":
+            nome_file += f"_{_s21_nome_file_sicuro(g_scelto)}"
+        nome_file += f"_{t_vista}_{c_scelta.replace(' ', '_')}.pdf"
+        
+        st.download_button(
+            "⬇️ Scarica Riepilogo attività (PDF)",
+            data=st.session_state.riepilogo_pdf_pronto,
+            file_name=nome_file,
+            mime="application/pdf",
+            key="download_riepilogo_attivita",
+            use_container_width=True,
+            on_click=lambda: st.session_state.pop("riepilogo_pdf_pronto", None),
+        )
 
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
@@ -2069,24 +2080,25 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + menu a comparsa con le altre opzioni, compatti e affiancati ──
+    # ── Home + menu a comparsa ──
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
-            if st.button("🏠", key="home_da_cartoline", use_container_width=True,
-                         help="Torna alla Home"):
+            if st.button("🏠", key="home_da_cartoline", use_container_width=True, help="Torna alla Home"):
                 vai_a("home")
                 st.rerun()
         with col_menu:
             with st.popover("⋯", use_container_width=True):
-                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni",
-                                          use_container_width=True)
+                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True)
                 genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
                                         use_container_width=True, disabled=n_sel == 0)
-                if st.button("📊 Riepilogo attività", use_container_width=True,
-                             key="toggle_riepilogo_attivita"):
-                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get(
-                        "cartoline_mostra_riepilogo", False)
+                
+                stato_riepilogo = st.session_state.get("cartoline_mostra_riepilogo", False)
+                etichetta_riepilogo = "📊 Chiudi Riepilogo attività" if stato_riepilogo else "📊 Riepilogo attività"
+                
+                if st.button(etichetta_riepilogo, use_container_width=True, key="toggle_riepilogo_attivita"):
+                    st.session_state.cartoline_mostra_riepilogo = not stato_riepilogo
+                    st.rerun()
 
         if genera_tutti:
             with st.spinner("Genero il pacchetto completo…"):
@@ -2132,8 +2144,6 @@ def mostra_cartoline_registrazione():
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
-
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
