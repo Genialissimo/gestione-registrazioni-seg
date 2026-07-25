@@ -2016,7 +2016,9 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (aperto/chiuso dal pulsante 📊 in alto) ────
+    # ── Riepilogo attività (si apre/chiude solo dal menu "⋯") ──────────
+    # Il form rimane aperto mentre l'utente imposta le opzioni
+    # Si chiude SOLO quando l'utente clicca su "Crea PDF"
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -2040,6 +2042,7 @@ def mostra_cartoline_registrazione():
             categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
                                              key="riepilogo_categoria")
 
+            # Quando clicchi su "Crea PDF", il form si chiude e il PDF viene generato
             if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
                 with st.spinner("Genero il riepilogo…"):
                     if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
@@ -2068,6 +2071,10 @@ def mostra_cartoline_registrazione():
                 if not trovato_qualcosa:
                     st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
                 st.session_state.riepilogo_pdf_pronto = pdf_bytes
+                
+                # ⚠️ QUI chiudiamo il form del riepilogo DOPO aver generato il PDF
+                st.session_state.cartoline_mostra_riepilogo = False
+                st.rerun()
 
             if st.session_state.get("riepilogo_pdf_pronto"):
                 nome_file = "Riepilogo_Attivita"
@@ -2131,16 +2138,19 @@ def mostra_cartoline_registrazione():
                 # Opzione 1: Crea tutti i PDF
                 if st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True):
                     st.session_state.cartoline_genera_tutti = True
+                    st.rerun()
                 
                 # Opzione 2: Genera cartoline selezionate
                 if st.button(f"📄 Genera cartoline selezionate ({n_sel})", use_container_width=True, disabled=n_sel == 0):
                     st.session_state.cartoline_genera_sel = True
+                    st.rerun()
                 
                 st.divider()
                 
-                # Opzione 3: Riepilogo attività (toggle)
+                # Opzione 3: Apre il form Riepilogo attività (il menu si chiude subito)
                 if st.button("📊 Riepilogo attività", use_container_width=True):
-                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get("cartoline_mostra_riepilogo", False)
+                    st.session_state.cartoline_mostra_riepilogo = True
+                    st.rerun()
 
         # Eseguo le azioni selezionate dal menu
         if st.session_state.get("cartoline_genera_tutti"):
@@ -2189,7 +2199,6 @@ def mostra_cartoline_registrazione():
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
 # ─────────────────────────────────────────────────────────────────
