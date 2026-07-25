@@ -1651,17 +1651,18 @@ def mostra_registrazioni():
         st.divider()
 
 
+import os
+import datetime
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
 # ─────────────────────────────────────────────────────────────────
 def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_foglio: int = None,
                       chiave: str = "nuovo", modo_nuovo: bool = False, chiave_expander: str = None):
-    """Disegna il form di inserimento/modifica di un Proclamatore.
-    Se 'riga_esistente' è None è un inserimento nuovo, altrimenti è una
-    modifica (i campi vengono precompilati con i valori attuali).
-    'chiave' deve essere univoca per ogni istanza del form sulla stessa
-    pagina (es. l'ID del Proclamatore), per evitare conflitti quando più
-    form sono presenti contemporaneamente (un riquadro per persona)."""
+    """Disegna il form di inserimento/modifica di un Proclamatore."""
     e = riga_esistente or {}
 
     def parse_data(s):
@@ -1672,7 +1673,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
     with st.form(f"form_anagrafica_{chiave}", clear_on_submit=False):
         nome_cognome = st.text_input("Cognome e Nome *", value=e.get("Cognome e Nome", ""),
-                                      key=f"nome_{chiave}")
+                                     key=f"nome_{chiave}")
 
         eta_nascita = calcola_eta_dettagliata(e.get("Data Nascita", ""))
         if eta_nascita:
@@ -1682,14 +1683,14 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         else:
             st.markdown("**Data di nascita**")
         data_nascita = st.date_input("Data di nascita", value=parse_data(e.get("Data Nascita", "")),
-                                      format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                      label_visibility="collapsed", key=f"data_nascita_{chiave}")
+                                     format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
+                                     label_visibility="collapsed", key=f"data_nascita_{chiave}")
 
         sesso_corrente = e.get("Sesso", "")
         sesso_default = ("Maschio" if sesso_corrente.upper().startswith("M")
-                          else "Femmina" if sesso_corrente.upper().startswith("F") else "Maschio")
+                         else "Femmina" if sesso_corrente.upper().startswith("F") else "Maschio")
         sesso = st.selectbox("Sesso", OPZIONI_SESSO, index=OPZIONI_SESSO.index(sesso_default),
-                              key=f"sesso_{chiave}")
+                             key=f"sesso_{chiave}")
 
         eta_battesimo = calcola_eta_dettagliata(e.get("Data Battesimo", ""))
         if eta_battesimo:
@@ -1699,26 +1700,26 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         else:
             st.markdown("**Data del battesimo**")
         data_battesimo = st.date_input("Data del battesimo", value=parse_data(e.get("Data Battesimo", "")),
-                                        format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                        label_visibility="collapsed", key=f"data_batt_{chiave}")
+                                       format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
+                                       label_visibility="collapsed", key=f"data_batt_{chiave}")
 
         incarico_corrente = e.get("Incarico", "") or "(nessuno)"
         if incarico_corrente not in OPZIONI_INCARICO:
             incarico_corrente = "(nessuno)"
         incarico = st.selectbox("Incarico", OPZIONI_INCARICO,
-                                 index=OPZIONI_INCARICO.index(incarico_corrente),
-                                 key=f"incarico_{chiave}")
+                                index=OPZIONI_INCARICO.index(incarico_corrente),
+                                key=f"incarico_{chiave}")
 
         tipo_corrente = e.get("Tipo", "") or "Proclamatore"
         if tipo_corrente not in OPZIONI_TIPO:
             tipo_corrente = "Proclamatore"
         tipo = st.selectbox("Tipo di servizio", OPZIONI_TIPO,
-                             index=OPZIONI_TIPO.index(tipo_corrente), key=f"tipo_{chiave}")
+                            index=OPZIONI_TIPO.index(tipo_corrente), key=f"tipo_{chiave}")
         pr_dal = None
         if tipo in ("Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"):
             pr_dal = st.date_input(f"{tipo} dal", value=parse_data(e.get("PR dal", "")),
-                                    format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                    key=f"pr_dal_{chiave}")
+                                   format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
+                                   key=f"pr_dal_{chiave}")
 
         opzioni_gruppo = opzioni_da_colonna(df, "Gruppo")
         gruppo_corrente = e.get("Gruppo", "")
@@ -1726,9 +1727,9 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         if gruppo_corrente and gruppo_corrente not in elenco_gruppo:
             elenco_gruppo = [gruppo_corrente] + elenco_gruppo
         scelta_gruppo = st.selectbox("Gruppo", elenco_gruppo or ["➕ Nuovo…"],
-                                      index=(elenco_gruppo.index(gruppo_corrente)
-                                             if gruppo_corrente in elenco_gruppo else 0),
-                                      key=f"gruppo_{chiave}")
+                                     index=(elenco_gruppo.index(gruppo_corrente)
+                                            if gruppo_corrente in elenco_gruppo else 0),
+                                     key=f"gruppo_{chiave}")
         if scelta_gruppo == "➕ Nuovo…":
             scelta_gruppo = st.text_input("Nome del nuovo gruppo", key=f"gruppo_nuovo_{chiave}")
 
@@ -1738,8 +1739,8 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         if au_corrente and au_corrente not in elenco_au:
             elenco_au = [au_corrente] + elenco_au
         scelta_au = st.selectbox("A/U", elenco_au or ["➕ Nuovo…"],
-                                  index=(elenco_au.index(au_corrente) if au_corrente in elenco_au else 0),
-                                  key=f"au_{chiave}")
+                                 index=(elenco_au.index(au_corrente) if au_corrente in elenco_au else 0),
+                                 key=f"au_{chiave}")
         if scelta_au == "➕ Nuovo…":
             scelta_au = st.text_input("Nuovo valore A/U", key=f"au_nuovo_{chiave}")
 
@@ -1748,19 +1749,19 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         st.divider()
         st.caption("Promemoria regolarità (da aggiornare quando manca il rapporto mensile)")
         irregolare = st.checkbox("Irregolare", value=e.get("Irregolare", "").strip().upper() in ("X", "SI", "SÌ"),
-                                  key=f"irregolare_{chiave}")
+                                 key=f"irregolare_{chiave}")
         irregolare_mesi = st.number_input("Irregolare da mesi", min_value=0, max_value=36, step=1,
-                                           value=int(e.get("Irregolare da Mesi", 0) or 0),
-                                           key=f"irregolare_mesi_{chiave}")
+                                          value=int(e.get("Irregolare da Mesi", 0) or 0),
+                                          key=f"irregolare_mesi_{chiave}")
         attivi_inattivi_corrente = e.get("Attivi / Inattivi", "A") or "A"
         if attivi_inattivi_corrente not in OPZIONI_ATTIVI_INATTIVI:
             attivi_inattivi_corrente = "A"
         etichetta_stato = st.selectbox("Stato", list(ETICHETTE_ATTIVI_INATTIVI.values()),
-                                        index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente),
-                                        key=f"stato_{chiave}")
+                                       index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente),
+                                       key=f"stato_{chiave}")
         attivi_inattivi = {v: k for k, v in ETICHETTE_ATTIVI_INATTIVI.items()}[etichetta_stato]
         dal = st.date_input("Inattivo Da", value=parse_data(e.get("Inattivo dal", "")),
-                             format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}")
+                            format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}")
 
         st.divider()
 
@@ -1770,9 +1771,9 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         if trasf_corrente and trasf_corrente not in elenco_trasf:
             elenco_trasf = [trasf_corrente] + elenco_trasf
         scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["➕ Nuovo…"],
-                                     index=(elenco_trasf.index(trasf_corrente)
-                                            if trasf_corrente in elenco_trasf else 0),
-                                     key=f"trasf_{chiave}")
+                                    index=(elenco_trasf.index(trasf_corrente)
+                                           if trasf_corrente in elenco_trasf else 0),
+                                    key=f"trasf_{chiave}")
         if scelta_trasf == "➕ Nuovo…":
             scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}")
 
@@ -1848,6 +1849,9 @@ def mostra_anagrafiche():
     if "anagrafica_nuovo" not in st.session_state:
         st.session_state.anagrafica_nuovo = False
 
+    if "mostra_opzioni_gruppo" not in st.session_state:
+        st.session_state.mostra_opzioni_gruppo = False
+
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
     if err:
         st.error(err)
@@ -1859,7 +1863,7 @@ def mostra_anagrafiche():
         _form_anagrafica(df, chiave="nuovo", modo_nuovo=True)
         return
 
-    # ── Elenco Proclamatori a riquadri pieghevoli ───────────────────────
+    # ── Pulsante Nuovo Proclamatore ────────────────────────────────────
     if st.button("➕ Nuovo Proclamatore", use_container_width=True):
         st.session_state.anagrafica_nuovo = True
         st.rerun()
@@ -1897,13 +1901,60 @@ def mostra_anagrafiche():
     codice_stato_scelto = {opzioni_stato[0]: "A", opzioni_stato[1]: "I", opzioni_stato[2]: "TR"}[scelta_stato]
 
     df_mostrato = df_mostrato[categorie == codice_stato_scelto]
-
     df_mostrato = df_mostrato.sort_values("Cognome e Nome") if "Cognome e Nome" in df_mostrato.columns else df_mostrato
 
-    st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Tocca un nominativo per aprirne la scheda.")
+    # ── RILEVAMENTO SELEZIONE (CHECKBOX) ──────────────────────────────
+    nomi_selezionati = []
+    for idx, riga in df_mostrato.iterrows():
+        nome_proc = str(riga.get("Cognome e Nome", "")).strip()
+        if nome_proc and st.session_state.get(f"chk_anagrafica_{nome_proc}", False):
+            nomi_selezionati.append(nome_proc)
 
-    if "anagrafica_aperto" not in st.session_state:
-        st.session_state.anagrafica_aperto = None
+    # ── PULSANTE OPZIONI GRUPPI (ABILITATO SOLO SE C'È ALMENO UNA SELEZIONE) ──
+    almeno_uno_selezionato = len(nomi_selezionati) > 0
+
+    if st.button("👥 Opzioni gruppi", use_container_width=True, disabled=not almeno_uno_selezionato):
+        st.session_state.mostra_opzioni_gruppo = not st.session_state.mostra_opzioni_gruppo
+        st.rerun()
+
+    # ── FORM OPZIONI GRUPPO ──────────────────────────────────────────
+    if st.session_state.mostra_opzioni_gruppo and almeno_uno_selezionato:
+        with st.container(border=True):
+            st.markdown(f"### 👥 Associa gruppo a **{len(nomi_selezionati)}** proclamatori selezionati")
+            
+            gruppi_esistenti = opzioni_da_colonna(df, "Gruppo")
+            opzioni_menu = gruppi_esistenti + ["➕ Nuovo…"]
+            
+            scelta_gr = st.selectbox("Associa questi proclamatori al sorvegliante del gruppo:", opzioni_menu)
+            
+            nuovo_nome_gruppo = ""
+            if scelta_gr == "➕ Nuovo…":
+                nuovo_nome_gruppo = st.text_input("Inserisci nome del nuovo sorvegliante/gruppo:")
+
+            col_conferma, col_annulla = st.columns([1, 1])
+            with col_conferma:
+                if st.button("✔ Applica cambio gruppo", type="primary", use_container_width=True):
+                    gruppo_finale = nuovo_nome_gruppo.strip() if scelta_gr == "➕ Nuovo…" else scelta_gr
+                    
+                    if not gruppo_finale:
+                        st.error("Inserisci un nome valido per il gruppo.")
+                    else:
+                        with st.spinner("Aggiornamento gruppo in corso..."):
+                            ok, err = aggiorna_gruppo_massivo(workbook, nomi_selezionati, gruppo_finale)
+                            if ok:
+                                st.cache_data.clear()
+                                st.session_state.mostra_opzioni_gruppo = False
+                                st.success(f"✔ Gruppo aggiornato con successo per {len(nomi_selezionati)} proclamatori!")
+                                st.rerun()
+                            else:
+                                st.error(f"Errore durante l'aggiornamento: {err}")
+            
+            with col_annulla:
+                if st.button("Annulla", use_container_width=True, key="annulla_opzioni_gruppo"):
+                    st.session_state.mostra_opzioni_gruppo = False
+                    st.rerun()
+
+    st.caption(f"{len(df_mostrato)} Proclamatori su {len(df)} totali. Spunta la casella per selezionare, oppure tocca un nominativo per aprirne la scheda.")
 
     st.markdown(
         """
@@ -1917,16 +1968,21 @@ def mostra_anagrafiche():
         unsafe_allow_html=True,
     )
 
+    # ── ELENCO PROCLAMATORI CON CHECKBOX E CARDS ──────────────────────
     for idx, riga in df_mostrato.iterrows():
-        nome = riga.get("Cognome e Nome", "(senza nome)")
+        nome = riga.get("Cognome e Nome", "(senza nome)").strip()
         numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
         chiave_persona = str(riga.get("ID") or idx)
         aperto = (st.session_state.anagrafica_aperto == chiave_persona)
         freccia = "▼" if aperto else "▶"
 
-        if st.button(f"{freccia}  {nome}", key=f"btn_anagrafica_{chiave_persona}", use_container_width=True):
-            st.session_state.anagrafica_aperto = None if aperto else chiave_persona
-            st.rerun()
+        col_chk, col_btn = st.columns([1, 11])
+        with col_chk:
+            st.checkbox("", key=f"chk_anagrafica_{nome}", label_visibility="collapsed")
+        with col_btn:
+            if st.button(f"{freccia}  {nome}", key=f"btn_anagrafica_{chiave_persona}", use_container_width=True):
+                st.session_state.anagrafica_aperto = None if aperto else chiave_persona
+                st.rerun()
 
         if aperto:
             with st.container(border=True):
@@ -1935,10 +1991,48 @@ def mostra_anagrafiche():
                                   chiave_expander="anagrafica_aperto")
 
 
-import streamlit.components.v1 as components
+# ── FUNZIONE DI AGGIORNAMENTO MASSIVO NEI FOGLI ──────────────────────
+def aggiorna_gruppo_massivo(workbook, elenco_nomi: list, nuovo_gruppo: str):
+    """
+    Sostituisce il gruppo per tutti i nomi selezionati sia nel foglio Anagrafica (Colonna K)
+    sia nel foglio Tutti (tutte le occorrenze di quei nominativi).
+    """
+    try:
+        # 1. Aggiornamento Foglio Anagrafica
+        foglio_anagrafica = workbook.worksheet(NOME_FOGLIO_ANAGRAFICA)
+        dati_anag = foglio_anagrafica.get_all_values()
+        
+        # Individua l'indice della colonna "Cognome e Nome" e della colonna K ("Gruppo")
+        intestazioni_anag = dati_anag[RIGA_INTESTAZIONE_ANAGRAFICA]
+        idx_nome_anag = intestazioni_anag.index("Cognome e Nome")
+        idx_gruppo_anag = 10  # Colonna K (indice 0-based: 10)
 
-import os
-import streamlit as st
+        celle_da_aggiornare_anag = []
+        for i, riga in enumerate(dati_anag[RIGA_INTESTAZIONE_ANAGRAFICA + 1:], start=RIGA_INTESTAZIONE_ANAGRAFICA + 2):
+            if len(riga) > idx_nome_anag:
+                nome_riga = riga[idx_nome_anag].strip()
+                if nome_riga in elenco_nomi:
+                    foglio_anagrafica.update_cell(i, idx_gruppo_anag + 1, nuovo_gruppo)
+
+        # 2. Aggiornamento Foglio Tutti
+        foglio_tutti = workbook.worksheet(NOME_FOGLIO_TUTTI)
+        dati_tutti = foglio_tutti.get_all_values()
+        
+        if dati_tutti:
+            intestazioni_tutti = dati_tutti[0]
+            if "Cognome e Nome" in intestazioni_tutti and "Gruppo" in intestazioni_tutti:
+                idx_nome_tutti = intestazioni_tutti.index("Cognome e Nome")
+                idx_gruppo_tutti = intestazioni_tutti.index("Gruppo")
+
+                for i, riga in enumerate(dati_tutti[1:], start=2):
+                    if len(riga) > idx_nome_tutti:
+                        nome_riga = riga[idx_nome_tutti].strip()
+                        if nome_riga in elenco_nomi:
+                            foglio_tutti.update_cell(i, idx_gruppo_tutti + 1, nuovo_gruppo)
+
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
