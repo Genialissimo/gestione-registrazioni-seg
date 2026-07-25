@@ -1944,6 +1944,23 @@ def mostra_cartoline_registrazione():
     st.title("📇 Cartoline di registrazione")
     contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
 
+    # ── RESET AUTOMATICO DELLO STATO QUANDO SI ENTRA/RIENTRA NELLA PAGINA ──
+    # Se l'utente proviene da un'altra pagina (o dalla Home), azzeriamo tutto
+    pagina_corrente = "cartoline_registrazione"
+    if st.session_state.get("ultima_pagina_visitata") != pagina_corrente:
+        st.session_state.ultima_pagina_visitata = pagina_corrente
+        
+        # Reset di tutti i flag e stati temporanei
+        st.session_state.cartoline_mostra_riepilogo = False
+        st.session_state.pop("riepilogo_pdf_pronto", None)
+        st.session_state.pop("cartoline_pronto", None)
+        st.session_state.pop("cartoline_pacchetto_completo", None)
+        
+        # Pulisce le checkbox di selezione proclamaotori
+        chiavi_da_rimuovere = [k for k in st.session_state if k.startswith("cb_cartolina_")]
+        for k in chiavi_da_rimuovere:
+            del st.session_state[k]
+
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
         return
@@ -1973,7 +1990,7 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (aperto/chiuso dal pulsante) ────
+    # ── Riepilogo attività (aperto/chiuso dal menu) ─────────────────
     if st.session_state.get("cartoline_mostra_riepilogo"):
         with st.container(border=True):
             st.markdown("#### 📊 Riepilogo attività")
@@ -2071,13 +2088,20 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + Popover con chiusura forzata via JS ──
+    # ── Home + Menu ──
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
             if st.button("🏠", key="home_da_cartoline", use_container_width=True, help="Torna alla Home"):
+                # Reset preventivo quando premi il pulsante Home
+                st.session_state.cartoline_mostra_riepilogo = False
+                st.session_state.pop("riepilogo_pdf_pronto", None)
+                st.session_state.pop("cartoline_pronto", None)
+                st.session_state.pop("cartoline_pacchetto_completo", None)
+                
                 vai_a("home")
                 st.rerun()
+                
         with col_menu:
             with st.popover("⋯", use_container_width=True):
                 genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True)
@@ -2086,15 +2110,6 @@ def mostra_cartoline_registrazione():
                 
                 if st.button("📊 Riepilogo attività", use_container_width=True, key="toggle_riepilogo_attivita"):
                     st.session_state.cartoline_mostra_riepilogo = not st.session_state.get("cartoline_mostra_riepilogo", False)
-                    # Trucco JavaScript per simular un click all'esterno e chiudere la tendina st.popover
-                    components.html(
-                        """
-                        <script>
-                            window.parent.document.querySelector('body').click();
-                        </script>
-                        """,
-                        height=0
-                    )
                     st.rerun()
 
         if genera_tutti:
