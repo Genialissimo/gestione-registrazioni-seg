@@ -1984,12 +1984,7 @@ def mostra_anagrafiche():
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
 # ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
-    col_titolo, col_menu = st.columns([6, 1])
-    with col_titolo:
-        st.title("📇 Cartoline di registrazione")
-    with col_menu:
-        menu_principale()
-    
+    st.title("📇 Cartoline di registrazione")
     contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
 
     if not collegato:
@@ -2119,31 +2114,42 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + menu a comparsa con le altre opzioni, compatti e affiancati ──
+    # ── Home + menu a comparsa con le opzioni della pagina ──────────────
     with contenitore_pulsanti:
-        col_home, col_menu2, col_vuota = st.columns([1, 1, 5])
+        col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
             if st.button("🏠", key="home_da_cartoline", use_container_width=True,
                          help="Torna alla Home"):
                 vai_a("home")
                 st.rerun()
-        with col_menu2:
+        with col_menu:
+            # QUI c'è il menu a tre puntini con le opzioni della pagina
             with st.popover("⋯", use_container_width=True):
-                genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni",
-                                          use_container_width=True)
-                genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
-                                        use_container_width=True, disabled=n_sel == 0)
-                if st.button("📊 Riepilogo attività", use_container_width=True,
-                             key="toggle_riepilogo_attivita"):
-                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get(
-                        "cartoline_mostra_riepilogo", False)
+                st.caption("Azioni")
+                st.divider()
+                
+                # Opzione 1: Crea tutti i PDF
+                if st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True):
+                    st.session_state.cartoline_genera_tutti = True
+                
+                # Opzione 2: Genera cartoline selezionate
+                if st.button(f"📄 Genera cartoline selezionate ({n_sel})", use_container_width=True, disabled=n_sel == 0):
+                    st.session_state.cartoline_genera_sel = True
+                
+                st.divider()
+                
+                # Opzione 3: Riepilogo attività (toggle)
+                if st.button("📊 Riepilogo attività", use_container_width=True):
+                    st.session_state.cartoline_mostra_riepilogo = not st.session_state.get("cartoline_mostra_riepilogo", False)
 
-        if genera_tutti:
+        # Eseguo le azioni selezionate dal menu
+        if st.session_state.get("cartoline_genera_tutti"):
             with st.spinner("Genero il pacchetto completo…"):
                 zip_completo = genera_zip_s21_completo(df, df_tutti, anno_scelto)
             st.session_state.cartoline_pacchetto_completo = zip_completo
+            st.session_state.cartoline_genera_tutti = False
 
-        if genera_sel:
+        if st.session_state.get("cartoline_genera_sel"):
             righe_sel = [r.to_dict() for _, r in df.iterrows()
                          if str(r.get("Cognome e Nome", "")).strip() in selezionati]
             with st.spinner("Genero le cartoline…"):
@@ -2153,6 +2159,7 @@ def mostra_cartoline_registrazione():
                 else:
                     zip_bytes = genera_zip_s21(righe_sel, df_tutti, anno_scelto)
                     st.session_state.cartoline_pronto = ("zip", zip_bytes, anno_scelto)
+            st.session_state.cartoline_genera_sel = False
 
         if st.session_state.get("cartoline_pacchetto_completo"):
             st.download_button(
@@ -2182,7 +2189,6 @@ def mostra_cartoline_registrazione():
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
 
     st.divider()
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: STORICO PROCLAMATORI
