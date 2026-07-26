@@ -21,6 +21,9 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIGURAZIONE PAGINA
@@ -2149,6 +2152,126 @@ def mostra_cartoline_registrazione():
 ETICHETTE_STATO_GRUPPI = {"A": "🟢 Attivi", "I": "🔺 Inattivi", "TR": "↔️ Trasferiti"}
 
 
+COLORI_GRUPPI = ["BDD7EE", "FBE0D0", "D8ECD2", "FCEDB6", "E4D6EC", "F5C6C6"]
+COLORI_TESTATA_GRUPPI = ["9DC3E6", "F4B183", "A9D18E", "FFD966", "C9A0DC", "E8A0A0"]
+
+
+def _gruppi_calcola_sigla(riga: dict) -> str:
+    """Sigla da Incarico + Tipo, es. 'A' (Anziano), 'SM' (Servitore di
+    ministero), 'PR' (Pioniere Regolare), 'PS' (Pioniere speciale),
+    'M' (Missionario sul campo), combinabili tipo 'A/PR'."""
+    parti = []
+    incarico = (riga.get("Incarico") or "").strip()
+    tipo = (riga.get("Tipo") or "").strip()
+    if incarico == "Anziano":
+        parti.append("A")
+    elif incarico == "Servitore di ministero":
+        parti.append("SM")
+    if tipo == "Pioniere Regolare":
+        parti.append("PR")
+    elif tipo == "Pioniere speciale":
+        parti.append("PS")
+    elif tipo == "Missionario sul campo":
+        parti.append("M")
+    return "/".join(parti)
+
+
+def _gruppi_trova_assistente(df: pd.DataFrame, gruppo: str) -> str:
+    """Cerca in Anagrafica chi ha nel campo Note 'Assistente gruppo di
+    servizio' ed è nello stesso Gruppo — non esiste ancora un campo
+    dedicato, quindi si usa questa convenzione nelle Note."""
+    for _, r in df.iterrows():
+        g = str(r.get("Gruppo", "")).strip()
+        note = str(r.get("Note", "")).strip().lower()
+        if g == gruppo and "assistente gruppo di servizio" in note:
+            return str(r.get("Cognome e Nome", "")).strip()
+    return ""
+
+
+def genera_excel_gruppi_servizio(df: pd.DataFrame) -> bytes:
+    """Esporta i Gruppi di servizio come un 'poster': un riquadro colorato
+    per ciascun sorvegliante (due affiancati per banda), con intestazione
+    Sorvegliante/Assistente ed elenco numerato dei componenti con relativa
+    sigla (Anziano/Servitore di ministero/Pioniere Regolare/Speciale).
+    Nessun filtro di stato: la fotografia esatta di oggi."""
+    gruppi = {}
+    for _, riga in df.iterrows():
+        nome = str(riga.get("Cognome e Nome", "")).strip()
+        if not nome:
+            continue
+        g = str(riga.get("Gruppo", "")).strip()
+        if not g:
+            continue
+        gruppi.setdefault(g, []).append({"nome": nome, "sigla": _gruppi_calcola_sigla(riga.to_dict())})
+
+    nomi_gruppi = sorted(gruppi.keys())
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Gruppi di servizio"
+
+    bordo_sottile = Side(style="thin", color="999999")
+    bordo = Border(left=bordo_sottile, right=bordo_sottile, top=bordo_sottile, bottom=bordo_sottile)
+
+    blocco_colonne = 3  # numero, nome, sigla
+    gutter = 1
+    riga_cursore = 1
+
+    for indice_coppia in range(0, len(nomi_gruppi), 2):
+        coppia = nomi_gruppi[indice_coppia:indice_coppia + 2]
+        max_membri = max(len(gruppi[g]) for g in coppia)
+
+        for posizione, nome_gruppo in enumerate(coppia):
+            indice_colore = (indice_coppia // 2 + posizione) % len(COLORI_GRUPPI)
+            colore_corpo = COLORI_GRUPPI[indice_colore]
+            colore_testata = COLORI_TESTATA_GRUPPI[indice_colore]
+            col_base = 1 + posizione * (blocco_colonne + gutter)
+            col_num, col_nome, col_sigla = col_base, col_base + 1, col_base + 2
+
+            r = riga_cursore
+            ws.merge_cells(start_row=r, start_column=col_num, end_row=r, end_column=col_sigla)
+            cella = ws.cell(row=r, column=col_num, value=f"Gruppo {nome_gruppo.upper()}")
+            cella.font = Font(name="Arial", size=12, bold=True)
+            cella.alignment = Alignment(horizontal="center")
+            cella.fill = PatternFill("solid", fgColor=colore_testata)
+
+            assistente = _gruppi_trova_assistente(df, nome_gruppo)
+            for etichetta, valore, r_offset in (("Sorvegliante", nome_gruppo, 1), ("Assistente", assistente, 2)):
+                rr = r + r_offset
+                ws.merge_cells(start_row=rr, start_column=col_num, end_row=rr, end_column=col_nome)
+                c1 = ws.cell(row=rr, column=col_num, value=valore)
+                c1.font = Font(name="Arial", size=10, italic=True, bold=True, color="1F4E78")
+                c1.fill = PatternFill("solid", fgColor=colore_corpo)
+                c2 = ws.cell(row=rr, column=col_sigla, value=etichetta)
+                c2.font = Font(name="Arial", size=10, bold=True)
+                c2.alignment = Alignment(horizontal="right")
+                c2.fill = PatternFill("solid", fgColor=colore_corpo)
+
+            membri = sorted(gruppi[nome_gruppo], key=lambda m: m["nome"])
+            for i in range(max_membri):
+                rr = r + 3 + i
+                cn = ws.cell(row=rr, column=col_num, value=i + 1 if i < len(membri) else "")
+                cnome = ws.cell(row=rr, column=col_nome, value=membri[i]["nome"] if i < len(membri) else "")
+                csigla = ws.cell(row=rr, column=col_sigla, value=membri[i]["sigla"] if i < len(membri) else "")
+                for c in (cn, cnome, csigla):
+                    c.font = Font(name="Arial", size=10)
+                    c.fill = PatternFill("solid", fgColor=colore_corpo)
+                    c.border = bordo
+                cn.alignment = Alignment(horizontal="center")
+                csigla.alignment = Alignment(horizontal="center")
+
+            ws.column_dimensions[get_column_letter(col_num)].width = 5
+            ws.column_dimensions[get_column_letter(col_nome)].width = 26
+            ws.column_dimensions[get_column_letter(col_sigla)].width = 10
+
+        riga_cursore += 3 + max_membri + 2  # +2 righe di spaziatura tra bande
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def mostra_gruppi_servizio():
     st.title("👥 Gruppi di servizio")
     if st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True):
@@ -2170,6 +2293,22 @@ def mostra_gruppi_servizio():
         return
 
     df = df.reset_index(drop=True)
+
+    if st.button("📥 Esporta Gruppi di servizio (Excel)", key="esporta_excel_gruppi",
+                 use_container_width=True):
+        excel_bytes = genera_excel_gruppi_servizio(df)
+        st.session_state.gruppi_excel_pronto = excel_bytes
+
+    if st.session_state.get("gruppi_excel_pronto"):
+        st.download_button(
+            "⬇️ Scarica Gruppi di servizio.xlsx",
+            data=st.session_state.gruppi_excel_pronto,
+            file_name="Gruppi_di_servizio.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_gruppi_excel",
+            use_container_width=True,
+            on_click=lambda: st.session_state.pop("gruppi_excel_pronto", None),
+        )
 
     # ── Filtro di stato: Attivi / Inattivi ───────────────────────────────
     if "Attivi / Inattivi" in df.columns:
