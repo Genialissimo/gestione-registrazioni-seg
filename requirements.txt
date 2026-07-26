@@ -4,3 +4,4 @@ google-auth
 pandas
 pypdf
 reportlab
+openpyxl
