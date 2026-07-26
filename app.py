@@ -2188,12 +2188,14 @@ def _gruppi_trova_assistente(df: pd.DataFrame, gruppo: str) -> str:
     return ""
 
 
-def genera_excel_gruppi_servizio(df: pd.DataFrame) -> bytes:
-    """Esporta i Gruppi di servizio come un 'poster': un riquadro colorato
-    per ciascun sorvegliante (due affiancati per banda), con intestazione
-    Sorvegliante/Assistente ed elenco numerato dei componenti con relativa
-    sigla (Anziano/Servitore di ministero/Pioniere Regolare/Speciale).
-    Nessun filtro di stato: la fotografia esatta di oggi."""
+def _gruppi_dati_esclusi_trasferiti(df: pd.DataFrame):
+    """Ritorna (df_senza_trasferiti, dizionario_gruppi) dove il dizionario
+    è {nome_gruppo: [{'nome':.., 'sigla':..}, ...]}, escludendo i
+    Proclamatori Trasferiti sia dai gruppi che dalla ricerca dell'Assistente."""
+    if "Attivi / Inattivi" in df.columns:
+        categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+        df = df[categorie != "TR"]
+
     gruppi = {}
     for _, riga in df.iterrows():
         nome = str(riga.get("Cognome e Nome", "")).strip()
@@ -2203,6 +2205,16 @@ def genera_excel_gruppi_servizio(df: pd.DataFrame) -> bytes:
         if not g:
             continue
         gruppi.setdefault(g, []).append({"nome": nome, "sigla": _gruppi_calcola_sigla(riga.to_dict())})
+    return df, gruppi
+
+
+def genera_excel_gruppi_servizio(df: pd.DataFrame) -> bytes:
+    """Esporta i Gruppi di servizio come un 'poster': un riquadro colorato
+    per ciascun sorvegliante (due affiancati per banda), con intestazione
+    Sorvegliante/Assistente ed elenco numerato dei componenti con relativa
+    sigla (Anziano/Servitore di ministero/Pioniere Regolare/Speciale).
+    Esclude i Proclamatori Trasferiti."""
+    df, gruppi = _gruppi_dati_esclusi_trasferiti(df)
 
     nomi_gruppi = sorted(gruppi.keys())
 
@@ -2272,6 +2284,77 @@ def genera_excel_gruppi_servizio(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+def _gruppi_tabella_pdf(df: pd.DataFrame, nome_gruppo: str, membri: list,
+                         colore_corpo: str, colore_testata: str):
+    """Costruisce la mini-tabella reportlab di un singolo gruppo (stessa
+    struttura della versione Excel: intestazione, Sorvegliante/Assistente,
+    elenco numerato con sigla)."""
+    membri_ordinati = sorted(membri, key=lambda m: m["nome"])
+    assistente = _gruppi_trova_assistente(df, nome_gruppo)
+
+    dati = [[f"Gruppo {nome_gruppo.upper()}", "", ""],
+            [nome_gruppo, "", "Sorvegliante"],
+            [assistente, "", "Assistente"]]
+    for i, m in enumerate(membri_ordinati):
+        dati.append([str(i + 1), m["nome"], m["sigla"]])
+
+    larghezze = [1.1 * cm, 4.6 * cm, 1.8 * cm]
+    t = Table(dati, colWidths=larghezze)
+    t.setStyle(TableStyle([
+        ("SPAN", (0, 0), (2, 0)),
+        ("SPAN", (0, 1), (1, 1)),
+        ("SPAN", (0, 2), (1, 2)),
+        ("BACKGROUND", (0, 0), (2, 0), colors.HexColor("#" + colore_testata)),
+        ("FONTNAME", (0, 0), (2, 0), "Helvetica-Bold"),
+        ("ALIGN", (0, 0), (2, 0), "CENTER"),
+        ("BACKGROUND", (0, 1), (2, 2), colors.HexColor("#" + colore_corpo)),
+        ("FONTNAME", (0, 1), (1, 2), "Helvetica-BoldOblique"),
+        ("ALIGN", (2, 1), (2, 2), "RIGHT"),
+        ("BACKGROUND", (0, 3), (2, -1), colors.HexColor("#" + colore_corpo)),
+        ("GRID", (0, 3), (2, -1), 0.4, colors.grey),
+        ("ALIGN", (0, 3), (0, -1), "CENTER"),
+        ("ALIGN", (2, 3), (2, -1), "CENTER"),
+        ("FONTSIZE", (0, 0), (2, -1), 8),
+        ("TOPPADDING", (0, 0), (2, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (2, -1), 2),
+        ("VALIGN", (0, 0), (2, -1), "MIDDLE"),
+    ]))
+    return t
+
+
+def genera_pdf_gruppi_servizio(df: pd.DataFrame) -> bytes:
+    """Versione PDF dello stesso 'poster' dei Gruppi di servizio (vedi
+    genera_excel_gruppi_servizio): due riquadri colorati per banda,
+    interruzioni di pagina automatiche, ogni banda non si spezza tra due
+    pagine. Esclude i Proclamatori Trasferiti."""
+    df, gruppi = _gruppi_dati_esclusi_trasferiti(df)
+    nomi_gruppi = sorted(gruppi.keys())
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.2 * cm, bottomMargin=1.2 * cm,
+                             leftMargin=1.2 * cm, rightMargin=1.2 * cm)
+    stili = getSampleStyleSheet()
+    elementi = [Paragraph("Gruppi di servizio", stili["Title"]), Spacer(1, 10)]
+
+    for indice in range(0, len(nomi_gruppi), 2):
+        coppia = nomi_gruppi[indice:indice + 2]
+        celle = []
+        for posizione, nome_gruppo in enumerate(coppia):
+            indice_colore = (indice // 2 + posizione) % len(COLORI_GRUPPI)
+            celle.append(_gruppi_tabella_pdf(df, nome_gruppo, gruppi[nome_gruppo],
+                                              COLORI_GRUPPI[indice_colore],
+                                              COLORI_TESTATA_GRUPPI[indice_colore]))
+        if len(celle) == 1:
+            celle.append("")
+        riga_esterna = Table([celle], colWidths=[9 * cm, 9 * cm])
+        riga_esterna.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        elementi.append(KeepTogether([riga_esterna, Spacer(1, 12)]))
+
+    doc.build(elementi)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def mostra_gruppi_servizio():
     st.title("👥 Gruppi di servizio")
     if st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True):
@@ -2294,21 +2377,37 @@ def mostra_gruppi_servizio():
 
     df = df.reset_index(drop=True)
 
-    if st.button("📥 Esporta Gruppi di servizio (Excel)", key="esporta_excel_gruppi",
+    formato_export = st.radio("Formato esportazione", ["Excel", "PDF"], horizontal=True,
+                               key="gruppi_formato_export")
+    if st.button(f"📥 Esporta Gruppi di servizio ({formato_export})", key="esporta_gruppi",
                  use_container_width=True):
-        excel_bytes = genera_excel_gruppi_servizio(df)
-        st.session_state.gruppi_excel_pronto = excel_bytes
+        if formato_export == "Excel":
+            st.session_state.gruppi_export_pronto = ("xlsx", genera_excel_gruppi_servizio(df))
+        else:
+            st.session_state.gruppi_export_pronto = ("pdf", genera_pdf_gruppi_servizio(df))
 
-    if st.session_state.get("gruppi_excel_pronto"):
-        st.download_button(
-            "⬇️ Scarica Gruppi di servizio.xlsx",
-            data=st.session_state.gruppi_excel_pronto,
-            file_name="Gruppi_di_servizio.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_gruppi_excel",
-            use_container_width=True,
-            on_click=lambda: st.session_state.pop("gruppi_excel_pronto", None),
-        )
+    if st.session_state.get("gruppi_export_pronto"):
+        tipo_file, dati_file = st.session_state.gruppi_export_pronto
+        if tipo_file == "xlsx":
+            st.download_button(
+                "⬇️ Scarica Gruppi di servizio.xlsx",
+                data=dati_file,
+                file_name="Gruppi_di_servizio.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_gruppi_excel",
+                use_container_width=True,
+                on_click=lambda: st.session_state.pop("gruppi_export_pronto", None),
+            )
+        else:
+            st.download_button(
+                "⬇️ Scarica Gruppi di servizio.pdf",
+                data=dati_file,
+                file_name="Gruppi_di_servizio.pdf",
+                mime="application/pdf",
+                key="download_gruppi_pdf",
+                use_container_width=True,
+                on_click=lambda: st.session_state.pop("gruppi_export_pronto", None),
+            )
 
     # ── Filtro di stato: Attivi / Inattivi ───────────────────────────────
     if "Attivi / Inattivi" in df.columns:
