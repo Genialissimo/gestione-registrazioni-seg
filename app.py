@@ -2706,7 +2706,7 @@ def mostra_rapporto_filiale():
     )
 
 
-    in Storico rapporti consegnati."""
+    #in Storico rapporti consegnati."""
     nome = dati_selezione["nome"]
     mese_leggibile = dati_selezione["mese_leggibile"]
     riga_foglio = dati_selezione["riga_foglio"]
