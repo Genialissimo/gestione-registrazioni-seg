@@ -2814,8 +2814,8 @@ def mostra_storico_proclamatori():
         return
 
     def e_inattivo(valore: str) -> bool:
-        """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
-        'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
+        # Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
+        #'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
         return (valore or "").strip().lower().startswith("i")
 
     def stato_valido(valore: str) -> bool:
