@@ -1396,6 +1396,7 @@ def mostra_home():
         ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche"),
         ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline"),
         ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi"),
+        ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale"),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
@@ -2544,11 +2545,167 @@ def mostra_gruppi_servizio():
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: STORICO PROCLAMATORI
+# PAGINA: RAPPORTO PER LA FILIALE
 # ─────────────────────────────────────────────────────────────────
-def _form_modifica_rapporto_tutti(dati_selezione: dict):
-    """Form di modifica di una riga del foglio 'Tutti' (colonne C..J),
-    aperto cliccando una riga dentro la tabella espansa di un Proclamatore
+CATEGORIE_FILIALE = [
+    ("Proclamatore", "proclamatore"),
+    ("Pioniere Ausiliario", "pioniere ausiliario"),
+    ("Pioniere Regolare", "pioniere regolare"),
+    ("Pioniere Speciale", "pioniere speciale"),
+    ("Missionario sul campo", "missionario|rappresentante"),
+]
+COLORI_FILIALE = {
+    "Proclamatore": "#1a1a1a",
+    "Pioniere Ausiliario": "#1F77B4",
+    "Pioniere Regolare": "#2E8B57",
+    "Pioniere Speciale": "#9B30A0",
+    "Missionario sul campo": "#B8860B",
+}
+
+
+def _filiale_mesi_anno_teocratico_corrente() -> list:
+    """Ritorna i 12 (anno, mese) dell'anno teocratico corrente, da
+    Settembre ad Agosto, calcolati dalla data di oggi."""
+    oggi = datetime.now()
+    anno_teo = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+    if anno_teo is None:
+        anno_teo = oggi.year
+    mesi = []
+    a, m = anno_teo, 9
+    for _ in range(12):
+        mesi.append((a, m))
+        m += 1
+        if m == 13:
+            m = 1
+            a += 1
+    return mesi
+
+
+def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
+    """Calcola, per il mese scelto, riga per riga per ciascuna categoria:
+    Rapporti Registrati (conteggio), Forma Ministero (quanti hanno
+    partecipato), Ore totali, Studi totali — più il totale generale.
+    Ritorna (righe: list[dict], totale: dict)."""
+    def _stesso_mese(mese_anno):
+        try:
+            a, m = str(mese_anno).split("-")
+            return int(a) == anno and int(m) == mese
+        except Exception:
+            return False
+
+    df_mese = df_tutti[df_tutti["Mese/Anno"].apply(_stesso_mese)] if not df_tutti.empty else df_tutti
+
+    righe = []
+    tot_rapporti = tot_ministero = 0
+    tot_ore = tot_studi = 0.0
+    for etichetta, parola in CATEGORIE_FILIALE:
+        df_cat = df_mese[df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)] \
+            if not df_mese.empty else df_mese
+        n_rapporti = len(df_cat)
+        if n_rapporti == 0:
+            continue
+        n_ministero = int(df_cat["Ha partecipato al ministero"].astype(bool).sum())
+        ore = sum(a_float_it(v) for v in df_cat.get("Ore", []))
+        studi = sum(a_float_it(v) for v in df_cat.get("Studi Biblici", []))
+        righe.append({"tipo": etichetta, "rapporti": n_rapporti, "ministero": n_ministero,
+                       "ore": ore, "studi": studi})
+        tot_rapporti += n_rapporti
+        tot_ministero += n_ministero
+        tot_ore += ore
+        tot_studi += studi
+
+    totale = {"rapporti": tot_rapporti, "ministero": tot_ministero, "ore": tot_ore, "studi": tot_studi}
+    return righe, totale
+
+
+def mostra_rapporto_filiale():
+    st.title("🏢 Rapporto per la Filiale")
+    if st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+    st.caption("Dati statistici mensili (tipo modulo S-10), calcolati dal foglio Tutti.")
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+
+    df_anagrafica, err_ana = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err_ana:
+        st.error(err_ana)
+        return
+
+    mesi_disponibili = _filiale_mesi_anno_teocratico_corrente()
+    scelta_mese = st.selectbox(
+        "Mese",
+        mesi_disponibili,
+        format_func=lambda am: f"{MESI_ITALIANI[am[1]]} {am[0]}",
+        key="filiale_mese_scelto",
+    )
+    anno_scelto, mese_scelto = scelta_mese
+
+    import calendar
+    ultimo_giorno = calendar.monthrange(anno_scelto, mese_scelto)[1]
+    st.markdown("**Periodo calcolato:**")
+    st.markdown(f"`01/{mese_scelto:02d}/{anno_scelto}` → `{ultimo_giorno:02d}/{mese_scelto:02d}/{anno_scelto}`")
+
+    righe, totale = _filiale_calcola_dati(df_tutti, anno_scelto, mese_scelto)
+
+    righe_html = ""
+    for r in righe:
+        colore = COLORI_FILIALE.get(r["tipo"], "#1a1a1a")
+        righe_html += (
+            f"<tr style='color:{colore};'>"
+            f"<td style='padding:6px 10px;font-weight:600;'>{r['tipo']}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{r['rapporti']}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{r['ministero']}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{formatta_numero_it(r['ore'])}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{formatta_numero_it(r['studi'])}</td>"
+            f"</tr>"
+        )
+
+    tabella_html = f"""
+    <table style="border-collapse:collapse;width:100%;border:2px dashed #999;">
+        <tr style="background:#c9b79c;color:#7a3b1e;">
+            <th style="padding:8px 10px;text-align:left;">Tipo</th>
+            <th style="padding:8px 10px;">Rapporti<br>Registrati</th>
+            <th style="padding:8px 10px;">Forma<br>Minist</th>
+            <th style="padding:8px 10px;">Ore</th>
+            <th style="padding:8px 10px;">Studi</th>
+        </tr>
+        {righe_html}
+        <tr style="color:#8B0000;font-weight:700;border-top:2px solid #8B0000;">
+            <td style="padding:6px 10px;">Totale</td>
+            <td style="padding:6px 10px;text-align:center;">{totale['rapporti']}</td>
+            <td style="padding:6px 10px;text-align:center;">{totale['ministero']}</td>
+            <td style="padding:6px 10px;text-align:center;">{formatta_numero_it(totale['ore'])}</td>
+            <td style="padding:6px 10px;text-align:center;">{formatta_numero_it(totale['studi'])}</td>
+        </tr>
+    </table>
+    """
+    st.markdown(tabella_html, unsafe_allow_html=True)
+
+    if not righe:
+        st.info("Nessun rapporto trovato per questo mese nel foglio Tutti.")
+
+    if "Attivi / Inattivi" in df_anagrafica.columns:
+        n_attivi_anagrafica = int(
+            (df_anagrafica["Attivi / Inattivi"].apply(categoria_stato_proclamatore) == "A").sum()
+        )
+    else:
+        n_attivi_anagrafica = len(df_anagrafica)
+
+    st.markdown(
+        f"<div style='margin-top:18px;color:#2E8B57;font-weight:600;'>"
+        f"N.ro proclamatori attivi in archivio utenti: {n_attivi_anagrafica}</div>",
+        unsafe_allow_html=True,
+    )
+
+
     in Storico rapporti consegnati."""
     nome = dati_selezione["nome"]
     mese_leggibile = dati_selezione["mese_leggibile"]
