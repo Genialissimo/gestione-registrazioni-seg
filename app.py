@@ -2796,60 +2796,57 @@ def mostra_storico_proclamatori():
         st.error(err_tutti)
         return
 
-    # --- Funzioni ausiliarie di controllo ---
-def e_inattivo(valore: str) -> bool:
-    """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
-    'Inattivi'/'Inattivo' per esteso - tutto cio che inizia con 'i'."""
-    return (valore or "").strip().lower().startswith("i")
+    # ── Elenco anni teocratici disponibili (dati presenti + anno corrente/successivo) ──
+    anni_presenti = anni_teocratici_per_menu(df_tutti)
 
+    col_anno, col_ricerca = st.columns([1, 3])
+    with col_anno:
+        anno_scelto = st.selectbox(
+            "Anno teocratico",
+            anni_presenti,
+            format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+        )
+    with col_ricerca:
+        ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
 
-def stato_valido(valore: str) -> bool:
-    """Include solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
-    esclude tutto il resto (es. 'TR'/'Trasferiti')."""
-    v = (valore or "").strip().lower()
-    return v.startswith("a") or v.startswith("i")
+    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
+        return
 
+    def e_inattivo(valore: str) -> bool:
+        """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
+        'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
+        return (valore or "").strip().lower().startswith("i")
 
-# --- Elenco anni teocratici disponibili (dati presenti + anno corrente/successivo) ---
-anni_presenti = anni_teocratici_per_menu(df_tutti)
+    def stato_valido(valore: str) -> bool:
+        """Include solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
+        esclude tutto il resto (es. 'TR'/'Trasferiti')."""
+        v = (valore or "").strip().lower()
+        return v.startswith("a") or v.startswith("i")
 
-col_anno, col_ricerca = st.columns([1, 3])
-with col_anno:
-    anno_scelto = st.selectbox(
-        "Anno teocratico",
-        anni_presenti,
-        format_func=lambda a: f"{a} - {a + 1} (set {a} -> ago {a + 1})",
-    )
-with col_ricerca:
-    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare...")
+    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
+    colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
 
-if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
-    st.info("Nessun Proclamatore trovato in Anagrafica.")
-    return
+    stato_per_nome = {}
+    gruppo_per_nome = {}
+    for _, riga in df_anagrafica.iterrows():
+        n = str(riga.get("Cognome e Nome", "")).strip()
+        if not n:
+            continue
+        if colonna_stato:
+            stato_per_nome[n] = riga.get(colonna_stato, "")
+        if colonna_gruppo:
+            gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
-colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
-colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
-
-stato_per_nome = {}
-gruppo_per_nome = {}
-for _, riga in df_anagrafica.iterrows():
-    n = str(riga.get("Cognome e Nome", "")).strip()
-    if not n:
-        continue
+    nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
     if colonna_stato:
-        stato_per_nome[n] = riga.get(colonna_stato, "")
-    if colonna_gruppo:
-        gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
+        nomi = [n for n in nomi if stato_valido(stato_per_nome.get(n, ""))]
+    if ricerca:
+        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
 
-nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
-if colonna_stato:
-    nomi = [n for n in nomi if stato_valido(stato_per_nome.get(n, ""))]
-if ricerca:
-    nomi = [n for n in nomi if ricerca.lower() in n.lower()]
-
-conteggio_attivi = sum(1 for n in nomi if not e_inattivo(stato_per_nome.get(n, "")))
-conteggio_inattivi = sum(1 for n in nomi if e_inattivo(stato_per_nome.get(n, "")))
-st.caption(f"🟢 {conteggio_attivi} Proclamatori Attivi. 🔺 {conteggio_inattivi} Proclamatori Inattivi.")
+    conteggio_attivi = sum(1 for n in nomi if not e_inattivo(stato_per_nome.get(n, "")))
+    conteggio_inattivi = sum(1 for n in nomi if e_inattivo(stato_per_nome.get(n, "")))
+    st.caption(f"🟢 {conteggio_attivi} Proclamatori Attivi. 🔺 {conteggio_inattivi} Proclamatori Inattivi.")
 
     # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
     gruppi = {}
