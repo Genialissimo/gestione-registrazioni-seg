@@ -2540,9 +2540,399 @@ def mostra_gruppi_servizio():
                             for nome in selezionati:
                                 st.session_state.pop(_chiave_cb(nome), None)
                             st.session_state.gruppi_mostra_scelta = False
-                            st.success(f"✔ {n_sel} Proclamatori abbinati a «{
+                            st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
+                            st.rerun()
 
-                st.rerun()
+
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: RAPPORTO PER LA FILIALE
+# ─────────────────────────────────────────────────────────────────
+CATEGORIE_FILIALE = [
+    ("Proclamatore", "proclamatore"),
+    ("Pioniere Ausiliario", "pioniere ausiliario"),
+    ("Pioniere Regolare", "pioniere regolare"),
+    ("Pioniere Speciale", "pioniere speciale"),
+    ("Missionario sul campo", "missionario|rappresentante"),
+]
+COLORI_FILIALE = {
+    "Proclamatore": "#1a1a1a",
+    "Pioniere Ausiliario": "#1F77B4",
+    "Pioniere Regolare": "#2E8B57",
+    "Pioniere Speciale": "#9B30A0",
+    "Missionario sul campo": "#B8860B",
+}
+
+
+def _filiale_mesi_anno_teocratico_corrente() -> list:
+    """Ritorna i 12 (anno, mese) dell'anno teocratico corrente, da
+    Settembre ad Agosto, calcolati dalla data di oggi."""
+    oggi = datetime.now()
+    anno_teo = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+    if anno_teo is None:
+        anno_teo = oggi.year
+    mesi = []
+    a, m = anno_teo, 9
+    for _ in range(12):
+        mesi.append((a, m))
+        m += 1
+        if m == 13:
+            m = 1
+            a += 1
+    return mesi
+
+
+def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
+    """Calcola, per il mese scelto, riga per riga per ciascuna categoria:
+    Rapporti Registrati (conteggio), Forma Ministero (quanti hanno
+    partecipato), Ore totali, Studi totali — più il totale generale.
+    Ritorna (righe: list[dict], totale: dict)."""
+    def _stesso_mese(mese_anno):
+        try:
+            a, m = str(mese_anno).split("-")
+            return int(a) == anno and int(m) == mese
+        except Exception:
+            return False
+
+    df_mese = df_tutti[df_tutti["Mese/Anno"].apply(_stesso_mese)] if not df_tutti.empty else df_tutti
+
+    righe = []
+    tot_rapporti = tot_ministero = 0
+    tot_ore = tot_studi = 0.0
+    for etichetta, parola in CATEGORIE_FILIALE:
+        df_cat = df_mese[df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)] \
+            if not df_mese.empty else df_mese
+        n_rapporti = len(df_cat)
+        if n_rapporti == 0:
+            continue
+        n_ministero = int(df_cat["Ha partecipato al ministero"].astype(bool).sum())
+        ore = sum(a_float_it(v) for v in df_cat.get("Ore", []))
+        studi = sum(a_float_it(v) for v in df_cat.get("Studi Biblici", []))
+        righe.append({"tipo": etichetta, "rapporti": n_rapporti, "ministero": n_ministero,
+                       "ore": ore, "studi": studi})
+        tot_rapporti += n_rapporti
+        tot_ministero += n_ministero
+        tot_ore += ore
+        tot_studi += studi
+
+    totale = {"rapporti": tot_rapporti, "ministero": tot_ministero, "ore": tot_ore, "studi": tot_studi}
+    return righe, totale
+
+
+def mostra_rapporto_filiale():
+    st.title("🏢 Rapporto per la Filiale")
+    if st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+    st.caption("Dati statistici mensili (tipo modulo S-10), calcolati dal foglio Tutti.")
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+
+    df_anagrafica, err_ana = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err_ana:
+        st.error(err_ana)
+        return
+
+    mesi_disponibili = _filiale_mesi_anno_teocratico_corrente()
+    oggi = datetime.now()
+    mese_precedente = oggi.month - 1 or 12
+    anno_mese_precedente = oggi.year if oggi.month > 1 else oggi.year - 1
+    indice_default = mesi_disponibili.index((anno_mese_precedente, mese_precedente)) \
+        if (anno_mese_precedente, mese_precedente) in mesi_disponibili else 0
+    scelta_mese = st.selectbox(
+        "Mese",
+        mesi_disponibili,
+        index=indice_default,
+        format_func=lambda am: f"{MESI_ITALIANI[am[1]]} {am[0]}",
+        key="filiale_mese_scelto",
+    )
+    anno_scelto, mese_scelto = scelta_mese
+
+    righe, totale = _filiale_calcola_dati(df_tutti, anno_scelto, mese_scelto)
+
+    righe_html = ""
+    for r in righe:
+        colore = COLORI_FILIALE.get(r["tipo"], "#1a1a1a")
+        righe_html += (
+            f"<tr style='color:{colore};'>"
+            f"<td style='padding:6px 10px;font-weight:600;'>{r['tipo']}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{r['rapporti']}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{r['ministero']}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{formatta_numero_it(r['ore'])}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{formatta_numero_it(r['studi'])}</td>"
+            f"</tr>"
+        )
+
+    tabella_html = f"""
+    <table style="border-collapse:collapse;width:100%;border:2px dashed #999;">
+        <tr style="background:#c9b79c;color:#7a3b1e;">
+            <th style="padding:8px 10px;text-align:left;">Tipo</th>
+            <th style="padding:8px 10px;">Rapporti<br>Registrati</th>
+            <th style="padding:8px 10px;">Forma<br>Minist</th>
+            <th style="padding:8px 10px;">Ore</th>
+            <th style="padding:8px 10px;">Studi</th>
+        </tr>
+        {righe_html}
+        <tr style="color:#8B0000;font-weight:700;border-top:2px solid #8B0000;">
+            <td style="padding:6px 10px;">Totale</td>
+            <td style="padding:6px 10px;text-align:center;">{totale['rapporti']}</td>
+            <td style="padding:6px 10px;text-align:center;">{totale['ministero']}</td>
+            <td style="padding:6px 10px;text-align:center;">{formatta_numero_it(totale['ore'])}</td>
+            <td style="padding:6px 10px;text-align:center;">{formatta_numero_it(totale['studi'])}</td>
+        </tr>
+    </table>
+    """
+    st.markdown(tabella_html, unsafe_allow_html=True)
+
+    if not righe:
+        st.info("Nessun rapporto trovato per questo mese nel foglio Tutti.")
+
+    if "Attivi / Inattivi" in df_anagrafica.columns:
+        n_attivi_anagrafica = int(
+            (df_anagrafica["Attivi / Inattivi"].apply(categoria_stato_proclamatore) == "A").sum()
+        )
+    else:
+        n_attivi_anagrafica = len(df_anagrafica)
+
+    st.markdown(
+        f"<div style='margin-top:18px;color:#2E8B57;font-weight:600;'>"
+        f"N.ro proclamatori attivi in archivio utenti: {n_attivi_anagrafica}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _form_modifica_rapporto_tutti(dati_selezione: dict):
+    """Form di modifica di una riga del foglio 'Tutti' (colonne C..J),
+    aperto cliccando una riga dentro la tabella espansa di un Proclamatore
+    in Storico rapporti consegnati."""
+    nome = dati_selezione["nome"]
+    mese_leggibile = dati_selezione["mese_leggibile"]
+    riga_foglio = dati_selezione["riga_foglio"]
+    grezza = dati_selezione["grezza"]  # [C, D, E, F, G, H, I, J]
+
+    st.title("Modifica rapporto")
+    st.caption(f"{nome} — {mese_leggibile} (foglio «{NOME_FOGLIO_TUTTI}», riga {riga_foglio})")
+
+    with st.form("form_modifica_tutti", clear_on_submit=False):
+        mese_anno = st.text_input("Mese/Anno (formato AAAA-MM)", value=grezza[0])
+
+        opzioni_tipo = list(OPZIONI_HAI_SERVITO)
+        valore_tipo = grezza[1]
+        if valore_tipo and valore_tipo not in opzioni_tipo:
+            opzioni_tipo = [valore_tipo] + opzioni_tipo
+        indice_tipo = opzioni_tipo.index(valore_tipo) if valore_tipo in opzioni_tipo else 0
+        tipo_servizio = st.selectbox("Ha servito come", opzioni_tipo, index=indice_tipo)
+
+        opzioni_ministero = ["Si", "No"]
+        valore_ministero = grezza[2] if grezza[2] in opzioni_ministero else "No"
+        ministero = st.selectbox("Ha partecipato al ministero", opzioni_ministero,
+                                  index=opzioni_ministero.index(valore_ministero))
+
+        ore = st.number_input("Ore", value=a_float_it(grezza[4]), step=1.0)
+        cred_ore = st.number_input("Cred. Ore", value=a_float_it(grezza[5]), step=1.0)
+        studi = st.text_input("Studi Biblici", value=grezza[6])
+        osservazioni = st.text_area("Osservazioni", value=grezza[7])
+
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+        with col_btn2:
+            annulla = st.form_submit_button("Annulla", use_container_width=True)
+
+    if annulla:
+        st.session_state.storico_modifica = None
+        st.rerun()
+
+    if invia:
+        nuova_grezza = list(grezza)
+        nuova_grezza[0] = mese_anno.strip()
+        nuova_grezza[1] = tipo_servizio
+        nuova_grezza[2] = ministero
+        nuova_grezza[4] = formatta_numero_it(ore)
+        nuova_grezza[5] = formatta_numero_it(cred_ore)
+        nuova_grezza[6] = studi.strip()
+        nuova_grezza[7] = osservazioni.strip()
+        # nuova_grezza[3] (colonna F) resta invariata, non la gestiamo nel form
+
+        ok, err = salva_riga_tutti(workbook, riga_foglio, nuova_grezza)
+        if ok:
+            st.cache_data.clear()
+            st.session_state.storico_modifica = None
+            st.success("✔ Salvato correttamente.")
+            st.rerun()
+        else:
+            st.error(err)
+
+
+def mostra_storico_proclamatori():
+    st.title("Storico rapporti consegnati")
+    if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+    st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
+               f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    if "storico_modifica" not in st.session_state:
+        st.session_state.storico_modifica = None
+
+    if st.session_state.storico_modifica is not None:
+        _form_modifica_rapporto_tutti(st.session_state.storico_modifica)
+        return
+
+    df_anagrafica, err_anagrafica = leggi_foglio_come_df(
+        workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err_anagrafica:
+        st.error(err_anagrafica)
+        return
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+
+    # ── Elenco anni teocratici disponibili (dati presenti + anno corrente/successivo) ──
+    anni_presenti = anni_teocratici_per_menu(df_tutti)
+
+    col_anno, col_ricerca = st.columns([1, 3])
+    with col_anno:
+        anno_scelto = st.selectbox(
+            "Anno teocratico",
+            anni_presenti,
+            format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+        )
+    with col_ricerca:
+        ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+
+    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
+        return
+
+    def e_inattivo(valore: str) -> bool:
+        """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
+        'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
+        return (valore or "").strip().lower().startswith("i")
+
+    def stato_valido(valore: str) -> bool:
+        """Include solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
+        esclude tutto il resto (es. 'TR'/'Trasferiti')."""
+        v = (valore or "").strip().lower()
+        return v.startswith("a") or v.startswith("i")
+
+    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
+    colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
+
+    stato_per_nome = {}
+    gruppo_per_nome = {}
+    for _, riga in df_anagrafica.iterrows():
+        n = str(riga.get("Cognome e Nome", "")).strip()
+        if not n:
+            continue
+        if colonna_stato:
+            stato_per_nome[n] = riga.get(colonna_stato, "")
+        if colonna_gruppo:
+            gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
+
+    nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+    if colonna_stato:
+        nomi = [n for n in nomi if stato_valido(stato_per_nome.get(n, ""))]
+    if ricerca:
+        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
+
+    conteggio_attivi = sum(1 for n in nomi if not e_inattivo(stato_per_nome.get(n, "")))
+    conteggio_inattivi = sum(1 for n in nomi if e_inattivo(stato_per_nome.get(n, "")))
+    st.caption(f"🟢 {conteggio_attivi} Proclamatori Attivi. 🔺 {conteggio_inattivi} Proclamatori Inattivi.")
+
+    # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
+    gruppi = {}
+    for n in nomi:
+        g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
+        gruppi.setdefault(g, []).append(n)
+    for g in gruppi:
+        gruppi[g].sort()
+
+    def _riga_proclamatore(nome: str):
+        inattivo = e_inattivo(stato_per_nome.get(nome, ""))
+        indicatore = "🔺 " if inattivo else ""
+        etichetta = f"{indicatore}{nome}"
+
+        with st.expander(etichetta):
+            righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
+            righe_persona = righe_persona[
+                righe_persona["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
+            ]
+            colonne_tabella = ["Anno di servizio", "Ha partecipato al ministero", "Studi Biblici",
+                                "Pioniere ausiliario", "Ore", "Cred. Ore", "Osservazioni"]
+            if righe_persona.empty:
+                st.caption("Nessun rapporto trovato per l'anno teocratico selezionato.")
+            else:
+                righe_persona = righe_persona.sort_values("Mese/Anno")
+                totale_ore = sum(a_float_it(v) for v in righe_persona["Ore"])
+                totale_cred = sum(a_float_it(v) for v in righe_persona["Cred. Ore"])
+                riga_totale = pd.DataFrame([{
+                    "Anno di servizio": "Totale",
+                    "Ha partecipato al ministero": None,
+                    "Studi Biblici": "",
+                    "Pioniere ausiliario": None,
+                    "Ore": formatta_numero_it(totale_ore),
+                    "Cred. Ore": formatta_numero_it(totale_cred),
+                    "Osservazioni": "",
+                }])
+                tabella_completa = pd.concat(
+                    [righe_persona[colonne_tabella], riga_totale[colonne_tabella]], ignore_index=True
+                )
+                evento_tabella = st.dataframe(
+                    tabella_completa,
+                    hide_index=True,
+                    use_container_width=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key=f"storico_tabella_{nome}",
+                    column_config={
+                        "Anno di servizio": st.column_config.TextColumn(width="small"),
+                        "Ha partecipato al ministero": st.column_config.CheckboxColumn(
+                            "Ha partecipato al ministero", width="small", disabled=True),
+                        "Studi Biblici": st.column_config.TextColumn(width="small"),
+                        "Pioniere ausiliario": st.column_config.CheckboxColumn(
+                            "Pioniere ausiliario", width="small", disabled=True),
+                        "Ore": st.column_config.TextColumn(width="small"),
+                        "Cred. Ore": st.column_config.TextColumn(width="small"),
+                        "Osservazioni": st.column_config.TextColumn(width="large"),
+                    },
+                )
+
+                righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
+                if righe_sel:
+                    posizione = righe_sel[0]
+                    # La riga "Totale" (ultima) non è modificabile
+                    if posizione < len(righe_persona):
+                        idx_originale = righe_persona.index[posizione]
+                        riga_dati = df_tutti.loc[idx_originale]
+                        mese_leggibile = riga_dati["Anno di servizio"]
+                        if st.button(f"✏️ Modifica «{mese_leggibile}»", key=f"storico_modifica_btn_{nome}_{posizione}"):
+                            st.session_state.storico_modifica = {
+                                "nome": nome,
+                                "mese_leggibile": mese_leggibile,
+                                "riga_foglio": int(riga_dati["RigaFoglio"]),
+                                "grezza": list(riga_dati["_grezza"]),
+                            }
+                            st.rerun()
+
+    for gruppo in sorted(gruppi.keys()):
+        st.markdown(f"#### 👤 {gruppo}")
+        for nome in gruppi[gruppo]:
+            _riga_proclamatore(nome)
+        st.divider()
+
 
 # ─────────────────────────────────────────────────────────────────
 # ROUTING — navigazione solo tramite le card della Home
