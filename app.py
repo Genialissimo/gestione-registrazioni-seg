@@ -2580,7 +2580,6 @@ def _filiale_mesi_anno_teocratico_corrente() -> list:
             a += 1
     return mesi
 
-
 def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
     """Calcola, per il mese scelto, riga per riga per ciascuna categoria:
     Rapporti Registrati (conteggio), Forma Ministero (quanti hanno
@@ -2599,8 +2598,18 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
     tot_rapporti = tot_ministero = 0
     tot_ore = tot_studi = 0.0
     for etichetta, parola in CATEGORIE_FILIALE:
-        df_cat = df_mese[df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)] \
-            if not df_mese.empty else df_mese
+        if df_mese.empty:
+            df_cat = df_mese
+        elif etichetta == "Proclamatore":
+            # Per i proclamatori: include chi ha "proclamatore" o chi non specifica
+            # un altro ruolo speciale (vuoto / generico)
+            escludi_speciali = "pioniere|missionario|rappresentante"
+            maschera_cat = df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)
+            maschera_generici = ~df_mese["Tipo Servizio"].str.lower().str.contains(escludi_speciali, na=False, regex=True)
+            df_cat = df_mese[maschera_cat | maschera_generici]
+        else:
+            df_cat = df_mese[df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
+
         n_rapporti = len(df_cat)
         if n_rapporti == 0:
             continue
@@ -2616,6 +2625,8 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
 
     totale = {"rapporti": tot_rapporti, "ministero": tot_ministero, "ore": tot_ore, "studi": tot_studi}
     return righe, totale
+
+
 
 
 def mostra_rapporto_filiale():
