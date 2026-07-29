@@ -2706,7 +2706,10 @@ def mostra_rapporto_filiale():
     )
 
 
-    #in Storico rapporti consegnati."""
+def _form_modifica_rapporto_tutti(dati_selezione: dict):
+    """Form di modifica di una riga del foglio 'Tutti' (colonne C..J),
+    aperto cliccando una riga dentro la tabella espansa di un Proclamatore
+    in Storico rapporti consegnati."""
     nome = dati_selezione["nome"]
     mese_leggibile = dati_selezione["mese_leggibile"]
     riga_foglio = dati_selezione["riga_foglio"]
@@ -2814,8 +2817,8 @@ def mostra_storico_proclamatori():
         return
 
     def e_inattivo(valore: str) -> bool:
-        # Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
-        #'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
+        """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
+        'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
         return (valore or "").strip().lower().startswith("i")
 
     def stato_valido(valore: str) -> bool:
@@ -2943,5 +2946,7 @@ elif st.session_state.pagina == "cartoline":
     mostra_cartoline_registrazione()
 elif st.session_state.pagina == "gruppi":
     mostra_gruppi_servizio()
+elif st.session_state.pagina == "filiale":
+    mostra_rapporto_filiale()
 else:
     mostra_home()
