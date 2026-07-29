@@ -2563,22 +2563,19 @@ COLORI_FILIALE = {
 }
 
 
-def _filiale_mesi_anno_teocratico_corrente() -> list:
-    """Ritorna i 12 (anno, mese) dell'anno teocratico corrente, da
-    Settembre ad Agosto, calcolati dalla data di oggi."""
-    oggi = datetime.now()
-    anno_teo = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
-    if anno_teo is None:
-        anno_teo = oggi.year
-    mesi = []
-    a, m = anno_teo, 9
-    for _ in range(12):
-        mesi.append((a, m))
-        m += 1
-        if m == 13:
-            m = 1
-            a += 1
-    return mesi
+def _filiale_mesi_disponibili(df_tutti: pd.DataFrame) -> list:
+    """Ritorna i (anno, mese) per cui esiste almeno un rapporto nel foglio
+    Tutti, ordinati dal più recente al più vecchio."""
+    mesi = set()
+    if not df_tutti.empty and "Mese/Anno" in df_tutti.columns:
+        for m in df_tutti["Mese/Anno"].dropna().unique():
+            try:
+                a, mm = str(m).split("-")
+                mesi.add((int(a), int(mm)))
+            except Exception:
+                continue
+    return sorted(mesi, reverse=True)
+
 
 def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
     """Calcola, per il mese scelto, riga per riga per ciascuna categoria:
@@ -2598,18 +2595,8 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
     tot_rapporti = tot_ministero = 0
     tot_ore = tot_studi = 0.0
     for etichetta, parola in CATEGORIE_FILIALE:
-        if df_mese.empty:
-            df_cat = df_mese
-        elif etichetta == "Proclamatore":
-            # Per i proclamatori: include chi ha "proclamatore" o chi non specifica
-            # un altro ruolo speciale (vuoto / generico)
-            escludi_speciali = "pioniere|missionario|rappresentante"
-            maschera_cat = df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)
-            maschera_generici = ~df_mese["Tipo Servizio"].str.lower().str.contains(escludi_speciali, na=False, regex=True)
-            df_cat = df_mese[maschera_cat | maschera_generici]
-        else:
-            df_cat = df_mese[df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
-
+        df_cat = df_mese[df_mese["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)] \
+            if not df_mese.empty else df_mese
         n_rapporti = len(df_cat)
         if n_rapporti == 0:
             continue
@@ -2625,8 +2612,6 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
 
     totale = {"rapporti": tot_rapporti, "ministero": tot_ministero, "ore": tot_ore, "studi": tot_studi}
     return righe, totale
-
-
 
 
 def mostra_rapporto_filiale():
@@ -2650,7 +2635,11 @@ def mostra_rapporto_filiale():
         st.error(err_ana)
         return
 
-    mesi_disponibili = _filiale_mesi_anno_teocratico_corrente()
+    mesi_disponibili = _filiale_mesi_disponibili(df_tutti)
+    if not mesi_disponibili:
+        st.info("Nessun rapporto trovato nel foglio Tutti.")
+        return
+
     oggi = datetime.now()
     mese_precedente = oggi.month - 1 or 12
     anno_mese_precedente = oggi.year if oggi.month > 1 else oggi.year - 1
