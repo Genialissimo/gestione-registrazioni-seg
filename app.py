@@ -2757,7 +2757,7 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 
     if invia:
         nuova_grezza = list(grezza)
-        nuova_grezza[0] = mese_anno.strip()
+        nuova_grezza[0] = "'" + mese_anno.strip()
         nuova_grezza[1] = tipo_servizio
         nuova_grezza[2] = ministero
         nuova_grezza[4] = formatta_numero_it(ore)
