@@ -2668,10 +2668,11 @@ def mostra_rapporto_filiale():
     righe, totale = _filiale_calcola_dati(df_tutti, anno_scelto, mese_scelto)
 
     righe_html = ""
-    for r in righe:
+    for i, r in enumerate(righe):
         colore = COLORI_FILIALE.get(r["tipo"], "#1a1a1a")
+        sfondo = "#EAF4FB" if i % 2 == 0 else "#FFFFFF"
         righe_html += (
-            f"<tr style='color:{colore};'>"
+            f"<tr style='color:{colore};background:{sfondo};'>"
             f"<td style='padding:6px 10px;font-weight:600;'>{r['tipo']}</td>"
             f"<td style='padding:6px 10px;text-align:center;'>{r['rapporti']}</td>"
             f"<td style='padding:6px 10px;text-align:center;'>{r['ministero']}</td>"
