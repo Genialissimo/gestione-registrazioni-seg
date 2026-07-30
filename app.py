@@ -2690,7 +2690,7 @@ def mostra_rapporto_filiale():
             <th style="padding:8px 10px;">Studi</th>
         </tr>
         {righe_html}
-        <tr style="color:#8B0000;font-weight:700;border-top:2px solid #1B6FA8;">
+        <tr style="color:#1B6FA8;font-weight:700;border-top:2px solid #1B6FA8;">
             <td style="padding:6px 10px;">Totale</td>
             <td style="padding:6px 10px;text-align:center;">{totale['rapporti']}</td>
             <td style="padding:6px 10px;text-align:center;">{totale['ministero']}</td>
