@@ -1470,10 +1470,16 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
         st.rerun()
 
     if invia:
-        valori_finali = {
-            colonna: (str(v) if not isinstance(v, str) else v)
-            for colonna, v in valori_inseriti.items()
-        }
+        def _formatta_valore_salvato(v):
+            if isinstance(v, str):
+                return v
+            if isinstance(v, float):
+                if v == int(v):
+                    return str(int(v))
+                return str(v).replace(".", ",")
+            return str(v)
+
+        valori_finali = {colonna: _formatta_valore_salvato(v) for colonna, v in valori_inseriti.items()}
         ok, err = salva_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE,
                                      valori_finali, riga_da_aggiornare=numero_riga_foglio)
         if ok:
