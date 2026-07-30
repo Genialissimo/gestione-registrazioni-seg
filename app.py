@@ -1469,9 +1469,15 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
             st.session_state[chiave_stato_modifica] = None
         st.rerun()
 
-    if invia:
+   if invia:
+        def _sembra_mese_anno(testo: str) -> bool:
+            parti = testo.strip().split("-")
+            return len(parti) == 2 and parti[0].isdigit() and len(parti[0]) == 4 and parti[1].isdigit()
+
         def _formatta_valore_salvato(v):
             if isinstance(v, str):
+                if _sembra_mese_anno(v):
+                    return "'" + v.strip()
                 return v
             if isinstance(v, float):
                 if v == int(v):
