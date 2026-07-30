@@ -1389,23 +1389,53 @@ def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
+    badge_rapporti = ""
+    if collegato:
+        try:
+            df_anagrafica_home, err_ana_home = leggi_foglio_come_df(
+                workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+            df_risposte_home, err_risp_home = leggi_foglio_come_df(
+                workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
+            if not err_ana_home and not err_risp_home and not df_anagrafica_home.empty:
+                if "Attivi / Inattivi" in df_anagrafica_home.columns:
+                    categorie_home = df_anagrafica_home["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+                else:
+                    categorie_home = pd.Series(["A"] * len(df_anagrafica_home), index=df_anagrafica_home.index)
+                nomi_attivi_home = set(
+                    df_anagrafica_home.loc[categorie_home == "A", "Cognome e Nome"].astype(str).str.strip()
+                )
+                conteggio_attivi_home = len(nomi_attivi_home)
+                if "Cognome e Nome" in df_risposte_home.columns:
+                    nomi_consegnati_home = set(
+                        df_risposte_home["Cognome e Nome"].astype(str).str.strip()
+                    ) & nomi_attivi_home
+                else:
+                    nomi_consegnati_home = set()
+                conteggio_consegnati_home = len(nomi_consegnati_home)
+                completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
+                colore_badge = "#2E8B57" if completo else "#C0392B"
+                badge_rapporti = (f" <span style='color:{colore_badge};font-weight:700;'>"
+                                   f"({conteggio_consegnati_home} di {conteggio_attivi_home})</span>")
+        except Exception:
+            badge_rapporti = ""
+
     st.subheader("Sezioni")
     card_data = [
-        ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni"),
-        ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico"),
-        ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche"),
-        ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline"),
-        ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi"),
-        ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale"),
+        ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
+        ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
+        ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", ""),
+        ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
+        ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
+        ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
     riga3 = st.columns(2)
     colonne = riga1 + riga2 + riga3
-    for col, (icon, titolo, desc, pagina) in zip(colonne, card_data):
+    for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
-                st.markdown(f"#### {icon}  {titolo}")
+                st.markdown(f"#### {icon}  {titolo}{badge}", unsafe_allow_html=True)
                 st.caption(desc)
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                           use_container_width=True, on_click=vai_a, args=(pagina,))
