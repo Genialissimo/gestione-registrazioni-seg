@@ -2682,7 +2682,7 @@ def mostra_rapporto_filiale():
 
     tabella_html = f"""
     <table style="border-collapse:collapse;width:100%;border:2px dashed #999;">
-        <tr style="background:#c9b79c;color:#7a3b1e;">
+        <tr style="background:#1B6FA8;color:#FFFFFF;">
             <th style="padding:8px 10px;text-align:left;">Tipo</th>
             <th style="padding:8px 10px;">Rapporti<br>Registrati</th>
             <th style="padding:8px 10px;">Forma<br>Minist</th>
