@@ -1037,7 +1037,7 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
 
 
 # ─────────────────────────────────────────────────────────────────
-# RIEPILOGO ATTIVITÀ (report libero per sorveglianti di gruppo/categoria)
+# RIEPILOGO ATTIVITÀ (Inclusa la nuova opzione "Sintetico compara gruppi")
 # ─────────────────────────────────────────────────────────────────
 CATEGORIE_RIEPILOGO_ATTIVITA = {
     "Tutti": None,
@@ -1175,7 +1175,7 @@ def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list
 
 
 def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria: str) -> list:
-    """Un UNICO blocco, intestato con il nome della categoria (es. 'Pionieri Ausiliari')."""
+    """Un UNICO blocco, intestato con il nome della categoria."""
     if df_filtrato.empty:
         return []
 
@@ -1250,8 +1250,9 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
     return risultati
 
 
-def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFrame) -> list:
-    """Genera i totali e le medie raggruppati per categoria e ordinati alfabeticamente per gruppo."""
+def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFrame, categoria_scelta: str) -> list:
+    """Genera totali e medie raggruppati per Gruppo (in ordine alfabetico) e Categoria,
+    formattati esattamente come richiesto."""
     if df_periodo.empty or df_anagrafica.empty or "Gruppo" not in df_anagrafica.columns:
         return []
 
@@ -1269,13 +1270,17 @@ def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFr
     df = df_periodo.copy()
     df["Gruppo"] = df["Nome"].astype(str).str.strip().map(mappa_gruppi).fillna("Senza Gruppo")
 
-    risultati = []
-    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
-        if chiave == "Tutti" or not parola:
-            continue
+    # Determina quali categorie analizzare
+    if categoria_scelta == "Tutti":
+        iter_categorie = [(k, v) for k, v in CATEGORIE_RIEPILOGO_ATTIVITA.items() if k != "Tutti" and v]
+    else:
+        parola = CATEGORIE_RIEPILOGO_ATTIVITA.get(categoria_scelta)
+        iter_categorie = [(categoria_scelta, parola)] if parola else []
 
+    risultati = []
+    for chiave_cat, parola in iter_categorie:
         df_cat = df[df["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
-        etichetta_cat = ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave)
+        etichetta_cat = ETICHETTE_SINTETICO_CATEGORIA.get(chiave_cat, chiave_cat)
         righe_gruppi = []
 
         for grp in gruppi_ordinati:
@@ -1296,6 +1301,7 @@ def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFr
                 "media_studi": tot_studi / n if n else 0.0,
             })
 
+        # Aggiunge la categoria se ci sono dati significativi
         if any(r["totale_ore"] > 0 or r["totale_crediti"] > 0 or r["totale_studi"] > 0 for r in righe_gruppi):
             risultati.append({
                 "categoria": etichetta_cat,
@@ -1305,11 +1311,35 @@ def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFr
     return risultati
 
 
+def riepilogo_prepara_dati_visivi(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, 
+                                   periodo: str = "12 mesi", gruppo_scelto: str = "Tutti i gruppi", 
+                                   categoria: str = "Tutti", tipo_report: str = "Dettagliato"):
+    """
+    Funzione principale che coordina il filtraggio e la preparazione dati
+    per la GUI e per il PDF in base al tipo di report scelto.
+    """
+    df_filtrato = _riepilogo_filtra_dati(df_tutti, df_anagrafica, periodo, gruppo_scelto, categoria)
+    
+    if tipo_report == "Sintetico compara gruppi":
+        return None, None, _riepilogo_compara_gruppi(df_filtrato, df_anagrafica, categoria)
+        
+    elif tipo_report == "Sintetico" and categoria == "Tutti":
+        return None, _riepilogo_totali_generali_per_categoria(df_filtrato), None
+        
+    else:
+        blocchi = []
+        if tipo_report == "Dettagliato":
+            blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
+        elif tipo_report == "Sintetico":
+            blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria)
+        return blocchi, None, None
+
+
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
                                    totali_per_categoria: list = None,
                                    totali_compara_gruppi: list = None) -> bytes:
-    """Genera il PDF del Riepilogo attività gestendo le viste Dettagliato, Sintetico e Compara Gruppi."""
+    """Genera il PDF del Riepilogo attività gestendo tutte le viste (inclusa 'Sintetico compara gruppi')."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
                              leftMargin=1.3 * cm, rightMargin=1.3 * cm)
@@ -1334,7 +1364,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 blocco_cat.append(Paragraph(f"<b>{cat_data['categoria']}:</b>", stili["Heading3"]))
                 blocco_cat.append(Spacer(1, 4))
 
-                dati_tabella = [["Descrizione", "Ore", "Crediti", "Studi"]]
+                dati_tabella = [["Descrizione Gruppo", "Ore", "Crediti", "Studi"]]
                 for grp in cat_data["righe_gruppi"]:
                     dati_tabella.append([grp["totale_label"], formatta_numero_it(grp["totale_ore"]),
                                          formatta_numero_it(grp["totale_crediti"]), formatta_numero_it(grp["totale_studi"])])
@@ -1445,58 +1475,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     doc.build(elementi)
     buf.seek(0)
     return buf.getvalue()
-
-
-def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
-    if "ID" not in df.columns or df.empty:
-        return 1
-    numeri = pd.to_numeric(df["ID"], errors="coerce").dropna()
-    return int(numeri.max()) + 1 if not numeri.empty else 1
-
-
-def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
-                       valori: dict, riga_da_aggiornare: int = None):
-    """Scrive una nuova riga in fondo a un foglio, oppure aggiorna una riga esistente."""
-    try:
-        ws = _workbook.worksheet(nome_foglio)
-        intestazioni = ws.row_values(riga_intestazione)
-        riga_completa = [valori.get(nome, "") for nome in intestazioni]
-
-        if riga_da_aggiornare is None:
-            ws.append_row(riga_completa, value_input_option="USER_ENTERED")
-        else:
-            ultima_colonna = gspread.utils.rowcol_to_a1(1, len(intestazioni)).rstrip("0123456789")
-            intervallo = f"A{riga_da_aggiornare}:{ultima_colonna}{riga_da_aggiornare}"
-            ws.update(intervallo, [riga_completa], value_input_option="USER_ENTERED")
-        return True, None
-    except Exception as e:
-        return False, f"Errore durante il salvataggio: {e}"
-
-
-def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
-    """Elimina una riga (numero 1-based) da un foglio."""
-    try:
-        ws = _workbook.worksheet(nome_foglio)
-        ws.delete_rows(riga_da_eliminare)
-        return True, None
-    except Exception as e:
-        return False, f"Errore durante l'eliminazione: {e}"
-
-
-def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
-    """Aggiorna una riga del foglio 'Tutti' (colonne C:J)."""
-    try:
-        ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
-        ws.update(f"C{riga_foglio}:J{riga_foglio}", [nuova_grezza], value_input_option="USER_ENTERED")
-        return True, None
-    except Exception as e:
-        return False, f"Errore durante il salvataggio: {e}"
-
-
-def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = None):
-    """Scorciatoia per salvare una riga nel foglio Anagrafica."""
-    return salva_riga_foglio(_workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA,
-                           valori, riga_da_aggiornare)
 
 
 # ─────────────────────────────────────────────────────────────────
