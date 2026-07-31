@@ -6,3 +6,4 @@ google-auth
 pypdf
 reportlab
 openpyxl
+streamlit-google-auth
