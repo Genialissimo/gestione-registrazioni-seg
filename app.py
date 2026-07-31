@@ -1227,7 +1227,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         if not totali_per_categoria:
             elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
         else:
-            dati_tabella = []
+            dati_tabella = [["", "Categoria", "Ore", "Crediti", "Studi"]]
             for cat in totali_per_categoria:
                 dati_tabella.append(["Totale", cat["categoria"], formatta_numero_it(cat["totale_ore"]),
                                       formatta_numero_it(cat["totale_crediti"]),
@@ -1243,11 +1243,13 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("TOPPADDING", (0, 0), (-1, -1), 3),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ]
             # Ogni coppia Totale/Media di una categoria ha lo sfondo alternato,
             # per distinguere a colpo d'occhio dove finisce una categoria e inizia l'altra.
-            for i in range(0, len(dati_tabella), 2):
-                colore = colors.HexColor("#F2F2F2") if (i // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
+            for i in range(1, len(dati_tabella), 2):
+                colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
                 stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
                 stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
             tabella.setStyle(TableStyle(stile_righe))
