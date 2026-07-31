@@ -12,6 +12,7 @@ import zipfile
 
 import pandas as pd
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection  # <--- Aggiunta per il controllo email dal foglio
 import gspread
 from google.oauth2.service_account import Credentials
 from pypdf import PdfReader, PdfWriter
@@ -24,6 +25,62 @@ from reportlab.lib.units import cm
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# ==============================================================================
+# 1. CONFIGURAZIONE PAGINA (Deve essere la PRIMA istruzione di Streamlit)
+# ==============================================================================
+st.set_page_config(page_title="Gestione Registrazioni SEG", layout="wide")
+
+# ==============================================================================
+# 2. BLOCCO AUTENTICAZIONE GOOGLE E VERIFICA PERMESSI
+# ==============================================================================
+
+def carica_email_autorizzate():
+    """Legge la lista delle email permesse dalla colonna 'Email' del tab 'UtentiAutorizzati'."""
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # ttl=10 aggiorna la lista dal foglio Google ogni 10 secondi
+        df_utenti = conn.read(worksheet="UtentiAutorizzati", ttl=10) 
+        return df_utenti['Email'].str.strip().str.lower().tolist()
+    except Exception as e:
+        st.error(f"Errore durante la lettura degli utenti autorizzati dal foglio Google: {e}")
+        return []
+
+# Step A: Verifica se l'utente ha fatto il login con Google
+if not st.experimental_user.is_logged_in:
+    st.title("🔒 Accesso Riservato - Gestione SEG")
+    st.write("Per accedere a questa applicazione è necessario autenticarsi con un account Google.")
+    
+    if st.button("Accedi con Google", type="primary"):
+        st.login("google")
+    
+    st.stop()  # Ferma l'esecuzione: nessuno non loggato può andare oltre
+
+# Step B: Verifica se l'email dell'utente è presente nel Google Sheet
+email_utente = st.experimental_user.email.strip().lower()
+email_autorizzate = carica_email_autorizzate()
+
+if email_utente not in email_autorizzate:
+    st.error(f"⚠️ L'indirizzo **{email_utente}** non è autorizzato ad accedere a questo sistema.")
+    st.info("Se ritieni si tratti di un errore, contatta l'amministratore per abilitare la tua email nel foglio Google.")
+    
+    if st.button("Logout / Cambia account"):
+        st.logout()
+        
+    st.stop()  # Ferma l'esecuzione: l'utente loggato ma non presente nella lista viene bloccato
+
+# ==============================================================================
+# 3. AREA RISERVATA (DA QUI IN POI INIZIA IL TUO CODICE ORIGINALE)
+# ==============================================================================
+
+# Mostra nella sidebar chi sta usando l'applicazione e il tasto Logout
+with st.sidebar:
+    st.write(f"👤 Utente: **{st.experimental_user.name}**")
+    st.write(f"📧 `{email_utente}`")
+    if st.button("Logout"):
+        st.logout()
+
+# --- CONTINUA DA QUI CON IL RESTO DEL TUO PROGRAMMA ---
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIGURAZIONE PAGINA
