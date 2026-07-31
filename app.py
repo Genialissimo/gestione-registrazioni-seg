@@ -1037,446 +1037,94 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
 
 
 # ─────────────────────────────────────────────────────────────────
-# RIEPILOGO ATTIVITÀ (Inclusa la nuova opzione "Sintetico compara gruppi")
+# SEZIONE INTERFACCIA STREAMLIT: RIEPILOGO ATTIVITÀ
 # ─────────────────────────────────────────────────────────────────
-CATEGORIE_RIEPILOGO_ATTIVITA = {
-    "Tutti": None,
-    "Solo Proclamatori": "proclamatore",
-    "Solo Pionieri Ausiliari": "pioniere ausiliario",
-    "Solo Pionieri Regolari": "pioniere regolare",
-    "Solo Pionieri Speciali": "pioniere speciale",
-    "Solo Missionari sul campo": "missionario|rappresentante",
-}
 
-ETICHETTE_SINTETICO_CATEGORIA = {
-    "Tutti": "Tutti i proclamatori",
-    "Solo Proclamatori": "Proclamatori",
-    "Solo Pionieri Ausiliari": "Pionieri Ausiliari",
-    "Solo Pionieri Regolari": "Pionieri Regolari",
-    "Solo Pionieri Speciali": "Pionieri Speciali",
-    "Solo Missionari sul campo": "Missionari sul campo",
-}
-
-
-def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
-    """Ritorna (anno, mese) del mese più recente per cui esiste almeno un
-    rapporto nel foglio Tutti, o None se il foglio è vuoto."""
-    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
-        return None
-    validi = []
-    for m in df_tutti["Mese/Anno"].dropna().unique():
-        try:
-            a, mm = str(m).split("-")
-            validi.append((int(a), int(mm)))
-        except Exception:
-            continue
-    if not validi:
-        return None
-    return max(validi)
-
-
-def _riepilogo_finestra_ultimi_n_mesi(anno_fine: int, mese_fine: int, n: int = 6) -> set:
-    """Ritorna l'insieme (anno, mese) degli ultimi 'n' mesi, contando a
-    ritroso da (anno_fine, mese_fine) incluso."""
-    risultato = set()
-    a, m = anno_fine, mese_fine
-    for _ in range(n):
-        risultato.add((a, m))
-        m -= 1
-        if m == 0:
-            m = 12
-            a -= 1
-    return risultato
-
-
-def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, periodo: str,
-                            gruppo_scelto: str, categoria: str) -> pd.DataFrame:
-    """Filtra il foglio Tutti per periodo, categoria ed eventualmente Gruppo."""
-    df = df_tutti.copy()
-    if df.empty:
-        return df
-
-    if periodo == "12 mesi":
-        oggi = datetime.now()
-        anno_teo_corrente = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
-
-        def _dentro_anno_corrente(mese_anno):
-            return anno_teocratico_di(mese_anno) == anno_teo_corrente
-
-        df = df[df["Mese/Anno"].apply(_dentro_anno_corrente)]
-    elif periodo == "6 mesi":
-        ultimo = _riepilogo_ultimo_mese_con_dati(df_tutti)
-        if not ultimo:
-            return df.iloc[0:0]
-        finestra = _riepilogo_finestra_ultimi_n_mesi(ultimo[0], ultimo[1], 6)
-
-        def _dentro_finestra(mese_anno):
-            try:
-                a, m = str(mese_anno).split("-")
-                return (int(a), int(m)) in finestra
-            except Exception:
-                return False
-
-        df = df[df["Mese/Anno"].apply(_dentro_finestra)]
-
-    parola_categoria = CATEGORIE_RIEPILOGO_ATTIVITA.get(categoria)
-    if parola_categoria:
-        df = df[df["Tipo Servizio"].str.lower().str.contains(parola_categoria, na=False, regex=True)]
-
-    if gruppo_scelto and gruppo_scelto != "Tutti i gruppi" and "Gruppo" in df_anagrafica.columns:
-        nomi_gruppo = set(
-            df_anagrafica.loc[df_anagrafica["Gruppo"].astype(str).str.strip() == gruppo_scelto, "Cognome e Nome"]
-            .astype(str).str.strip()
-        )
-        df = df[df["Nome"].str.strip().isin(nomi_gruppo)]
-
-    return df
-
-
-def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list:
-    """Un blocco per ciascun Proclamatore presente in 'df_filtrato'."""
-    if df_filtrato.empty:
-        return []
-
-    blocchi = []
-    for nome, gruppo_df in df_filtrato.groupby("Nome"):
-        gruppo_df = gruppo_df.sort_values("Mese/Anno")
-        righe = []
-        tot_ore = tot_cred = tot_studi = 0.0
-        for _, r in gruppo_df.iterrows():
-            ore_val = a_float_it(r.get("Ore", ""))
-            cred_val = a_float_it(r.get("Cred. Ore", ""))
-            studi_val = a_float_it(r.get("Studi Biblici", ""))
-            tot_ore += ore_val
-            tot_cred += cred_val
-            tot_studi += studi_val
-            righe.append({
-                "mese_anno": r.get("Mese/Anno", ""),
-                "tipo": r.get("Tipo Servizio", "") or "",
-                "ministero": "Sì" if r.get("Ha partecipato al ministero") else "No",
-                "ore": formatta_numero_it(ore_val) if ore_val else "",
-                "crediti": formatta_numero_it(cred_val) if cred_val else "",
-                "studi": formatta_numero_it(studi_val) if studi_val else "",
-                "note": r.get("Osservazioni", "") or "",
-            })
-        n = len(righe)
-        blocchi.append({
-            "nome": nome,
-            "righe": righe,
-            "totale_ore": tot_ore,
-            "totale_crediti": tot_cred,
-            "totale_studi": tot_studi,
-            "media_ore": tot_ore / n if n else 0.0,
-            "media_crediti": tot_cred / n if n else 0.0,
-            "media_studi": tot_studi / n if n else 0.0,
-        })
-    blocchi.sort(key=lambda b: b["nome"])
-    return blocchi
-
-
-def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria: str) -> list:
-    """Un UNICO blocco, intestato con il nome della categoria."""
-    if df_filtrato.empty:
-        return []
-
-    etichetta = ETICHETTE_SINTETICO_CATEGORIA.get(categoria, categoria)
-    righe = []
-    tot_ore = tot_cred = tot_studi = 0.0
-    for mese_anno, gruppo_mese in df_filtrato.groupby("Mese/Anno"):
-        ore_val = sum(a_float_it(v) for v in gruppo_mese.get("Ore", []))
-        cred_val = sum(a_float_it(v) for v in gruppo_mese.get("Cred. Ore", []))
-        studi_val = sum(a_float_it(v) for v in gruppo_mese.get("Studi Biblici", []))
-        conteggio = len(gruppo_mese)
-        tot_ore += ore_val
-        tot_cred += cred_val
-        tot_studi += studi_val
-        righe.append({
-            "mese_anno": mese_anno,
-            "tipo": etichetta,
-            "ministero": "",
-            "ore": formatta_numero_it(ore_val) if ore_val else "",
-            "crediti": formatta_numero_it(cred_val) if cred_val else "",
-            "studi": formatta_numero_it(studi_val) if studi_val else "",
-            "note": f"{conteggio} {etichetta.lower()}" if conteggio else "",
-        })
-
-    def _chiave_ordinamento(riga):
-        try:
-            a, m = str(riga["mese_anno"]).split("-")
-            return (int(a), int(m))
-        except Exception:
-            return (0, 0)
-
-    righe.sort(key=_chiave_ordinamento)
-    n_mesi = len(righe)
-    return [{
-        "nome": etichetta,
-        "righe": righe,
-        "totale_ore": tot_ore,
-        "totale_crediti": tot_cred,
-        "totale_studi": tot_studi,
-        "media_ore": tot_ore / n_mesi if n_mesi else 0.0,
-        "media_crediti": tot_cred / n_mesi if n_mesi else 0.0,
-        "media_studi": tot_studi / n_mesi if n_mesi else 0.0,
-    }]
-
-
-def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
-    """Usata quando Tipo='Sintetico' e Categoria='Tutti'."""
-    if df_periodo_gruppo.empty:
-        return []
-
-    risultati = []
-    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
-        if chiave == "Tutti" or not parola:
-            continue
-        df_cat = df_periodo_gruppo[df_periodo_gruppo["Tipo Servizio"].str.lower().str.contains(
-            parola, na=False, regex=True)]
-        if df_cat.empty:
-            continue
-        tot_ore = sum(a_float_it(v) for v in df_cat.get("Ore", []))
-        tot_cred = sum(a_float_it(v) for v in df_cat.get("Cred. Ore", []))
-        tot_studi = sum(a_float_it(v) for v in df_cat.get("Studi Biblici", []))
-        n = len(df_cat)
-        risultati.append({
-            "categoria": ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave),
-            "totale_ore": tot_ore,
-            "totale_crediti": tot_cred,
-            "totale_studi": tot_studi,
-            "media_ore": tot_ore / n if n else 0.0,
-            "media_crediti": tot_cred / n if n else 0.0,
-            "media_studi": tot_studi / n if n else 0.0,
-        })
-    return risultati
-
-
-def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFrame, categoria_scelta: str) -> list:
-    """Genera totali e medie raggruppati per Gruppo (in ordine alfabetico) e Categoria,
-    formattati esattamente come richiesto."""
-    if df_periodo.empty or df_anagrafica.empty or "Gruppo" not in df_anagrafica.columns:
-        return []
-
-    mappa_gruppi = dict(
-        zip(
-            df_anagrafica["Cognome e Nome"].astype(str).str.strip(),
-            df_anagrafica["Gruppo"].astype(str).str.strip()
-        )
+with st.expander("📊 Riepilogo attività", expanded=False):
+    st.markdown(
+        "Report libero (non la scheda S-21): un elenco con mese, "
+        "tipo di servizio, ore, crediti, studi e note per ciascun "
+        "Proclamatore, con totali e medie. Utile da spedire ai "
+        "sorveglianti di gruppo."
     )
-
-    gruppi_ordinati = sorted(list(set(df_anagrafica["Gruppo"].dropna().astype(str).str.strip()) - {""}))
-    if not gruppi_ordinati:
-        return []
-
-    df = df_periodo.copy()
-    df["Gruppo"] = df["Nome"].astype(str).str.strip().map(mappa_gruppi).fillna("Senza Gruppo")
-
-    # Determina quali categorie analizzare
-    if categoria_scelta == "Tutti":
-        iter_categorie = [(k, v) for k, v in CATEGORIE_RIEPILOGO_ATTIVITA.items() if k != "Tutti" and v]
-    else:
-        parola = CATEGORIE_RIEPILOGO_ATTIVITA.get(categoria_scelta)
-        iter_categorie = [(categoria_scelta, parola)] if parola else []
-
-    risultati = []
-    for chiave_cat, parola in iter_categorie:
-        df_cat = df[df["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
-        etichetta_cat = ETICHETTE_SINTETICO_CATEGORIA.get(chiave_cat, chiave_cat)
-        righe_gruppi = []
-
-        for grp in gruppi_ordinati:
-            df_grp = df_cat[df_cat["Gruppo"] == grp]
-            tot_ore = sum(a_float_it(v) for v in df_grp.get("Ore", []))
-            tot_cred = sum(a_float_it(v) for v in df_grp.get("Cred. Ore", []))
-            tot_studi = sum(a_float_it(v) for v in df_grp.get("Studi Biblici", []))
-            n = len(df_grp)
-
-            righe_gruppi.append({
-                "totale_label": f"Totale Gruppo {grp}",
-                "media_label": f"Media Gruppo {grp}",
-                "totale_ore": tot_ore,
-                "totale_crediti": tot_cred,
-                "totale_studi": tot_studi,
-                "media_ore": tot_ore / n if n else 0.0,
-                "media_crediti": tot_cred / n if n else 0.0,
-                "media_studi": tot_studi / n if n else 0.0,
-            })
-
-        # Aggiunge la categoria se ci sono dati significativi
-        if any(r["totale_ore"] > 0 or r["totale_crediti"] > 0 or r["totale_studi"] > 0 for r in righe_gruppi):
-            risultati.append({
-                "categoria": etichetta_cat,
-                "righe_gruppi": righe_gruppi
-            })
-
-    return risultati
-
-
-def riepilogo_prepara_dati_visivi(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, 
-                                   periodo: str = "12 mesi", gruppo_scelto: str = "Tutti i gruppi", 
-                                   categoria: str = "Tutti", tipo_report: str = "Dettagliato"):
-    """
-    Funzione principale che coordina il filtraggio e la preparazione dati
-    per la GUI e per il PDF in base al tipo di report scelto.
-    """
-    df_filtrato = _riepilogo_filtra_dati(df_tutti, df_anagrafica, periodo, gruppo_scelto, categoria)
     
-    if tipo_report == "Sintetico compara gruppi":
-        return None, None, _riepilogo_compara_gruppi(df_filtrato, df_anagrafica, categoria)
+    # Selezione Periodo
+    st.markdown("**Periodo**")
+    periodo_scelto = st.radio(
+        "Periodo", 
+        ["12 mesi", "6 mesi"], 
+        horizontal=True, 
+        label_visibility="collapsed",
+        key="radio_periodo_riepilogo"
+    )
+    
+    # Selezione Tipo (Aggiornato con "Sintetico compara gruppi")
+    st.markdown("**Tipo**")
+    tipo_report_scelto = st.radio(
+        "Tipo", 
+        ["Dettagliato", "Sintetico", "Sintetico compara gruppi"], 
+        horizontal=True, 
+        label_visibility="collapsed",
+        key="radio_tipo_riepilogo"
+    )
+    
+    # Estrazione dei gruppi disponibili (se presenti in anagrafica)
+    lista_gruppi = ["Tutti i gruppi"]
+    if 'df_anagrafica' in locals() and not df_anagrafica.empty and "Gruppo" in df_anagrafica.columns:
+        gruppi_unici = sorted(list(set(df_anagrafica["Gruppo"].dropna().astype(str).str.strip()) - {""}))
+        lista_gruppi.extend(gruppi_unici)
+
+    # Selezione Gruppo
+    st.markdown("**Gruppo**")
+    gruppo_scelto = st.selectbox(
+        "Gruppo", 
+        lista_gruppi, 
+        label_visibility="collapsed",
+        key="select_gruppo_riepilogo"
+    )
+    
+    # Selezione Categoria
+    st.markdown("**Categoria**")
+    categoria_scelta = st.selectbox(
+        "Categoria", 
+        list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()), 
+        label_visibility="collapsed",
+        key="select_categoria_riepilogo"
+    )
+    
+    st.markdown("") # Spaziatura
+    
+    # Pulsante di generazione ed esportazione PDF
+    if st.button("📄 Crea PDF", key="btn_crea_pdf_riepilogo"):
+        # 1. Preparazione dei dati tramite la funzione di coordinamento
+        blocchi, totali_cat, totali_compara = riepilogo_prepara_dati_visivi(
+            df_tutti=df_tutti, 
+            df_anagrafica=df_anagrafica, 
+            periodo=periodo_scelto, 
+            gruppo_scelto=gruppo_scelto, 
+            categoria=categoria_scelta, 
+            tipo_report=tipo_report_scelto
+        )
         
-    elif tipo_report == "Sintetico" and categoria == "Tutti":
-        return None, _riepilogo_totali_generali_per_categoria(df_filtrato), None
+        # 2. Generazione del PDF in formato bytes
+        pdf_bytes = genera_pdf_riepilogo_attivita(
+            blocchi=blocchi,
+            etichetta_periodo=periodo_scelto,
+            etichetta_categoria=categoria_scelta,
+            etichetta_gruppo=gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
+            etichetta_vista=tipo_report_scelto,
+            totali_per_categoria=totali_cat,
+            totali_compara_gruppi=totali_compara
+        )
         
-    else:
-        blocchi = []
-        if tipo_report == "Dettagliato":
-            blocchi = _riepilogo_costruisci_blocchi_dettagliato(df_filtrato)
-        elif tipo_report == "Sintetico":
-            blocchi = _riepilogo_costruisci_blocco_sintetico(df_filtrato, categoria)
-        return blocchi, None, None
-
-
-def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
-                                   etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
-                                   totali_per_categoria: list = None,
-                                   totali_compara_gruppi: list = None) -> bytes:
-    """Genera il PDF del Riepilogo attività gestendo tutte le viste (inclusa 'Sintetico compara gruppi')."""
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-                             leftMargin=1.3 * cm, rightMargin=1.3 * cm)
-    stili = getSampleStyleSheet()
-    elementi = []
-
-    elementi.append(Paragraph("Attività dei proclamatori", stili["Title"]))
-    sottotitolo = (f"Congregazione: {NOME_CONGREGAZIONE} · Periodo: {etichetta_periodo} · "
-                   f"{etichetta_vista} - {etichetta_categoria}")
-    if etichetta_gruppo:
-        sottotitolo += f" · Gruppo: {etichetta_gruppo}"
-    elementi.append(Paragraph(sottotitolo, stili["Normal"]))
-    elementi.append(Spacer(1, 14))
-
-    # CASO: Sintetico compara gruppi
-    if totali_compara_gruppi is not None:
-        if not totali_compara_gruppi:
-            elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
-        else:
-            for cat_data in totali_compara_gruppi:
-                blocco_cat = []
-                blocco_cat.append(Paragraph(f"<b>{cat_data['categoria']}:</b>", stili["Heading3"]))
-                blocco_cat.append(Spacer(1, 4))
-
-                dati_tabella = [["Descrizione Gruppo", "Ore", "Crediti", "Studi"]]
-                for grp in cat_data["righe_gruppi"]:
-                    dati_tabella.append([grp["totale_label"], formatta_numero_it(grp["totale_ore"]),
-                                         formatta_numero_it(grp["totale_crediti"]), formatta_numero_it(grp["totale_studi"])])
-                    dati_tabella.append([grp["media_label"], formatta_numero_it(grp["media_ore"]),
-                                         formatta_numero_it(grp["media_crediti"]), formatta_numero_it(grp["media_studi"])])
-
-                tabella = Table(dati_tabella, colWidths=[9.4 * cm, 3.0 * cm, 3.0 * cm, 3.0 * cm])
-                stile_righe = [
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("ALIGN", (1, 0), (3, -1), "RIGHT"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ]
-                for i in range(1, len(dati_tabella), 2):
-                    colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
-                    stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
-                    stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
-                    stile_righe.append(("FONTNAME", (0, i), (-1, i + 1), "Helvetica-Bold"))
-
-                tabella.setStyle(TableStyle(stile_righe))
-                blocco_cat.append(tabella)
-                blocco_cat.append(Spacer(1, 14))
-                elementi.append(KeepTogether(blocco_cat))
-
-        doc.build(elementi)
-        buf.seek(0)
-        return buf.getvalue()
-
-    # CASO: Sintetico + Categoria Tutti
-    if totali_per_categoria is not None:
-        if not totali_per_categoria:
-            elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
-        else:
-            dati_tabella = [["", "Categoria", "Ore", "Crediti", "Studi"]]
-            for cat in totali_per_categoria:
-                dati_tabella.append(["Totale", cat["categoria"], formatta_numero_it(cat["totale_ore"]),
-                                     formatta_numero_it(cat["totale_crediti"]),
-                                     formatta_numero_it(cat["totale_studi"])])
-                dati_tabella.append(["Media", cat["categoria"], formatta_numero_it(cat["media_ore"]),
-                                     formatta_numero_it(cat["media_crediti"]),
-                                     formatta_numero_it(cat["media_studi"])])
-            tabella = Table(dati_tabella, colWidths=[2.2 * cm, 4.5 * cm, 2.3 * cm, 2.3 * cm, 2.3 * cm])
-            stile_righe = [
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-                ("ALIGN", (2, 0), (4, -1), "RIGHT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ]
-            for i in range(1, len(dati_tabella), 2):
-                colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
-                stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
-                stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
-            tabella.setStyle(TableStyle(stile_righe))
-            elementi.append(tabella)
-        doc.build(elementi)
-        buf.seek(0)
-        return buf.getvalue()
-
-    # CASO: Dettagliato o Sintetico standard
-    if not blocchi:
-        elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
-
-    intestazione = ["Mese", "Servizio", "Ministero", "Ore", "Crediti", "Studi", "Note"]
-    larghezze = [1.9 * cm, 3.0 * cm, 1.7 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm, 4.7 * cm]
-
-    for blocco in blocchi:
-        dati_tabella = [intestazione]
-        for r in blocco["righe"]:
-            dati_tabella.append([r["mese_anno"], r["tipo"], r["ministero"], r["ore"], r["crediti"],
-                                 r["studi"], r["note"]])
-        dati_tabella.append(["Totale", "", "", formatta_numero_it(blocco["totale_ore"]),
-                             formatta_numero_it(blocco["totale_crediti"]),
-                             formatta_numero_it(blocco["totale_studi"]), ""])
-        dati_tabella.append(["Media", "", "", formatta_numero_it(blocco["media_ore"]),
-                             formatta_numero_it(blocco["media_crediti"]),
-                             formatta_numero_it(blocco["media_studi"]), ""])
-
-        tabella = Table(dati_tabella, colWidths=larghezze, repeatRows=1)
-        tabella.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, -2), (-1, -1), "Helvetica-Bold"),
-            ("BACKGROUND", (0, -2), (-1, -1), colors.HexColor("#F2F2F2")),
-            ("GRID", (0, -2), (-1, -1), 0.4, colors.grey),
-            ("LINEBEFORE", (1, -2), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
-            ("LINEAFTER", (1, -2), (1, -1), 0.6, colors.HexColor("#F2F2F2")),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -3), [colors.white, colors.HexColor("#DCEEF9")]),
-            ("ALIGN", (3, 0), (5, -1), "RIGHT"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
-        elementi.append(KeepTogether(blocco_pdf))
-
-    doc.build(elementi)
-    buf.seek(0)
-    return buf.getvalue()
-
-
+        # 3. Pulsante per scaricare il file PDF generato
+        st.download_button(
+            label="📥 Scarica PDF Riepilogo Attività",
+            data=pdf_bytes,
+            file_name=f"Riepilogo_Attivita_{tipo_report_scelto.replace(' ', '_')}.pdf",
+            mime="application/pdf",
+            key="download_pdf_riepilogo"
+        )
 # ─────────────────────────────────────────────────────────────────
 # CONNESSIONE (navigazione tramite le card)
 # ─────────────────────────────────────────────────────────────────
