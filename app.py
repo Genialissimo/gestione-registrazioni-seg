@@ -46,8 +46,8 @@ def carica_email_autorizzate():
         st.error(f"Errore durante la lettura degli utenti autorizzati dal foglio Google: {e}")
         return []
 
-# Step A: Verifica se l'utente ha fatto il login con Google
-if not st.experimental_user.is_logged_in:
+# Step A: Verifica se l'utente ha fatto il login con Google (usando st.user)
+if not st.user.is_logged_in:
     st.title("🔒 Accesso Riservato - Gestione SEG")
     st.write("Per accedere a questa applicazione è necessario autenticarsi con un account Google.")
     
@@ -57,7 +57,7 @@ if not st.experimental_user.is_logged_in:
     st.stop()  # Ferma l'esecuzione: nessuno non loggato può andare oltre
 
 # Step B: Verifica se l'email dell'utente è presente nel Google Sheet
-email_utente = st.experimental_user.email.strip().lower()
+email_utente = st.user.email.strip().lower()
 email_autorizzate = carica_email_autorizzate()
 
 if email_utente not in email_autorizzate:
@@ -67,15 +67,14 @@ if email_utente not in email_autorizzate:
     if st.button("Logout / Cambia account"):
         st.logout()
         
-    st.stop()  # Ferma l'esecuzione: l'utente loggato ma non presente nella lista viene bloccato
+    st.stop()  # Ferma l'esecuzione
 
 # ==============================================================================
-# 3. AREA RISERVATA (DA QUI IN POI INIZIA IL TUO CODICE ORIGINALE)
+# 3. AREA RISERVATA (DISPONIBILE SOLO A UTENTI LOGGATI E AUTORIZZATI)
 # ==============================================================================
 
-# Mostra nella sidebar chi sta usando l'applicazione e il tasto Logout
 with st.sidebar:
-    st.write(f"👤 Utente: **{st.experimental_user.name}**")
+    st.write(f"👤 Utente: **{st.user.name}**")
     st.write(f"📧 `{email_utente}`")
     if st.button("Logout"):
         st.logout()
