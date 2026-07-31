@@ -26,9 +26,14 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# 1. CONFIGURAZIONE PAGINA
+# 1. CONFIGURAZIONE PAGINA (Deve essere la prima istruzione Streamlit)
 # ==============================================================================
-st.set_page_config(page_title="Gestione Registrazioni SEG", layout="wide")
+st.set_page_config(
+    page_title="Gestione Registrazioni SEG",
+    page_icon="📒",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 # ==============================================================================
 # 2. FUNZIONE PER LEGGERE GLI UTENTI AUTORIZZATI DAL FOGLIO GOOGLE
@@ -93,17 +98,9 @@ with st.sidebar:
         st.session_state.email_logged = ""
         st.rerun()
 
-# --- CONTINUA DA QUI IN POI CON IL RESTO DEL TUO PROGRAMMA ORIGINALE ---
 # ─────────────────────────────────────────────────────────────────
-# CONFIGURAZIONE PAGINA
+# COSTANTI E CONFIGURAZIONI DEL SISTEMA
 # ─────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Gestione Registrazioni SEG",
-    page_icon="📒",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -212,7 +209,6 @@ S21_COLORE_ROSSO = (0.827, 0.125, 0.125)  # stesso rosso #D32F2F usato nel form 
 S21_COLORE_NERO = (0, 0, 0)
 
 
-
 # ─────────────────────────────────────────────────────────────────
 # CONNESSIONE A GOOGLE
 # ─────────────────────────────────────────────────────────────────
@@ -242,6 +238,26 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1):
+    """Legge un foglio (tab) del workbook e lo ritorna come DataFrame.
+    'riga_intestazione' è il numero di riga (1-based) in cui si trovano i
+    nomi delle colonne: tutto ciò che sta sopra viene ignorato, tutto ciò
+    che sta sotto diventa dati. Ritorna (dataframe, errore). Il parametro
+    workbook è preceduto da '_' per dire a Streamlit di non provare a
+    metterlo in cache lui stesso (gli oggetti gspread non sono 'hashable')."""
+    try:
+        ws = _workbook.worksheet(nome_foglio)
+    except gspread.WorksheetNotFound:
+        nomi_disponibili = ", ".join(f"'{f.title}'" for f in _workbook.worksheets())
+        return None, (
+            f"Il foglio '{nome_foglio}' non esiste nel documento collegato. "
+            f"Fogli disponibili: {nomi_disponibili}."
+        )
+    except Exception as e:
+        return None, f"Errore durante la lettura del foglio: {e}"
 
 
 @st.cache_data(ttl=60, show_spinner=False)
