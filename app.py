@@ -36,17 +36,17 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 2. FUNZIONE PER LEGGERE GLI UTENTI AUTORIZZATI DAL FOGLIO GOOGLE
+# 2. FUNZIONE PER LEGGERE GLI UTENTI AUTORIZZATI (LISTA DIRETTA)
 # ==============================================================================
 def carica_email_autorizzate():
-    """Legge la lista delle email permesse dal tab 'UtentiAutorizzati'."""
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df_utenti = conn.read(worksheet="UtentiAutorizzati", ttl=10) 
-        return df_utenti['Email'].str.strip().str.lower().tolist()
-    except Exception as e:
-        st.error(f"Errore durante la lettura degli utenti autorizzati: {e}")
-        return []
+    """Ritorna la lista delle email autorizzate scritte direttamente nel codice."""
+    email_lista = [
+        "putrino.fabrizio@gmail.com",
+        # Aggiungi eventuali altre email autorizzate sotto, separate da virgola:
+        # "altra.email@gmail.com",
+    ]
+    # Restituisce la lista pulita (spazi rimossi e tutto in minuscolo)
+    return [e.strip().lower() for e in email_lista]
 
 # ==============================================================================
 # 3. PANNELLO DI AUTENTICAZIONE EMAIL GOOGLE
