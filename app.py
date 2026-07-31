@@ -11,7 +11,6 @@ import zipfile
 import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-from streamlit_google_auth import Authenticate  # <--- NUOVA LIBRERIA DI LOGIN
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -32,29 +31,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Gestione Registrazioni SEG", layout="wide")
 
 # ==============================================================================
-# 2. INIZIALIZZAZIONE AUTENTICAZIONE GOOGLE
-# ==============================================================================
-authenticator = Authenticate(
-    secret_credentials_path=dict(st.secrets["google_auth"]),
-    cookie_name=st.secrets["google_auth"]["cookie_name"],
-    cookie_key=st.secrets["google_auth"]["cookie_key"],
-    redirect_uri=st.secrets["google_auth"]["redirect_uri"],
-)
-
-# Verifica lo stato del login
-authenticator.check_authentification()
-
-# Step A: Se l'utente non è loggato, mostra il pulsante Google
-if not st.session_state.get("connected", False):
-    st.title("🔒 Accesso Riservato - Gestione SEG")
-    st.write("Per accedere a questa applicazione è necessario autenticarsi con un account Google.")
-    
-    # Pulsante per avviare il login
-    authenticator.login()
-    st.stop()  # Ferma il programma finché non viene fatto il login
-
-# ==============================================================================
-# 3. VERIFICA EMAIL CON GOOGLE SHEET (UTENTI AUTORIZZATI)
+# 2. FUNZIONE PER LEGGERE GLI UTENTI AUTORIZZATI DAL FOGLIO GOOGLE
 # ==============================================================================
 def carica_email_autorizzate():
     """Legge la lista delle email permesse dal tab 'UtentiAutorizzati'."""
@@ -66,31 +43,57 @@ def carica_email_autorizzate():
         st.error(f"Errore durante la lettura degli utenti autorizzati: {e}")
         return []
 
-# Recupera le info dell'utente loggato da session_state
-user_info = st.session_state.get("user_info", {})
-email_utente = user_info.get("email", "").strip().lower()
-email_autorizzate = carica_email_autorizzate()
+# ==============================================================================
+# 3. PANNELLO DI AUTENTICAZIONE EMAIL GOOGLE
+# ==============================================================================
 
-# Step B: Controlla se l'email è abilitata nel Google Sheet
-if email_utente not in email_autorizzate:
-    st.error(f"⚠️ L'indirizzo **{email_utente}** non è autorizzato ad accedere a questo sistema.")
-    st.info("Contatta l'amministratore per abilitare la tua email nel foglio Google.")
-    
-    if st.button("Logout"):
-        authenticator.logout()
+# Inizializza lo stato di sessione per l'utente loggato
+if "utente_autenticato" not in st.session_state:
+    st.session_state.utente_autenticato = False
+if "email_logged" not in st.session_state:
+    st.session_state.email_logged = ""
+
+# Se l'utente non è ancora autenticato, mostra il pannello di login
+if not st.session_state.utente_autenticato:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔒 Accesso Riservato")
+        st.subheader("Gestione Registrazioni SEG")
+        st.write("Inserisci la tua email Google/Gmail per accedere all'applicazione.")
         
-    st.stop()  # Blocca gli utenti non inseriti nel foglio
+        email_input = st.text_input("Indirizzo Email Google:", placeholder="nome@gmail.com").strip().lower()
+        
+        if st.button("Accedi al Sistema", type="primary", use_container_width=True):
+            if not email_input:
+                st.warning("Per favore, inserisci un indirizzo email.")
+            else:
+                email_autorizzate = carica_email_autorizzate()
+                
+                if email_input in email_autorizzate:
+                    st.session_state.utente_autenticato = True
+                    st.session_state.email_logged = email_input
+                    st.success("Accesso eseguito con successo!")
+                    st.rerun()
+                else:
+                    st.error(f"⚠️ L'indirizzo **{email_input}** non è autorizzato ad accedere a questo sistema.")
+                    st.info("Contatta l'amministratore per abilitare la tua email nel foglio Google.")
+                    
+    st.stop()  # Blocca l'esecuzione: nessuno non autenticato può vedere il programma sotto
 
 # ==============================================================================
-# 4. AREA RISERVATA (UTENTE AUTENTICATO E ABILITATO)
+# 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
+
+# Barra laterale con dati utente e Logout
 with st.sidebar:
-    st.write(f"👤 Utente: **{user_info.get('name', 'Utente')}**")
-    st.write(f"📧 `{email_utente}`")
-    if st.button("Logout"):
-        authenticator.logout()
+    st.write(f"👤 Utente connesso:")
+    st.write(f"📧 `{st.session_state.email_logged}`")
+    if st.button("🚪 Logout", type="secondary"):
+        st.session_state.utente_autenticato = False
+        st.session_state.email_logged = ""
+        st.rerun()
 
-# --- CONTINUA DA QUI CON IL RESTO DEL TUO PROGRAMMA ORIGINALE ---
+# --- CONTINUA DA QUI IN POI CON IL RESTO DEL TUO PROGRAMMA ORIGINALE ---
 # ─────────────────────────────────────────────────────────────────
 # CONFIGURAZIONE PAGINA
 # ─────────────────────────────────────────────────────────────────
