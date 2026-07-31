@@ -1,7 +1,8 @@
 streamlit
+st-gsheets-connection
+pandas
 gspread
 google-auth
-pandas
 pypdf
 reportlab
 openpyxl
