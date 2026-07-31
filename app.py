@@ -1048,6 +1048,15 @@ CATEGORIE_RIEPILOGO_ATTIVITA = {
     "Solo Missionari sul campo": "missionario|rappresentante",
 }
 
+ETICHETTE_SINTETICO_CATEGORIA = {
+    "Tutti": "Tutti i proclamatori",
+    "Solo Proclamatori": "Proclamatori",
+    "Solo Pionieri Ausiliari": "Pionieri Ausiliari",
+    "Solo Pionieri Regolari": "Pionieri Regolari",
+    "Solo Pionieri Speciali": "Pionieri Speciali",
+    "Solo Missionari sul campo": "Missionari sul campo",
+}
+
 
 def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
     """Ritorna (anno, mese) del mese più recente per cui esiste almeno un
@@ -1080,23 +1089,9 @@ def _riepilogo_finestra_ultimi_n_mesi(anno_fine: int, mese_fine: int, n: int = 6
     return risultato
 
 
-ETICHETTE_SINTETICO_CATEGORIA = {
-    "Tutti": "Tutti i proclamatori",
-    "Solo Proclamatori": "Proclamatori",
-    "Solo Pionieri Ausiliari": "Pionieri Ausiliari",
-    "Solo Pionieri Regolari": "Pionieri Regolari",
-    "Solo Pionieri Speciali": "Pionieri Speciali",
-    "Solo Missionari sul campo": "Missionari sul campo",
-}
-
-
 def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, periodo: str,
                             gruppo_scelto: str, categoria: str) -> pd.DataFrame:
-    """Filtra il foglio Tutti per periodo, categoria (Tipo di servizio di
-    quel mese) ed eventualmente Gruppo (assegnazione attuale in Anagrafica
-    — è l'unico filtro che dipende da Anagrafica, perché il Gruppo non
-    esiste nel foglio Tutti). Usata sia dalla vista Dettagliato che da
-    quella Sintetico del Riepilogo attività."""
+    """Filtra il foglio Tutti per periodo, categoria ed eventualmente Gruppo."""
     df = df_tutti.copy()
     if df.empty:
         return df
@@ -1139,10 +1134,7 @@ def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, 
 
 
 def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list:
-    """Un blocco per ciascun Proclamatore presente in 'df_filtrato' (già
-    filtrato per periodo/categoria/gruppo). Ogni blocco: {'nome', 'righe',
-    'totale_ore', 'totale_crediti', 'totale_studi', 'media_ore',
-    'media_crediti', 'media_studi'}."""
+    """Un blocco per ciascun Proclamatore presente in 'df_filtrato'."""
     if df_filtrato.empty:
         return []
 
@@ -1183,12 +1175,7 @@ def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list
 
 
 def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria: str) -> list:
-    """Un UNICO blocco, intestato con il nome della categoria (es. 'Pionieri
-    Ausiliari') invece che con un nome di persona: raggruppa 'df_filtrato'
-    (già filtrato per periodo/categoria/gruppo) per mese, sommando
-    Ore/Crediti/Studi e mettendo nelle Note il conteggio di quante persone
-    quel mese risultano in quella categoria. Totale e Media in fondo, come
-    nella vista Dettagliato."""
+    """Un UNICO blocco, intestato con il nome della categoria (es. 'Pionieri Ausiliari')."""
     if df_filtrato.empty:
         return []
 
@@ -1235,14 +1222,7 @@ def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria:
 
 
 def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
-    """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
-    mensili, solo il gran totale (e la media) per ciascuna delle categorie
-    (Proclamatori, Pionieri Regolari, Pionieri Speciali, Missionari sul
-    campo, Pionieri Ausiliari) trovate in 'df_periodo_gruppo' — già
-    filtrato per periodo ed eventuale Gruppo, ma NON per categoria. Salta
-    le categorie senza nessuna riga. Ritorna una lista di dict:
-    {'categoria', 'totale_ore', 'totale_crediti', 'totale_studi',
-    'media_ore', 'media_crediti', 'media_studi'}."""
+    """Usata quando Tipo='Sintetico' e Categoria='Tutti'."""
     if df_periodo_gruppo.empty:
         return []
 
@@ -1270,18 +1250,66 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
     return risultati
 
 
+def _riepilogo_compara_gruppi(df_periodo: pd.DataFrame, df_anagrafica: pd.DataFrame) -> list:
+    """Genera i totali e le medie raggruppati per categoria e ordinati alfabeticamente per gruppo."""
+    if df_periodo.empty or df_anagrafica.empty or "Gruppo" not in df_anagrafica.columns:
+        return []
+
+    mappa_gruppi = dict(
+        zip(
+            df_anagrafica["Cognome e Nome"].astype(str).str.strip(),
+            df_anagrafica["Gruppo"].astype(str).str.strip()
+        )
+    )
+
+    gruppi_ordinati = sorted(list(set(df_anagrafica["Gruppo"].dropna().astype(str).str.strip()) - {""}))
+    if not gruppi_ordinati:
+        return []
+
+    df = df_periodo.copy()
+    df["Gruppo"] = df["Nome"].astype(str).str.strip().map(mappa_gruppi).fillna("Senza Gruppo")
+
+    risultati = []
+    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
+        if chiave == "Tutti" or not parola:
+            continue
+
+        df_cat = df[df["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
+        etichetta_cat = ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave)
+        righe_gruppi = []
+
+        for grp in gruppi_ordinati:
+            df_grp = df_cat[df_cat["Gruppo"] == grp]
+            tot_ore = sum(a_float_it(v) for v in df_grp.get("Ore", []))
+            tot_cred = sum(a_float_it(v) for v in df_grp.get("Cred. Ore", []))
+            tot_studi = sum(a_float_it(v) for v in df_grp.get("Studi Biblici", []))
+            n = len(df_grp)
+
+            righe_gruppi.append({
+                "totale_label": f"Totale Gruppo {grp}",
+                "media_label": f"Media Gruppo {grp}",
+                "totale_ore": tot_ore,
+                "totale_crediti": tot_cred,
+                "totale_studi": tot_studi,
+                "media_ore": tot_ore / n if n else 0.0,
+                "media_crediti": tot_cred / n if n else 0.0,
+                "media_studi": tot_studi / n if n else 0.0,
+            })
+
+        if any(r["totale_ore"] > 0 or r["totale_crediti"] > 0 or r["totale_studi"] > 0 for r in righe_gruppi):
+            risultati.append({
+                "categoria": etichetta_cat,
+                "righe_gruppi": righe_gruppi
+            })
+
+    return risultati
+
+
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
-                                   totali_per_categoria: list = None) -> bytes:
-    """Genera il PDF del Riepilogo attività: un documento libero (non un
-    modulo prestampato) con un blocco per Proclamatore (vista Dettagliato)
-    o un unico blocco per categoria (vista Sintetico) — mese, tipo di
-    servizio, ministero, ore, crediti, studi, note — più Totale e Media,
-    con interruzioni di pagina automatiche.
-
-    Se 'totali_per_categoria' è specificato (caso Sintetico + Categoria
-    'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
-    media per ciascuna categoria, senza righe mensili."""
+                                   totali_per_categoria: list = None,
+                                   totali_compara_gruppi: list = None) -> bytes:
+    """Genera il PDF del Riepilogo attività gestendo le viste Dettagliato, Sintetico e Compara Gruppi."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
                              leftMargin=1.3 * cm, rightMargin=1.3 * cm)
@@ -1296,6 +1324,50 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     elementi.append(Paragraph(sottotitolo, stili["Normal"]))
     elementi.append(Spacer(1, 14))
 
+    # CASO: Sintetico compara gruppi
+    if totali_compara_gruppi is not None:
+        if not totali_compara_gruppi:
+            elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
+        else:
+            for cat_data in totali_compara_gruppi:
+                blocco_cat = []
+                blocco_cat.append(Paragraph(f"<b>{cat_data['categoria']}:</b>", stili["Heading3"]))
+                blocco_cat.append(Spacer(1, 4))
+
+                dati_tabella = [["Descrizione", "Ore", "Crediti", "Studi"]]
+                for grp in cat_data["righe_gruppi"]:
+                    dati_tabella.append([grp["totale_label"], formatta_numero_it(grp["totale_ore"]),
+                                         formatta_numero_it(grp["totale_crediti"]), formatta_numero_it(grp["totale_studi"])])
+                    dati_tabella.append([grp["media_label"], formatta_numero_it(grp["media_ore"]),
+                                         formatta_numero_it(grp["media_crediti"]), formatta_numero_it(grp["media_studi"])])
+
+                tabella = Table(dati_tabella, colWidths=[9.4 * cm, 3.0 * cm, 3.0 * cm, 3.0 * cm])
+                stile_righe = [
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ALIGN", (1, 0), (3, -1), "RIGHT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ]
+                for i in range(1, len(dati_tabella), 2):
+                    colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
+                    stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
+                    stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
+                    stile_righe.append(("FONTNAME", (0, i), (-1, i + 1), "Helvetica-Bold"))
+
+                tabella.setStyle(TableStyle(stile_righe))
+                blocco_cat.append(tabella)
+                blocco_cat.append(Spacer(1, 14))
+                elementi.append(KeepTogether(blocco_cat))
+
+        doc.build(elementi)
+        buf.seek(0)
+        return buf.getvalue()
+
+    # CASO: Sintetico + Categoria Tutti
     if totali_per_categoria is not None:
         if not totali_per_categoria:
             elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
@@ -1303,11 +1375,11 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             dati_tabella = [["", "Categoria", "Ore", "Crediti", "Studi"]]
             for cat in totali_per_categoria:
                 dati_tabella.append(["Totale", cat["categoria"], formatta_numero_it(cat["totale_ore"]),
-                                      formatta_numero_it(cat["totale_crediti"]),
-                                      formatta_numero_it(cat["totale_studi"])])
+                                     formatta_numero_it(cat["totale_crediti"]),
+                                     formatta_numero_it(cat["totale_studi"])])
                 dati_tabella.append(["Media", cat["categoria"], formatta_numero_it(cat["media_ore"]),
-                                      formatta_numero_it(cat["media_crediti"]),
-                                      formatta_numero_it(cat["media_studi"])])
+                                     formatta_numero_it(cat["media_crediti"]),
+                                     formatta_numero_it(cat["media_studi"])])
             tabella = Table(dati_tabella, colWidths=[2.2 * cm, 4.5 * cm, 2.3 * cm, 2.3 * cm, 2.3 * cm])
             stile_righe = [
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
@@ -1319,8 +1391,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ]
-            # Ogni coppia Totale/Media di una categoria ha lo sfondo alternato,
-            # per distinguere a colpo d'occhio dove finisce una categoria e inizia l'altra.
             for i in range(1, len(dati_tabella), 2):
                 colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
                 stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
@@ -1331,6 +1401,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         buf.seek(0)
         return buf.getvalue()
 
+    # CASO: Dettagliato o Sintetico standard
     if not blocchi:
         elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
 
@@ -1341,13 +1412,13 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         dati_tabella = [intestazione]
         for r in blocco["righe"]:
             dati_tabella.append([r["mese_anno"], r["tipo"], r["ministero"], r["ore"], r["crediti"],
-                                  r["studi"], r["note"]])
+                                 r["studi"], r["note"]])
         dati_tabella.append(["Totale", "", "", formatta_numero_it(blocco["totale_ore"]),
-                              formatta_numero_it(blocco["totale_crediti"]),
-                              formatta_numero_it(blocco["totale_studi"]), ""])
+                             formatta_numero_it(blocco["totale_crediti"]),
+                             formatta_numero_it(blocco["totale_studi"]), ""])
         dati_tabella.append(["Media", "", "", formatta_numero_it(blocco["media_ore"]),
-                              formatta_numero_it(blocco["media_crediti"]),
-                              formatta_numero_it(blocco["media_studi"]), ""])
+                             formatta_numero_it(blocco["media_crediti"]),
+                             formatta_numero_it(blocco["media_studi"]), ""])
 
         tabella = Table(dati_tabella, colWidths=larghezze, repeatRows=1)
         tabella.setStyle(TableStyle([
@@ -1368,10 +1439,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
-        # KeepTogether: se il blocco non entra nello spazio rimasto in pagina, passa
-        # intero alla pagina successiva invece di spezzarsi — altrimenti reportlab
-        # ricalcola male i colori alternati e la griglia di Totale/Media sul pezzo
-        # che continua nella pagina dopo.
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
 
@@ -1389,12 +1456,7 @@ def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
 
 def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
                        valori: dict, riga_da_aggiornare: int = None):
-    """Scrive una nuova riga in fondo a un foglio, oppure aggiorna una riga
-    esistente (numero di riga del foglio, 1-based) se 'riga_da_aggiornare'
-    è specificato. 'valori' è un dizionario {nome_colonna: valore}; le
-    colonne del foglio non presenti nel dizionario vengono lasciate vuote
-    (nuova riga) o svuotate (modifica: si riscrive l'intera riga in
-    ordine). Ritorna (successo: bool, errore: str|None)."""
+    """Scrive una nuova riga in fondo a un foglio, oppure aggiorna una riga esistente."""
     try:
         ws = _workbook.worksheet(nome_foglio)
         intestazioni = ws.row_values(riga_intestazione)
@@ -1412,8 +1474,7 @@ def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
 
 
 def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
-    """Elimina una riga (numero 1-based) da un foglio. Ritorna
-    (successo: bool, errore: str|None)."""
+    """Elimina una riga (numero 1-based) da un foglio."""
     try:
         ws = _workbook.worksheet(nome_foglio)
         ws.delete_rows(riga_da_eliminare)
@@ -1423,10 +1484,7 @@ def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
 
 
 def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
-    """Aggiorna una riga del foglio 'Tutti' (colonne C:J) con i nuovi
-    valori, preservando inalterata la colonna F (che non gestiamo nel
-    form). 'nuova_grezza' deve avere 8 elementi (C,D,E,F,G,H,I,J).
-    Ritorna (successo: bool, errore: str|None)."""
+    """Aggiorna una riga del foglio 'Tutti' (colonne C:J)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
         ws.update(f"C{riga_foglio}:J{riga_foglio}", [nuova_grezza], value_input_option="USER_ENTERED")
@@ -1436,10 +1494,9 @@ def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
 
 
 def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = None):
-    """Scorciatoia per salvare una riga nel foglio Anagrafica (vedi
-    'salva_riga_foglio' per i dettagli)."""
+    """Scorciatoia per salvare una riga nel foglio Anagrafica."""
     return salva_riga_foglio(_workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA,
-                              valori, riga_da_aggiornare)
+                           valori, riga_da_aggiornare)
 
 
 # ─────────────────────────────────────────────────────────────────
