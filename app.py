@@ -36,27 +36,20 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 2. FUNZIONE PER LEGGERE GLI UTENTI AUTORIZZATI (LISTA DIRETTA)
+# 2. CONFIGURAZIONE CODICE DI ACCESSO
 # ==============================================================================
-def carica_email_autorizzate():
-    """Ritorna la lista delle email autorizzate scritte direttamente nel codice."""
-    email_lista = [
-        "putrino.fabrizio@gmail.com",
-        # Aggiungi eventuali altre email autorizzate sotto, separate da virgola:
-        # "altra.email@gmail.com",
-    ]
-    # Restituisce la lista pulita (spazi rimossi e tutto in minuscolo)
-    return [e.strip().lower() for e in email_lista]
+# Imposta qui il tuo codice di accesso segreto (puoi cambiarlo come preferisci)
+CODICE_SEGRETO = "123456"  # <--- Sostituisci con il codice che desideri
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE EMAIL GOOGLE
+# 3. PANNELLO DI AUTENTICAZIONE CON SOLO CODICE
 # ==============================================================================
 
 # Inizializza lo stato di sessione per l'utente loggato
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
 if "email_logged" not in st.session_state:
-    st.session_state.email_logged = ""
+    st.session_state.email_logged = "Utente Autorizzato"
 
 # Se l'utente non è ancora autenticato, mostra il pannello di login
 if not st.session_state.utente_autenticato:
@@ -64,26 +57,21 @@ if not st.session_state.utente_autenticato:
     with col2:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
-        st.write("Inserisci la tua email Google/Gmail per accedere all'applicazione.")
+        st.write("Inserisci il codice di accesso per entrare nell'applicazione.")
         
-        email_input = st.text_input("Indirizzo Email Google:", placeholder="nome@gmail.com").strip().lower()
+        codice_input = st.text_input("Codice di Accesso:", type="password", placeholder="••••••••").strip()
         
         if st.button("Accedi al Sistema", type="primary", use_container_width=True):
-            if not email_input:
-                st.warning("Per favore, inserisci un indirizzo email.")
+            if not codice_input:
+                st.warning("Per favore, inserisci il codice di accesso.")
+            elif codice_input == CODICE_SEGRETO:
+                st.session_state.utente_autenticato = True
+                st.success("Accesso eseguito con successo!")
+                st.rerun()
             else:
-                email_autorizzate = carica_email_autorizzate()
-                
-                if email_input in email_autorizzate:
-                    st.session_state.utente_autenticato = True
-                    st.session_state.email_logged = email_input
-                    st.success("Accesso eseguito con successo!")
-                    st.rerun()
-                else:
-                    st.error(f"⚠️ L'indirizzo **{email_input}** non è autorizzato ad accedere a questo sistema.")
-                    st.info("Contatta l'amministratore per abilitare la tua email nel foglio Google.")
+                st.error("⚠️ Codice di Accesso errato.")
                     
-    st.stop()  # Blocca l'esecuzione: nessuno non autenticato può vedere il programma sotto
+    st.stop()  # Blocca l'esecuzione per chi non ha inserito il codice corretto
 
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
