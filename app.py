@@ -2922,15 +2922,22 @@ def mostra_presenze_adunanze():
     )
 
 
-    # ── 4. GRIGLIA DETTAGLIO MESE ──
+        # ── 4. GRIGLIA DETTAGLIO MESE (Con testo/numeri centrati) ──
     st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
     
     colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
     
+    # Configurazione per centrare l'allineamento di ciascuna colonna
+    config_colonne = {
+        col: st.column_config.Column(alignment="center") 
+        for col in colonne_visibili
+    }
+    
     st.dataframe(
         df_mese[colonne_visibili],
         hide_index=True,
-        use_container_width=True
+        use_container_width=True,
+        column_config=config_colonne
     )
 
 
