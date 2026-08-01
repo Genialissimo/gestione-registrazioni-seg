@@ -1269,10 +1269,60 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
         })
     return risultati
 
+def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame,
+                                              periodo: str) -> list:
+    """Usata quando Tipo='Sintetico compara gruppi': per ciascuna categoria
+    (Proclamatori, Pionieri Regolari, Pionieri Speciali, Missionari sul
+    campo, Pionieri Ausiliari), scompone il totale/media per Gruppo
+    (sorvegliante), in ordine alfabetico di gruppo. Ignora i filtri
+    Categoria e Gruppo del form: mostra sempre tutte le categorie e tutti
+    i gruppi, per poterli confrontare. Ritorna una lista di dict:
+    {'categoria', 'gruppi': [{'gruppo', 'totale_ore', 'totale_crediti',
+    'totale_studi', 'media_ore', 'media_crediti', 'media_studi'}, ...]}."""
+    df_periodo = _riepilogo_filtra_dati(df_tutti, df_anagrafica, periodo, "Tutti i gruppi", "Tutti")
+    if df_periodo.empty or "Gruppo" not in df_anagrafica.columns:
+        return []
+
+    nomi_per_gruppo = {}
+    for _, riga in df_anagrafica.iterrows():
+        nome = str(riga.get("Cognome e Nome", "")).strip()
+        gruppo = str(riga.get("Gruppo", "")).strip()
+        if nome and gruppo:
+            nomi_per_gruppo.setdefault(gruppo, set()).add(nome)
+
+    risultati = []
+    for chiave, parola in CATEGORIE_RIEPILOGO_ATTIVITA.items():
+        if chiave == "Tutti" or not parola:
+            continue
+        df_cat = df_periodo[df_periodo["Tipo Servizio"].str.lower().str.contains(parola, na=False, regex=True)]
+        if df_cat.empty:
+            continue
+        righe_gruppi = []
+        for gruppo in sorted(nomi_per_gruppo.keys()):
+            df_cat_gruppo = df_cat[df_cat["Nome"].str.strip().isin(nomi_per_gruppo[gruppo])]
+            if df_cat_gruppo.empty:
+                continue
+            tot_ore = sum(a_float_it(v) for v in df_cat_gruppo.get("Ore", []))
+            tot_cred = sum(a_float_it(v) for v in df_cat_gruppo.get("Cred. Ore", []))
+            tot_studi = sum(a_float_it(v) for v in df_cat_gruppo.get("Studi Biblici", []))
+            n = len(df_cat_gruppo)
+            righe_gruppi.append({
+                "gruppo": gruppo,
+                "totale_ore": tot_ore, "totale_crediti": tot_cred, "totale_studi": tot_studi,
+                "media_ore": tot_ore / n if n else 0.0,
+                "media_crediti": tot_cred / n if n else 0.0,
+                "media_studi": tot_studi / n if n else 0.0,
+            })
+        if righe_gruppi:
+            risultati.append({"categoria": ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave),
+                               "gruppi": righe_gruppi})
+    return risultati
+
 
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
-                                   totali_per_categoria: list = None) -> bytes:
+                                   totali_per_categoria: list = None,
+                                   comparazione_gruppi: list = None) -> bytes:
     """Genera il PDF del Riepilogo attività: un documento libero (non un
     modulo prestampato) con un blocco per Proclamatore (vista Dettagliato)
     o un unico blocco per categoria (vista Sintetico) — mese, tipo di
