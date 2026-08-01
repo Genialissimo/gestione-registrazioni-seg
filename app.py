@@ -2781,7 +2781,7 @@ def mostra_presenze_adunanze():
         st.error(err)
         return
         
-        if "presenze_form_aperto" not in st.session_state:
+if "presenze_form_aperto" not in st.session_state:
         st.session_state.presenze_form_aperto = False
 
     with st.expander("➕ Aggiungi presenze", expanded=st.session_state.presenze_form_aperto,
