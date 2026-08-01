@@ -1381,6 +1381,38 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
         buf.seek(0)
         return buf.getvalue()
 
+    if comparazione_gruppi is not None:
+        if not comparazione_gruppi:
+            elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
+        for blocco_cat in comparazione_gruppi:
+            elementi.append(Paragraph(f"<b>{blocco_cat['categoria']}:</b>", stili["Heading3"]))
+            dati_tabella = []
+            for g in blocco_cat["gruppi"]:
+                dati_tabella.append(["Totale", f"Gruppo {g['gruppo']}", formatta_numero_it(g["totale_ore"]),
+                                      formatta_numero_it(g["totale_crediti"]),
+                                      formatta_numero_it(g["totale_studi"])])
+                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}", formatta_numero_it(g["media_ore"]),
+                                      formatta_numero_it(g["media_crediti"]),
+                                      formatta_numero_it(g["media_studi"])])
+            tabella = Table(dati_tabella, colWidths=[2.2 * cm, 5.5 * cm, 2.1 * cm, 2.1 * cm, 2.1 * cm])
+            stile_righe = [
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("ALIGN", (2, 0), (4, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+            for i in range(0, len(dati_tabella), 2):
+                colore = colors.HexColor("#F2F2F2") if (i // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
+                stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
+                stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
+            tabella.setStyle(TableStyle(stile_righe))
+            elementi.append(KeepTogether([tabella, Spacer(1, 14)]))
+        doc.build(elementi)
+        buf.seek(0)
+        return buf.getvalue()                                   
+                                       
     if not blocchi:
         elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
 
