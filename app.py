@@ -1588,7 +1588,8 @@ def mostra_home():
         ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
         ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
         ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
-        ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze"),
+        ("📊", "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
+        ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
