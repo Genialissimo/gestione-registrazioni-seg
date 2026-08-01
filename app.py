@@ -2823,6 +2823,7 @@ if "presenze_form_aperto" not in st.session_state:
                 st.error(err_salva)
 
 
+
     st.divider()
     st.markdown("#### 📋 Storico")
     if df.empty:
