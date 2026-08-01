@@ -2781,7 +2781,11 @@ def mostra_presenze_adunanze():
         st.error(err)
         return
         
-    with st.expander("➕ Aggiungi presenze"):
+        if "presenze_form_aperto" not in st.session_state:
+        st.session_state.presenze_form_aperto = False
+
+    with st.expander("➕ Aggiungi presenze", expanded=st.session_state.presenze_form_aperto,
+                      key="presenze_form_aperto"):
         with st.form("form_nuova_presenza", clear_on_submit=True):
             data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
             tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
@@ -2790,6 +2794,7 @@ def mostra_presenze_adunanze():
                 in_presenza = st.number_input("In presenza", min_value=0, step=1)
             with col_z:
                 su_zoom = st.number_input("Su Zoom", min_value=0, step=1)
+            totale = st.number_input("Totale", min_value=0, step=1)
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
@@ -2797,6 +2802,7 @@ def mostra_presenze_adunanze():
                 annulla = st.form_submit_button("Annulla", use_container_width=True)
 
         if annulla:
+            st.session_state.presenze_form_aperto = False
             st.rerun()
 
         if invia:
@@ -2805,14 +2811,17 @@ def mostra_presenze_adunanze():
                 "Tipo Adunanza": tipo_adunanza,
                 "In Presenza": str(int(in_presenza)),
                 "Su Zoom": str(int(su_zoom)),
+                "Totale": str(int(totale)),
             }
             ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
             if ok:
                 st.cache_data.clear()
+                st.session_state.presenze_form_aperto = False
                 st.success("✔ Presenze salvate.")
                 st.rerun()
             else:
                 st.error(err_salva)
+
 
     st.divider()
     st.markdown("#### 📋 Storico")
