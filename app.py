@@ -2760,11 +2760,64 @@ def mostra_gruppi_servizio():
                                 st.session_state.pop(_chiave_cb(nome), None)
                             st.session_state.gruppi_mostra_scelta = False
                             st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
-                            st.rerun()
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: Presenti alle adunanze
-# ────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+def _form_modifica_presenza(dati_selezione: dict):
+    """Form di modifica di una riga del foglio 'Presenze Adunanze',
+    aperto cliccando 'Modifica' dentro lo storico."""
+    riga = dati_selezione["riga"]
+    numero_riga_foglio = dati_selezione["numero_riga_foglio"]
+
+    st.markdown("#### ✏️ Modifica presenza")
+    try:
+        data_default = datetime.strptime(riga.get("Data", ""), "%d/%m/%Y")
+    except Exception:
+        data_default = datetime.now()
+    indice_tipo = TIPI_ADUNANZA.index(riga.get("Tipo Adunanza", "")) \
+        if riga.get("Tipo Adunanza", "") in TIPI_ADUNANZA else 0
+
+    with st.form("form_modifica_presenza", clear_on_submit=False):
+        data_adunanza = st.date_input("Data", value=data_default, format="DD/MM/YYYY")
+        tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, index=indice_tipo)
+        col_p, col_z = st.columns(2)
+        with col_p:
+            in_presenza = st.number_input("In presenza", min_value=0, step=1,
+                                           value=int(a_float_it(riga.get("In Presenza", "0"))))
+        with col_z:
+            su_zoom = st.number_input("Su Zoom", min_value=0, step=1,
+                                       value=int(a_float_it(riga.get("Su Zoom", "0"))))
+        totale = st.number_input("Totale", min_value=0, step=1,
+                                  value=int(a_float_it(riga.get("Totale", "0"))))
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+        with col_btn2:
+            annulla = st.form_submit_button("Annulla", use_container_width=True)
+
+    if annulla:
+        st.session_state.presenze_modifica = None
+        st.rerun()
+
+    if invia:
+        valori = {
+            "Data": data_adunanza.strftime("%d/%m/%Y"),
+            "Tipo Adunanza": tipo_adunanza,
+            "In Presenza": str(int(in_presenza)),
+            "Su Zoom": str(int(su_zoom)),
+            "Totale": str(int(totale)),
+        }
+        ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE,
+                                           valori, riga_da_aggiornare=numero_riga_foglio)
+        if ok:
+            st.cache_data.clear()
+            st.session_state.presenze_modifica = None
+            st.success("✔ Modificato correttamente.")
+            st.rerun()
+        else:
+            st.error(err_salva)
+
 
 def mostra_presenze_adunanze():
     st.title("🙌 Presenti alle adunanze")
@@ -2780,12 +2833,21 @@ def mostra_presenze_adunanze():
     if err:
         st.error(err)
         return
-        
-if "presenze_form_aperto" not in st.session_state:
+
+    if "presenze_modifica" not in st.session_state:
+        st.session_state.presenze_modifica = None
+    if st.session_state.presenze_modifica is not None:
+        _form_modifica_presenza(st.session_state.presenze_modifica)
+        return
+
+    # ── Aggiungi presenze (nascosto finché non clicchi il pulsante) ──
+    if "presenze_form_aperto" not in st.session_state:
         st.session_state.presenze_form_aperto = False
 
-    with st.expander("➕ Aggiungi presenze", expanded=st.session_state.presenze_form_aperto,
-                      key="presenze_form_aperto"):
+    if st.button("➕ Aggiungi presenze", use_container_width=True):
+        st.session_state.presenze_form_aperto = not st.session_state.presenze_form_aperto
+
+    if st.session_state.presenze_form_aperto:
         with st.form("form_nuova_presenza", clear_on_submit=True):
             data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
             tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
@@ -2822,59 +2884,43 @@ if "presenze_form_aperto" not in st.session_state:
             else:
                 st.error(err_salva)
 
-
-
     st.divider()
-    st.markdown("#### 📋 Storico")
-    if df.empty:
-        st.info("Nessuna presenza registrata ancora.")
-        return
 
-    df_ordinato = df.copy()
-    df_ordinato["_data_ord"] = pd.to_datetime(df_ordinato["Data"], format="%d/%m/%Y", errors="coerce")
-    df_ordinato = df_ordinato.sort_values("_data_ord", ascending=False)
+    # ── Storico (nascosto finché non clicchi il pulsante) ──
+    if "presenze_storico_aperto" not in st.session_state:
+        st.session_state.presenze_storico_aperto = False
 
-    evento_tabella = st.dataframe(
-        df_ordinato.drop(columns=["_data_ord"]),
-        hide_index=True,
-        use_container_width=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="tabella_presenze",
-    )
+    if st.button("📋 Vedi storico", use_container_width=True):
+        st.session_state.presenze_storico_aperto = not st.session_state.presenze_storico_aperto
 
-    righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
-    if righe_sel:
-        idx_originale = df_ordinato.index[righe_sel[0]]
-        numero_riga_foglio = RIGA_INTESTAZIONE_PRESENZE + 1 + idx_originale
-        if st.button("🗑️ Elimina riga selezionata", key="btn_elim_presenza"):
-            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
-            if ok:
-                st.cache_data.clear()
-                st.success("✔ Eliminata.")
-                st.rerun()
-            else:
-                st.error(err_elim)
+    if st.session_state.presenze_storico_aperto:
+        if df.empty:
+            st.info("Nessuna presenza registrata ancora.")
+        else:
+            df_ordinato = df.copy()
+            df_ordinato["_data_ord"] = pd.to_datetime(df_ordinato["Data"], format="%d/%m/%Y", errors="coerce")
+            df_ordinato = df_ordinato.sort_values("_data_ord", ascending=False)
 
-    st.divider()
-    st.markdown("#### 📊 Riepilogo")
-    n_adunanze = st.number_input("Numero di adunanze da considerare per tipo (le più recenti)",
-                                  min_value=1, value=12, step=1, key="presenze_periodo_n")
+            evento_tabella = st.dataframe(
+                df_ordinato.drop(columns=["_data_ord"]),
+                hide_index=True,
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="tabella_presenze",
+            )
 
-    for tipo in TIPI_ADUNANZA:
-        sotto = df_ordinato[df_ordinato["Tipo Adunanza"] == tipo].head(int(n_adunanze))
-        if sotto.empty:
-            continue
-        tot_presenza = sotto["In Presenza"].apply(a_float_it).sum()
-        tot_zoom = sotto["Su Zoom"].apply(a_float_it).sum()
-        n = len(sotto)
-        st.markdown(f"**{tipo}** (ultime {n} adunanze)")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Tot. Presenza", formatta_numero_it(tot_presenza))
-        col2.metric("Media Presenza", formatta_numero_it(tot_presenza / n if n else 0))
-        col3.metric("Tot. Zoom", formatta_numero_it(tot_zoom))
-        col4.metric("Media Zoom", formatta_numero_it(tot_zoom / n if n else 0))
-        st.divider()
+            righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
+            if righe_sel:
+                idx_originale = df_ordinato.index[righe_sel[0]]
+                numero_riga_foglio = RIGA_INTESTAZIONE_PRESENZE + 1 + idx_originale
+                col_mod, col_elim = st.columns(2)
+                with col_mod:
+                    if st.button("✏️ Modifica riga selezionata", key="btn_mod_presenza",
+                                 use_container_width=True):
+                        st.session_state.presenze_modifica = {
+                            "riga": df_ordinato.loc[idx_originale].to_d
+
 
 
 # ─────────────────────────────────────────────────────────────────
