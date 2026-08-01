@@ -2838,7 +2838,7 @@ def mostra_presenze_adunanze():
         st.rerun()
 
     if not collegato:
-        st.warning("⚠️  Nessun foglio dati collegato.")
+        st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE)
@@ -2846,149 +2846,90 @@ def mostra_presenze_adunanze():
         st.error(err)
         return
 
-    # Inseriamo l'indice nativo del foglio prima di qualsiasi ordinamento
-    if not df.empty:
-        df["_riga_foglio"] = RIGA_INTESTAZIONE_PRESENZE + 1 + df.index
-
-    if "presenze_modifica" not in st.session_state:
-        st.session_state.presenze_modifica = None
-        
-    if st.session_state.presenze_modifica is not None:
-        _form_modifica_presenza(st.session_state.presenze_modifica)
-        return
-
-    # ── Aggiungi presenze ──
-    if "presenze_form_aperto" not in st.session_state:
-        st.session_state.presenze_form_aperto = False
-
-    if st.button("➕ Aggiungi presenze", use_container_width=True):
-        st.session_state.presenze_form_aperto = not st.session_state.presenze_form_aperto
-        st.rerun()
-
-    if st.session_state.presenze_form_aperto:
-        with st.form("form_nuova_presenza", clear_on_submit=False):
-            data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
-            tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
-            
-            col_p, col_z = st.columns(2)
-            with col_p:
-                in_presenza = st.number_input("In presenza", min_value=0, step=1)
-            with col_z:
-                su_zoom = st.number_input("Su Zoom", min_value=0, step=1)
-                
-            totale = st.number_input("Totale", min_value=0, step=1)
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
-            with col_btn2:
-                annulla = st.form_submit_button(" Annulla", use_container_width=True)
-
-        if annulla:
-            st.session_state.presenze_form_aperto = False
-            st.rerun()
-
-        if invia:
-            valori = {
-                "Data": data_adunanza.strftime("%d/%m/%Y"),
-                "Tipo Adunanza": tipo_adunanza,
-                "In Presenza": str(int(in_presenza)),
-                "Su Zoom": str(int(su_zoom)),
-                "Totale": str(int(totale)),
-            }
-            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
-            if ok:
-                st.cache_data.clear()
-                st.session_state.presenze_form_aperto = False
-                st.success("✔ Presenze salvate.")
-                st.rerun()
-            else:
-                st.error(err_salva)
-
-    st.divider()
-
-    # ── Storico ──
-    if "presenze_storico_aperto" not in st.session_state:
-        st.session_state.presenze_storico_aperto = False
-
-    if st.button("📋 Vedi storico", use_container_width=True):
-        st.session_state.presenze_storico_aperto = not st.session_state.presenze_storico_aperto
-        st.rerun()
-
-    if st.session_state.presenze_storico_aperto:
-        if df.empty:
-            st.info("Nessuna presenza registrata ancora.")
-        else:
-            df_ordinato = df.copy()
-            df_ordinato["_data_ord"] = pd.to_datetime(df_ordinato["Data"], format="%d/%m/%Y", errors="coerce")
-            df_ordinato = df_ordinato.sort_values("_data_ord", ascending=False).reset_index(drop=True)
-
-            # Nascondiamo le colonne tecniche dall'interfaccia dataframe
-            colonne_visibili = [c for c in df_ordinato.columns if c not in ["_data_ord", "_riga_foglio"]]
-
-            evento_tabella = st.dataframe(
-                df_ordinato[colonne_visibili],
-                hide_index=True,
-                use_container_width=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="tabella_presenze",
-            )
-
-            righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
-            if righe_sel:
-                # Estraiamo con sicurezza i dati e il numero riga originale
-                riga_selezionata = df_ordinato.iloc[righe_sel[0]]
-                numero_riga_foglio = riga_selezionata["_riga_foglio"]
-                
-                col_mod, col_elim = st.columns(2)
-                with col_mod:
-                    if st.button("✏️ Modifica riga selezionata", key="btn_mod_presenza", use_container_width=True):
-                        st.session_state.presenze_modifica = {
-                            "riga": riga_selezionata.to_dict(),
-                            "numero_riga_foglio": numero_riga_foglio,
-                        }
-                        st.rerun()
-                with col_elim:
-                    if st.button("🗑️ Elimina riga selezionata", key="btn_elim_presenza", use_container_width=True):
-                        ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
-                        if ok:
-                            st.cache_data.clear()
-                            st.success("✔ Eliminata.")
-                            st.rerun()
-                        else:
-                            st.error(err_elim)
-
-    st.divider()
-    st.markdown("#### 📊 Riepilogo")
-
     if df.empty:
         st.info("Nessuna presenza registrata ancora.")
         return
 
-    df_riepilogo = df.copy()
-    df_riepilogo["_data_ord"] = pd.to_datetime(df_riepilogo["Data"], format="%d/%m/%Y", errors="coerce")
-    df_riepilogo = df_riepilogo.sort_values("_data_ord", ascending=False)
+    # ── 1. PREPARAZIONE DATI E CREAZIONE MENU MESI ──
+    df_prep = df.copy()
+    df_prep["_dt"] = pd.to_datetime(df_prep["Data"], format="%d/%m/%Y", errors="coerce")
+    df_prep = df_prep.dropna(subset=["_dt"])
+    df_prep["_anno_mese"] = df_prep["_dt"].dt.strftime("%Y-%m")
+    df_prep["_riga_foglio"] = RIGA_INTESTAZIONE_PRESENZE + 1 + df_prep.index
 
-    n_adunanze = st.number_input(
-        "Numero di adunanze da considerare per tipo (le più recenti)",
-        min_value=1, value=12, step=1, key="presenze_periodo_n"
+    # Mesi unici ordinati dal più recente
+    mesi_disponibili = sorted(df_prep["_anno_mese"].unique(), reverse=True)
+
+    if not mesi_disponibili:
+        st.warning("Nessuna data valida trovata nel foglio.")
+        return
+
+    # ── 2. SELECTBOX IN ALTO ──
+    st.markdown("### 📅 Seleziona Mese/Anno")
+    mese_selezionato = st.selectbox(
+        "Mese/Anno",
+        options=mesi_disponibili,
+        label_visibility="collapsed",
+        key="select_anno_mese"
     )
 
-    for tipo in TIPI_ADUNANZA:
-        sotto = df_riepilogo[df_riepilogo["Tipo Adunanza"] == tipo].head(int(n_adunanze))
-        if sotto.empty:
-            continue
-        tot_presenza = sotto["In Presenza"].apply(a_float_it).sum()
-        tot_zoom = sotto["Su Zoom"].apply(a_float_it).sum()
-        n = len(sotto)
-        st.markdown(f"**{tipo}** (ultime {n} adunanze)")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Tot. Presenza", formatta_numero_it(tot_presenza))
-        col2.metric("Media Presenza", formatta_numero_it(tot_presenza / n if n else 0))
-        col3.metric("Tot. Zoom", formatta_numero_it(tot_zoom))
-        col4.metric("Media Zoom", formatta_numero_it(tot_zoom / n if n else 0))
-        st.divider()
+    # Filtriamo i dati per il mese selezionato
+    df_mese = df_prep[df_prep["_anno_mese"] == mese_selezionato].copy()
+
+    # Conversione numerica sicura
+    df_mese["_presenza_num"] = df_mese["In Presenza"].apply(a_float_it)
+    df_mese["_zoom_num"] = df_mese["Su Zoom"].apply(a_float_it)
+    
+    if "Totale" in df_mese.columns:
+        df_mese["_totale_num"] = df_mese["Totale"].apply(a_float_it)
+    else:
+        df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
+
+    # ── 3. TABELLA RIEPILOGO MESE (Come nello screenshot) ──
+    st.markdown("#### 📊 Riepilogo")
+    
+    dati_riepilogo = []
+    tipi_list = TIPI_ADUNANZA if 'TIPI_ADUNANZA' in globals() else df_mese["Tipo Adunanza"].unique()
+
+    for tipo in tipi_list:
+        sotto = df_mese[df_mese["Tipo Adunanza"] == tipo]
+        settimane = len(sotto)
+        totale = sotto["_totale_num"].sum()
+        tot_presenza = sotto["_presenza_num"].sum()
+        tot_zoom = sotto["_zoom_num"].sum()
+        
+        media = (totale / settimane) if settimane > 0 else 0
+        perc_zoom = (tot_zoom / totale * 100) if totale > 0 else 0
+        perc_presenza = (tot_presenza / totale * 100) if totale > 0 else 0
+
+        dati_riepilogo.append({
+            "Tipo Adunanza": tipo,
+            "Settimane": settimane,
+            "Media": f"{media:,.2f}".replace(".", ","),
+            "Totale": int(totale),
+            "% Zoom": f"{perc_zoom:.2f}%".replace(".", ","),
+            "% In presenza": f"{perc_presenza:.2f}%".replace(".", ","),
+        })
+
+    st.dataframe(
+        pd.DataFrame(dati_riepilogo), 
+        hide_index=True, 
+        use_container_width=True
+    )
+
+    st.divider()
+
+    # ── 4. GRIGLIA DETTAGLIO MESE ──
+    st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
+    
+    colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
+    
+    st.dataframe(
+        df_mese[colonne_visibili],
+        hide_index=True,
+        use_container_width=True
+    )
+
 
 
 # ─────────────────────────────────────────────────────────────────
