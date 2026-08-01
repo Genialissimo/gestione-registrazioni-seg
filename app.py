@@ -2102,22 +2102,36 @@ def mostra_cartoline_registrazione():
         periodo_scelto = st.radio("Periodo", ["12 mesi", "6 mesi"], horizontal=True,
                                    key="riepilogo_periodo")
 
-        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico"], horizontal=True,
+        tipo_vista = st.radio("Tipo", ["Dettagliato", "Sintetico", "Sintetico compara gruppi"], horizontal=True,
                                key="riepilogo_tipo_vista",
                                help="Dettagliato: un blocco per ciascun Proclamatore. "
-                                    "Sintetico: un unico blocco con i totali della categoria scelta.")
+                                    "Sintetico: un unico blocco con i totali della categoria scelta. "
+                                    "Sintetico compara gruppi: totali/medie per Gruppo, per ogni categoria.")
 
         gruppi_disponibili = ["Tutti i gruppi"]
         if "Gruppo" in df.columns:
             gruppi_disponibili += sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()})
-        gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo")
+        gruppo_scelto = st.selectbox("Gruppo", gruppi_disponibili, key="riepilogo_gruppo",
+                                      disabled=(tipo_vista == "Sintetico compara gruppi"))
 
         categoria_scelta = st.selectbox("Categoria", list(CATEGORIE_RIEPILOGO_ATTIVITA.keys()),
-                                         key="riepilogo_categoria")
+                                         key="riepilogo_categoria",
+                                         disabled=(tipo_vista == "Sintetico compara gruppi"))
+
+        if tipo_vista == "Sintetico compara gruppi":
+            st.caption("Questa vista confronta tutti i gruppi in tutte le categorie: "
+                       "Gruppo e Categoria scelti sopra vengono ignorati.")
 
         if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
             with st.spinner("Genero il riepilogo…"):
-                if tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
+                if tipo_vista == "Sintetico compara gruppi":
+                    comparazione = _riepilogo_totali_per_categoria_e_gruppo(df_tutti, df, periodo_scelto)
+                    trovato_qualcosa = bool(comparazione)
+                    pdf_bytes = genera_pdf_riepilogo_attivita(
+                        [], periodo_scelto, categoria_scelta, None,
+                        etichetta_vista=tipo_vista, comparazione_gruppi=comparazione,
+                    )
+                elif tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
                     df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
                                                                 gruppo_scelto, "Tutti")
                     totali_categoria = _riepilogo_totali_generali_per_categoria(df_periodo_gruppo)
@@ -2146,9 +2160,9 @@ def mostra_cartoline_registrazione():
 
         if st.session_state.get("riepilogo_pdf_pronto"):
             nome_file = "Riepilogo_Attivita"
-            if gruppo_scelto != "Tutti i gruppi":
+            if gruppo_scelto != "Tutti i gruppi" and tipo_vista != "Sintetico compara gruppi":
                 nome_file += f"_{_s21_nome_file_sicuro(gruppo_scelto)}"
-            nome_file += f"_{tipo_vista}_{categoria_scelta.replace(' ', '_')}.pdf"
+            nome_file += f"_{tipo_vista.replace(' ', '_')}_{categoria_scelta.replace(' ', '_')}.pdf"
 
             def _chiudi_e_resetta_riepilogo():
                 st.session_state.pop("riepilogo_pdf_pronto", None)
