@@ -2908,11 +2908,11 @@ def mostra_presenze_adunanze():
 
         dati_riepilogo.append({
             "Tipo Adunanza": tipo,
-            "Settimane": settimane,
+            "Sett.": settimane,
             "Media": f"{media:,.2f}".replace(".", ","),
             "Totale": int(totale),
             "% Zoom": f"{perc_zoom:.2f}%".replace(".", ","),
-            "% In presenza": f"{perc_presenza:.2f}%".replace(".", ","),
+            "% Pres.": f"{perc_presenza:.2f}%".replace(".", ","),
         })
 
     st.dataframe(
