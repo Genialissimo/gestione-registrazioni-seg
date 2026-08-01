@@ -2885,14 +2885,18 @@ def mostra_presenze_adunanze():
     else:
         df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
 
-    # ── 3. TABELLA RIEPILOGO MESE (Come nello screenshot) ──
+        # ── 3. TABELLA RIEPILOGO MESE ──
     st.markdown("#### 📊 Riepilogo")
     
     dati_riepilogo = []
-    tipi_list = TIPI_ADUNANZA if 'TIPI_ADUNANZA' in globals() else df_mese["Tipo Adunanza"].unique()
+    
+    # Valori esatti come nel foglio dati
+    tipi_list = ["Infrasettimanale", "Fine settimana"]
 
     for tipo in tipi_list:
+        # Confronto diretto ed esatto con la colonna del foglio
         sotto = df_mese[df_mese["Tipo Adunanza"] == tipo]
+
         settimane = len(sotto)
         totale = sotto["_totale_num"].sum()
         tot_presenza = sotto["_presenza_num"].sum()
@@ -2917,7 +2921,6 @@ def mostra_presenze_adunanze():
         use_container_width=True
     )
 
-    st.divider()
 
     # ── 4. GRIGLIA DETTAGLIO MESE ──
     st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
