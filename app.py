@@ -97,6 +97,10 @@ SCOPES = [
 NOME_FOGLIO_RISPOSTE = "Risposte del modulo 9"
 RIGA_INTESTAZIONE_RISPOSTE = 9
 
+NOME_FOGLIO_PRESENZE = "Presenze Adunanze"
+RIGA_INTESTAZIONE_PRESENZE = 1
+TIPI_ADUNANZA = ["Adunanza infrasettimanale", "Adunanza del fine settimana"]
+
 NOME_FOGLIO_ANAGRAFICA = "Anagrafica"
 RIGA_INTESTAZIONE_ANAGRAFICA = 1
 
@@ -1584,11 +1588,13 @@ def mostra_home():
         ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
         ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
         ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
+        ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze"),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
     riga3 = st.columns(2)
-    colonne = riga1 + riga2 + riga3
+    riga4 = st.columns(2)
+    colonne = riga1 + riga2 + riga3 + riga4
     for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
@@ -2755,6 +2761,103 @@ def mostra_gruppi_servizio():
                             st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
                             st.rerun()
 
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: Presenti alle adunanze
+# ────────────────────────────────────────────────────────────────
+
+def mostra_presenze_adunanze():
+    st.title("🙌 Presenti alle adunanze")
+    if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE)
+    if err:
+        st.error(err)
+        return
+
+    st.markdown("#### ➕ Aggiungi presenze")
+    with st.form("form_nuova_presenza", clear_on_submit=True):
+        data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
+        tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
+        col_p, col_z = st.columns(2)
+        with col_p:
+            in_presenza = st.number_input("In presenza", min_value=0, step=1)
+        with col_z:
+            su_zoom = st.number_input("Su Zoom", min_value=0, step=1)
+        invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+
+    if invia:
+        valori = {
+            "Data": data_adunanza.strftime("%d/%m/%Y"),
+            "Tipo Adunanza": tipo_adunanza,
+            "In Presenza": str(int(in_presenza)),
+            "Su Zoom": str(int(su_zoom)),
+        }
+        ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
+        if ok:
+            st.cache_data.clear()
+            st.success("✔ Presenze salvate.")
+            st.rerun()
+        else:
+            st.error(err_salva)
+
+    st.divider()
+    st.markdown("#### 📋 Storico")
+    if df.empty:
+        st.info("Nessuna presenza registrata ancora.")
+        return
+
+    df_ordinato = df.copy()
+    df_ordinato["_data_ord"] = pd.to_datetime(df_ordinato["Data"], format="%d/%m/%Y", errors="coerce")
+    df_ordinato = df_ordinato.sort_values("_data_ord", ascending=False)
+
+    evento_tabella = st.dataframe(
+        df_ordinato.drop(columns=["_data_ord"]),
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="tabella_presenze",
+    )
+
+    righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
+    if righe_sel:
+        idx_originale = df_ordinato.index[righe_sel[0]]
+        numero_riga_foglio = RIGA_INTESTAZIONE_PRESENZE + 1 + idx_originale
+        if st.button("🗑️ Elimina riga selezionata", key="btn_elim_presenza"):
+            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
+            if ok:
+                st.cache_data.clear()
+                st.success("✔ Eliminata.")
+                st.rerun()
+            else:
+                st.error(err_elim)
+
+    st.divider()
+    st.markdown("#### 📊 Riepilogo")
+    n_adunanze = st.number_input("Numero di adunanze da considerare per tipo (le più recenti)",
+                                  min_value=1, value=12, step=1, key="presenze_periodo_n")
+
+    for tipo in TIPI_ADUNANZA:
+        sotto = df_ordinato[df_ordinato["Tipo Adunanza"] == tipo].head(int(n_adunanze))
+        if sotto.empty:
+            continue
+        tot_presenza = sotto["In Presenza"].apply(a_float_it).sum()
+        tot_zoom = sotto["Su Zoom"].apply(a_float_it).sum()
+        n = len(sotto)
+        st.markdown(f"**{tipo}** (ultime {n} adunanze)")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Tot. Presenza", formatta_numero_it(tot_presenza))
+        col2.metric("Media Presenza", formatta_numero_it(tot_presenza / n if n else 0))
+        col3.metric("Tot. Zoom", formatta_numero_it(tot_zoom))
+        col4.metric("Media Zoom", formatta_numero_it(tot_zoom / n if n else 0))
+        st.divider()
+
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
@@ -3164,3 +3267,5 @@ elif st.session_state.pagina == "filiale":
     mostra_rapporto_filiale()
 else:
     mostra_home()
+elif st.session_state.pagina == "presenze":
+    mostra_presenze_adunanze()
