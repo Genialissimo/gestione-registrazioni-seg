@@ -2780,32 +2780,39 @@ def mostra_presenze_adunanze():
     if err:
         st.error(err)
         return
+        
+    with st.expander("➕ Aggiungi presenze"):
+        with st.form("form_nuova_presenza", clear_on_submit=True):
+            data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
+            tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
+            col_p, col_z = st.columns(2)
+            with col_p:
+                in_presenza = st.number_input("In presenza", min_value=0, step=1)
+            with col_z:
+                su_zoom = st.number_input("Su Zoom", min_value=0, step=1)
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+            with col_btn2:
+                annulla = st.form_submit_button("Annulla", use_container_width=True)
 
-    st.markdown("#### ➕ Aggiungi presenze")
-    with st.form("form_nuova_presenza", clear_on_submit=True):
-        data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
-        tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
-        col_p, col_z = st.columns(2)
-        with col_p:
-            in_presenza = st.number_input("In presenza", min_value=0, step=1)
-        with col_z:
-            su_zoom = st.number_input("Su Zoom", min_value=0, step=1)
-        invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
-
-    if invia:
-        valori = {
-            "Data": data_adunanza.strftime("%d/%m/%Y"),
-            "Tipo Adunanza": tipo_adunanza,
-            "In Presenza": str(int(in_presenza)),
-            "Su Zoom": str(int(su_zoom)),
-        }
-        ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
-        if ok:
-            st.cache_data.clear()
-            st.success("✔ Presenze salvate.")
+        if annulla:
             st.rerun()
-        else:
-            st.error(err_salva)
+
+        if invia:
+            valori = {
+                "Data": data_adunanza.strftime("%d/%m/%Y"),
+                "Tipo Adunanza": tipo_adunanza,
+                "In Presenza": str(int(in_presenza)),
+                "Su Zoom": str(int(su_zoom)),
+            }
+            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
+            if ok:
+                st.cache_data.clear()
+                st.success("✔ Presenze salvate.")
+                st.rerun()
+            else:
+                st.error(err_salva)
 
     st.divider()
     st.markdown("#### 📋 Storico")
