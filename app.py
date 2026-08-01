@@ -3266,7 +3266,8 @@ elif st.session_state.pagina == "gruppi":
     mostra_gruppi_servizio()
 elif st.session_state.pagina == "filiale":
     mostra_rapporto_filiale()
+elif st.session_state.pagina == "presenze":
+    mostra_presenze_adunanze()    
 else:
     mostra_home()
-elif st.session_state.pagina == "presenze":
-    mostra_presenze_adunanze()
+
