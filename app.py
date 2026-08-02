@@ -1343,6 +1343,8 @@ def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafi
     if df_periodo.empty or "Gruppo" not in df_anagrafica.columns:
         return []
 
+    n_mesi_periodo = len(_riepilogo_mesi_nel_periodo(df_tutti, periodo))
+
     nomi_per_gruppo = {}
     for _, riga in df_anagrafica.iterrows():
         nome = str(riga.get("Cognome e Nome", "")).strip()
@@ -1369,6 +1371,7 @@ def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafi
             righe_gruppi.append({
                 "gruppo": gruppo,
                 "n_proclamatori": n,
+                "n_proclamatori_media": n / n_mesi_periodo if n_mesi_periodo else 0.0,
                 "totale_ore": tot_ore, "totale_crediti": tot_cred, "totale_studi": tot_studi,
                 "media_ore": tot_ore / n if n else 0.0,
                 "media_crediti": tot_cred / n if n else 0.0,
@@ -1376,7 +1379,7 @@ def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafi
             })
         if righe_gruppi:
             risultati.append({"categoria": ETICHETTE_SINTETICO_CATEGORIA.get(chiave, chiave),
-                               "gruppi": righe_gruppi})
+                               "gruppi": righe_gruppi, "n_mesi_periodo": n_mesi_periodo})
     return risultati
 
 
@@ -1467,12 +1470,14 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             dati_tabella = [intestazione]
             n_totale = 0
             totale_ore_fin = totale_cred_fin = totale_studi_fin = 0.0
+            n_mesi_periodo = blocco_cat.get("n_mesi_periodo", 0)
             for g in blocco_cat["gruppi"]:
                 dati_tabella.append(["Totale", f"Gruppo {g['gruppo']}", str(g["n_proclamatori"]),
                                       formatta_numero_it(g["totale_ore"]),
                                       formatta_numero_it(g["totale_crediti"]),
                                       formatta_numero_it(g["totale_studi"])])
-                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}", str(g["n_proclamatori"]),
+                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}",
+                                      formatta_numero_it(g["n_proclamatori_media"]),
                                       formatta_numero_it(g["media_ore"]),
                                       formatta_numero_it(g["media_crediti"]),
                                       formatta_numero_it(g["media_studi"])])
@@ -1483,7 +1488,8 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             riga_finale = len(dati_tabella)
             dati_tabella.append(["Totale finale", "", str(n_totale), formatta_numero_it(totale_ore_fin),
                                   formatta_numero_it(totale_cred_fin), formatta_numero_it(totale_studi_fin)])
-            dati_tabella.append(["Media finale", "", str(n_totale),
+            dati_tabella.append(["Media finale", "",
+                                  formatta_numero_it(n_totale / n_mesi_periodo if n_mesi_periodo else 0.0),
                                   formatta_numero_it(totale_ore_fin / n_totale if n_totale else 0.0),
                                   formatta_numero_it(totale_cred_fin / n_totale if n_totale else 0.0),
                                   formatta_numero_it(totale_studi_fin / n_totale if n_totale else 0.0)])
