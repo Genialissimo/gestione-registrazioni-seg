@@ -2147,18 +2147,17 @@ def mostra_anagrafiche():
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
+# PAGINA: RIEPILOGO ATTIVITÀ E STATISTICHE
 # ─────────────────────────────────────────────────────────────────
-def mostra_cartoline_registrazione():
-    st.title("📇 Cartoline di registrazione")
-    contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
+def mostra_riepilogo_attivita():
+    st.title("📊 Riepilogo attività e statistiche")
+
+    if st.button("🏠", key="home_da_riepilogo", help="Torna alla Home"):
+        vai_a("home")
+        st.rerun()
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
-        return
-
-    if not os.path.exists(PERCORSO_MODULO_S21):
-        st.error("Modulo S-21 non trovato: metti il file «S-21_s-Mlt_I.pdf» nella stessa cartella di app.py.")
         return
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
@@ -2183,7 +2182,7 @@ def mostra_cartoline_registrazione():
     )
 
     # ── Riepilogo attività (expander nativo: resta aperto durante l'uso) ──
-    with st.expander("📊 Riepilogo attività"):
+    with st.expander("📊 Riepilogo attività", expanded=True):
         st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
                    "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
                    "spedire ai sorveglianti di gruppo.")
@@ -2268,6 +2267,45 @@ def mostra_cartoline_registrazione():
                 use_container_width=True,
                 on_click=_chiudi_e_resetta_riepilogo,
             )
+
+    st.divider()
+
+
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
+# ─────────────────────────────────────────────────────────────────
+def mostra_cartoline_registrazione():
+    st.title("📇 Cartoline di registrazione")
+    contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
+
+    if not collegato:
+        st.warning("⚠️  Nessun foglio dati collegato.")
+        return
+
+    if not os.path.exists(PERCORSO_MODULO_S21):
+        st.error("Modulo S-21 non trovato: metti il file «S-21_s-Mlt_I.pdf» nella stessa cartella di app.py.")
+        return
+
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err:
+        st.error(err)
+        return
+    if df.empty or "Cognome e Nome" not in df.columns:
+        st.info("Nessun Proclamatore trovato in Anagrafica.")
+        return
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+
+    # ── Anno teocratico ───────────────────────────────────────────────
+    anni_presenti = anni_teocratici_per_menu(df_tutti)
+    anno_scelto = st.selectbox(
+        "Seleziona anno teocratico",
+        anni_presenti,
+        format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+    )
 
     # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
@@ -3344,6 +3382,8 @@ elif st.session_state.pagina == "storico":
     mostra_storico_proclamatori()
 elif st.session_state.pagina == "cartoline":
     mostra_cartoline_registrazione()
+elif st.session_state.pagina == "riepilogo_statistiche":
+    mostra_riepilogo_attivita()
 elif st.session_state.pagina == "gruppi":
     mostra_gruppi_servizio()
 elif st.session_state.pagina == "filiale":
