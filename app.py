@@ -17,7 +17,7 @@ from google.oauth2.service_account import Credentials
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -1312,6 +1312,7 @@ def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafi
             n = len(df_cat_gruppo)
             righe_gruppi.append({
                 "gruppo": gruppo,
+                "n_proclamatori": n,
                 "totale_ore": tot_ore, "totale_crediti": tot_cred, "totale_studi": tot_studi,
                 "media_ore": tot_ore / n if n else 0.0,
                 "media_crediti": tot_cred / n if n else 0.0,
@@ -1337,8 +1338,12 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
     media per ciascuna categoria, senza righe mensili."""
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-                             leftMargin=1.3 * cm, rightMargin=1.3 * cm)
+    if comparazione_gruppi is not None:
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.6 * cm, bottomMargin=0.6 * cm,
+                                 leftMargin=0.6 * cm, rightMargin=0.6 * cm)
+    else:
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+                                 leftMargin=1.3 * cm, rightMargin=1.3 * cm)
     stili = getSampleStyleSheet()
     elementi = []
 
@@ -1388,31 +1393,53 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     if comparazione_gruppi is not None:
         if not comparazione_gruppi:
             elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
+        stile_categoria = ParagraphStyle("CategoriaCompatta", parent=stili["Heading3"],
+                                          fontSize=9, spaceBefore=3, spaceAfter=1)
+        intestazione = ["", "Gruppo", "N.", "Ore", "Crediti", "Studi"]
         for blocco_cat in comparazione_gruppi:
-            elementi.append(Paragraph(f"<b>{blocco_cat['categoria']}:</b>", stili["Heading3"]))
-            dati_tabella = []
+            elementi.append(Paragraph(f"<b>{blocco_cat['categoria']}:</b>", stile_categoria))
+            dati_tabella = [intestazione]
+            n_totale = 0
+            totale_ore_fin = totale_cred_fin = totale_studi_fin = 0.0
             for g in blocco_cat["gruppi"]:
-                dati_tabella.append(["Totale", f"Gruppo {g['gruppo']}", formatta_numero_it(g["totale_ore"]),
+                dati_tabella.append(["Totale", f"Gruppo {g['gruppo']}", str(g["n_proclamatori"]),
+                                      formatta_numero_it(g["totale_ore"]),
                                       formatta_numero_it(g["totale_crediti"]),
                                       formatta_numero_it(g["totale_studi"])])
-                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}", formatta_numero_it(g["media_ore"]),
+                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}", "",
+                                      formatta_numero_it(g["media_ore"]),
                                       formatta_numero_it(g["media_crediti"]),
                                       formatta_numero_it(g["media_studi"])])
-            tabella = Table(dati_tabella, colWidths=[2.2 * cm, 5.5 * cm, 2.1 * cm, 2.1 * cm, 2.1 * cm])
+                n_totale += g["n_proclamatori"]
+                totale_ore_fin += g["totale_ore"]
+                totale_cred_fin += g["totale_crediti"]
+                totale_studi_fin += g["totale_studi"]
+            riga_finale = len(dati_tabella)
+            dati_tabella.append(["Totale finale", "", str(n_totale), formatta_numero_it(totale_ore_fin),
+                                  formatta_numero_it(totale_cred_fin), formatta_numero_it(totale_studi_fin)])
+            dati_tabella.append(["Media finale", "", "",
+                                  formatta_numero_it(totale_ore_fin / n_totale if n_totale else 0.0),
+                                  formatta_numero_it(totale_cred_fin / n_totale if n_totale else 0.0),
+                                  formatta_numero_it(totale_studi_fin / n_totale if n_totale else 0.0)])
+            tabella = Table(dati_tabella, colWidths=[2.1 * cm, 4.6 * cm, 1.1 * cm, 2.0 * cm, 2.0 * cm, 2.0 * cm])
             stile_righe = [
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
                 ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-                ("ALIGN", (2, 0), (4, -1), "RIGHT"),
+                ("ALIGN", (2, 0), (5, -1), "RIGHT"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BACKGROUND", (0, riga_finale), (-1, -1), colors.HexColor("#FFE9B3")),
+                ("GRID", (0, riga_finale), (-1, -1), 0.4, colors.grey),
             ]
-            for i in range(0, len(dati_tabella), 2):
-                colore = colors.HexColor("#F2F2F2") if (i // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
+            for i in range(1, riga_finale, 2):
+                colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
                 stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
                 stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
             tabella.setStyle(TableStyle(stile_righe))
-            elementi.append(KeepTogether([tabella, Spacer(1, 14)]))
+            elementi.append(KeepTogether([tabella, Spacer(1, 3)]))
         doc.build(elementi)
         buf.seek(0)
         return buf.getvalue()                                   
@@ -3393,6 +3420,4 @@ elif st.session_state.pagina == "presenze":
     mostra_presenze_adunanze()    
 else:
     mostra_home()
-
-
 
