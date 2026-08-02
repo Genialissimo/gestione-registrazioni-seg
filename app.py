@@ -1291,7 +1291,7 @@ def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafi
     for _, riga in df_anagrafica.iterrows():
         nome = str(riga.get("Cognome e Nome", "")).strip()
         gruppo = str(riga.get("Gruppo", "")).strip()
-        if nome and gruppo:
+        if nome and gruppo and gruppo.lower() != "trasferiti":
             nomi_per_gruppo.setdefault(gruppo, set()).add(nome)
 
     risultati = []
@@ -1406,7 +1406,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                                       formatta_numero_it(g["totale_ore"]),
                                       formatta_numero_it(g["totale_crediti"]),
                                       formatta_numero_it(g["totale_studi"])])
-                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}", "",
+                dati_tabella.append(["Media", f"Gruppo {g['gruppo']}", str(g["n_proclamatori"]),
                                       formatta_numero_it(g["media_ore"]),
                                       formatta_numero_it(g["media_crediti"]),
                                       formatta_numero_it(g["media_studi"])])
@@ -1417,7 +1417,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             riga_finale = len(dati_tabella)
             dati_tabella.append(["Totale finale", "", str(n_totale), formatta_numero_it(totale_ore_fin),
                                   formatta_numero_it(totale_cred_fin), formatta_numero_it(totale_studi_fin)])
-            dati_tabella.append(["Media finale", "", "",
+            dati_tabella.append(["Media finale", "", str(n_totale),
                                   formatta_numero_it(totale_ore_fin / n_totale if n_totale else 0.0),
                                   formatta_numero_it(totale_cred_fin / n_totale if n_totale else 0.0),
                                   formatta_numero_it(totale_studi_fin / n_totale if n_totale else 0.0)])
@@ -1439,6 +1439,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
                 stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
             tabella.setStyle(TableStyle(stile_righe))
+            tabella.hAlign = "LEFT"
             elementi.append(KeepTogether([tabella, Spacer(1, 3)]))
         doc.build(elementi)
         buf.seek(0)
