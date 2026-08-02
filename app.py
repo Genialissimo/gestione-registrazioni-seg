@@ -2152,9 +2152,10 @@ def mostra_anagrafiche():
 def mostra_riepilogo_attivita():
     st.title("📊 Riepilogo attività e statistiche")
 
-    if st.button("🏠", key="home_da_riepilogo", help="Torna alla Home"):
-        vai_a("home")
-        st.rerun()
+    if st.button("🏠", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True):
+    st.session_state["riepilogo_expander_aperto"] = False
+    vai_a("home")
+    st.rerun()
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -2182,10 +2183,11 @@ def mostra_riepilogo_attivita():
     )
 
     # ── Riepilogo attività (expander nativo: resta aperto durante l'uso) ──
-    with st.expander("📊 Riepilogo attività", expanded=True):
+        with st.expander("📊 Riepilogo attività", expanded=True, key="riepilogo_expander_aperto"):
         st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
                    "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
                    "spedire ai sorveglianti di gruppo.")
+
 
         periodo_scelto = st.radio("Periodo", ["12 mesi", "6 mesi"], horizontal=True,
                                    key="riepilogo_periodo")
