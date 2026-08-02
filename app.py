@@ -1403,15 +1403,18 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                                  leftMargin=1.3 * cm, rightMargin=1.3 * cm)
     stili = getSampleStyleSheet()
     elementi = []
+    stile_sottotitolo = stili["Normal"]
+    if comparazione_gruppi is not None:
+        stile_sottotitolo = ParagraphStyle("SottotitoloCentrato", parent=stili["Normal"], alignment=1)
 
     elementi.append(Paragraph("Attività dei proclamatori", stili["Title"]))
     sottotitolo = (f"Congregazione: {NOME_CONGREGAZIONE} · Periodo: {etichetta_periodo} · "
                    f"{etichetta_vista} - {etichetta_categoria}")
     if etichetta_gruppo:
         sottotitolo += f" · Gruppo: {etichetta_gruppo}"
-    elementi.append(Paragraph(sottotitolo, stili["Normal"]))
+    elementi.append(Paragraph(sottotitolo, stile_sottotitolo))
     if etichetta_dati_periodo:
-        elementi.append(Paragraph(etichetta_dati_periodo, stili["Normal"]))
+        elementi.append(Paragraph(etichetta_dati_periodo, stile_sottotitolo))
     elementi.append(Spacer(1, 14))
 
     if totali_per_categoria is not None:
@@ -1452,8 +1455,12 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     if comparazione_gruppi is not None:
         if not comparazione_gruppi:
             elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
+        larghezza_colonne_tabella = [2.1 * cm, 4.6 * cm, 1.1 * cm, 2.0 * cm, 2.0 * cm, 2.0 * cm]
+        larghezza_utile_pagina = A4[0] - doc.leftMargin - doc.rightMargin
+        rientro_categoria = max(0.0, (larghezza_utile_pagina - sum(larghezza_colonne_tabella)) / 2)
         stile_categoria = ParagraphStyle("CategoriaCompatta", parent=stili["Heading3"],
-                                          fontSize=9, spaceBefore=3, spaceAfter=1)
+                                          fontSize=9, spaceBefore=3, spaceAfter=1, alignment=0,
+                                          leftIndent=rientro_categoria)
         intestazione = ["", "Gruppo", "N.", "Ore", "Crediti", "Studi"]
         for blocco_cat in comparazione_gruppi:
             elementi.append(Paragraph(f"<b>{blocco_cat['categoria']}:</b>", stile_categoria))
@@ -1480,7 +1487,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                                   formatta_numero_it(totale_ore_fin / n_totale if n_totale else 0.0),
                                   formatta_numero_it(totale_cred_fin / n_totale if n_totale else 0.0),
                                   formatta_numero_it(totale_studi_fin / n_totale if n_totale else 0.0)])
-            tabella = Table(dati_tabella, colWidths=[2.1 * cm, 4.6 * cm, 1.1 * cm, 2.0 * cm, 2.0 * cm, 2.0 * cm])
+            tabella = Table(dati_tabella, colWidths=larghezza_colonne_tabella)
             stile_righe = [
                 ("FONTSIZE", (0, 0), (-1, -1), 7),
                 ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
@@ -1498,7 +1505,7 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
                 stile_righe.append(("GRID", (0, i), (-1, i + 1), 0.4, colors.grey))
             tabella.setStyle(TableStyle(stile_righe))
-            tabella.hAlign = "LEFT"
+            tabella.hAlign = "CENTER"
             elementi.append(KeepTogether([tabella, Spacer(1, 3)]))
         doc.build(elementi)
         buf.seek(0)
