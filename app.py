@@ -1094,6 +1094,62 @@ ETICHETTE_SINTETICO_CATEGORIA = {
 }
 
 
+def _riepilogo_mesi_nel_periodo(df_tutti: pd.DataFrame, periodo: str) -> list:
+    """Ritorna la lista ordinata (stringhe 'AAAA-MM') dei mesi per cui
+    esistono realmente dei rapporti nel foglio Tutti, all'interno della
+    finestra scelta (12 mesi = anno teocratico corrente, 6 mesi = ultimi 6
+    mesi con dati). Non filtra per categoria o gruppo: serve solo a sapere
+    quali mesi sono effettivamente coperti dal report, perché ad es. un
+    anno teocratico può includere mesi futuri per cui i rapporti non sono
+    ancora stati consegnati."""
+    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
+        return []
+    df = df_tutti.copy()
+    if periodo == "12 mesi":
+        oggi = datetime.now()
+        anno_teo_corrente = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+        df = df[df["Mese/Anno"].apply(lambda m: anno_teocratico_di(m) == anno_teo_corrente)]
+    elif periodo == "6 mesi":
+        ultimo = _riepilogo_ultimo_mese_con_dati(df_tutti)
+        if not ultimo:
+            return []
+        finestra = _riepilogo_finestra_ultimi_n_mesi(ultimo[0], ultimo[1], 6)
+
+        def _dentro(mese_anno):
+            try:
+                a, m = str(mese_anno).split("-")
+                return (int(a), int(m)) in finestra
+            except Exception:
+                return False
+
+        df = df[df["Mese/Anno"].apply(_dentro)]
+    return sorted({str(m) for m in df["Mese/Anno"].dropna().unique() if str(m).strip()})
+
+
+def _riepilogo_etichetta_dati_estratti(df_tutti: pd.DataFrame, periodo: str):
+    """Costruisce la riga 'Dati estratti (N mesi): primo – ultimo' da
+    mostrare separata dal 'Periodo' nel PDF, con l'intervallo di mesi
+    realmente presenti nei dati per la finestra scelta (utile perché un
+    anno teocratico può includere mesi futuri per cui i rapporti non sono
+    ancora stati consegnati). Ritorna None se non ci sono dati nel periodo."""
+    mesi = _riepilogo_mesi_nel_periodo(df_tutti, periodo)
+    if not mesi:
+        return None
+    n = len(mesi)
+
+    def _mese_anno_esteso(mese_anno: str) -> str:
+        try:
+            a, m = mese_anno.split("-")
+            return f"{MESI_ITALIANI.get(int(m), m)} {a}"
+        except Exception:
+            return mese_anno
+
+    primo, ultimo = _mese_anno_esteso(mesi[0]), _mese_anno_esteso(mesi[-1])
+    if primo == ultimo:
+        return f"Dati estratti (1 mese): {primo}"
+    return f"Dati estratti ({n} mesi): {primo} – {ultimo}"
+
+
 def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, periodo: str,
                             gruppo_scelto: str, categoria: str) -> pd.DataFrame:
     """Filtra il foglio Tutti per periodo, categoria (Tipo di servizio di
@@ -1327,7 +1383,8 @@ def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafi
 def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichetta_categoria: str,
                                    etichetta_gruppo: str = None, etichetta_vista: str = "Dettagliato",
                                    totali_per_categoria: list = None,
-                                   comparazione_gruppi: list = None) -> bytes:
+                                   comparazione_gruppi: list = None,
+                                   etichetta_dati_periodo: str = None) -> bytes:
     """Genera il PDF del Riepilogo attività: un documento libero (non un
     modulo prestampato) con un blocco per Proclamatore (vista Dettagliato)
     o un unico blocco per categoria (vista Sintetico) — mese, tipo di
@@ -1353,6 +1410,8 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
     if etichetta_gruppo:
         sottotitolo += f" · Gruppo: {etichetta_gruppo}"
     elementi.append(Paragraph(sottotitolo, stili["Normal"]))
+    if etichetta_dati_periodo:
+        elementi.append(Paragraph(etichetta_dati_periodo, stili["Normal"]))
     elementi.append(Spacer(1, 14))
 
     if totali_per_categoria is not None:
@@ -2241,12 +2300,14 @@ def mostra_riepilogo_attivita():
 
         if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
             with st.spinner("Genero il riepilogo…"):
+                etichetta_dati_periodo = _riepilogo_etichetta_dati_estratti(df_tutti, periodo_scelto)
                 if tipo_vista == "Sintetico compara gruppi":
                     comparazione = _riepilogo_totali_per_categoria_e_gruppo(df_tutti, df, periodo_scelto)
                     trovato_qualcosa = bool(comparazione)
                     pdf_bytes = genera_pdf_riepilogo_attivita(
                         [], periodo_scelto, categoria_scelta, None,
                         etichetta_vista=tipo_vista, comparazione_gruppi=comparazione,
+                        etichetta_dati_periodo=etichetta_dati_periodo,
                     )
                 elif tipo_vista == "Sintetico" and categoria_scelta == "Tutti":
                     df_periodo_gruppo = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto,
@@ -2257,6 +2318,7 @@ def mostra_riepilogo_attivita():
                         [], periodo_scelto, categoria_scelta,
                         gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
                         etichetta_vista=tipo_vista, totali_per_categoria=totali_categoria,
+                        etichetta_dati_periodo=etichetta_dati_periodo,
                     )
                 else:
                     df_filtrato = _riepilogo_filtra_dati(df_tutti, df, periodo_scelto, gruppo_scelto,
@@ -2269,7 +2331,7 @@ def mostra_riepilogo_attivita():
                     pdf_bytes = genera_pdf_riepilogo_attivita(
                         blocchi, periodo_scelto, categoria_scelta,
                         gruppo_scelto if gruppo_scelto != "Tutti i gruppi" else None,
-                        etichetta_vista=tipo_vista,
+                        etichetta_vista=tipo_vista, etichetta_dati_periodo=etichetta_dati_periodo,
                     )
             if not trovato_qualcosa:
                 st.warning("Nessun dato trovato per i filtri selezionati — il PDF generato sarà vuoto.")
