@@ -153,6 +153,9 @@ PERCORSO_MODULO_S21 = os.path.join(os.path.dirname(__file__), "S-21_s-Mlt_I.pdf"
 S21_PAGE_W, S21_PAGE_H = 595.2, 841.9
 S21_OFFSET_PANNELLO = 421.0  # distanza verticale tra il pannello alto e quello basso
 
+PERCORSO_MODULO_S88 = os.path.join(os.path.dirname(__file__), "S-88_I.pdf")
+S88_PAGE_W, S88_PAGE_H = 595.2, 841.9
+
 S21_ORDINE_MESI = ["Settembre", "Ottobre", "Novembre", "Dicembre", "Gennaio", "Febbraio",
                     "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto"]
 
@@ -2906,6 +2909,277 @@ def mostra_gruppi_servizio():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: Presenti alle adunanze
 # ─────────────────────────────────────────────────────────────────
+# MODULO S-88 (Registrazione dei presenti alle adunanze)
+# ─────────────────────────────────────────────────────────────────
+# Coordinate esatte (x0, y0, x1, y1) di ciascuna casella del modulo,
+# misurate sui campi del PDF originale. Sistema di coordinate nativo
+# PDF (origine in basso a sinistra), compatibile diretto con reportlab.
+# Blocchi 1/2 = sezione "Adunanza infrasettimanale" (1=anno precedente,
+# affiancato a sinistra; 2=anno corrente, a destra). Blocchi 3/4 = sezione
+# "Adunanza del fine settimana" (stessa logica). Mesi_1..12 = Settembre..Agosto.
+S88_CAMPI_RECT = {
+    "1-Attendance_1": (161.84, 694.2, 221.65, 713.04),
+    "1-Attendance_10": (161.84, 515.52, 221.65, 534.36),
+    "1-Attendance_11": (161.84, 495.72, 221.65, 514.56),
+    "1-Attendance_12": (161.84, 475.8, 221.65, 494.64),
+    "1-Attendance_2": (161.84, 674.28, 221.65, 693.12),
+    "1-Attendance_3": (161.84, 654.36, 221.65, 673.2),
+    "1-Attendance_4": (161.84, 634.56, 221.65, 653.4),
+    "1-Attendance_5": (161.84, 614.64, 221.65, 633.48),
+    "1-Attendance_6": (161.84, 594.84, 221.65, 613.68),
+    "1-Attendance_7": (161.84, 575.04, 221.65, 593.88),
+    "1-Attendance_8": (161.84, 555.24, 221.65, 574.08),
+    "1-Attendance_9": (161.84, 535.32, 221.65, 554.16),
+    "1-Average_1": (223.57, 694.2, 296.88, 713.04),
+    "1-Average_10": (223.57, 515.52, 296.88, 534.36),
+    "1-Average_11": (223.57, 495.72, 296.88, 514.56),
+    "1-Average_12": (223.57, 475.8, 296.88, 494.64),
+    "1-Average_2": (223.57, 674.28, 296.88, 693.12),
+    "1-Average_3": (223.57, 654.36, 296.88, 673.2),
+    "1-Average_4": (223.57, 634.56, 296.88, 653.4),
+    "1-Average_5": (223.57, 614.64, 296.88, 633.48),
+    "1-Average_6": (223.57, 594.84, 296.88, 613.68),
+    "1-Average_7": (223.57, 575.04, 296.88, 593.88),
+    "1-Average_8": (223.57, 555.24, 296.88, 574.08),
+    "1-Average_9": (223.57, 535.32, 296.88, 554.16),
+    "1-Average_Total": (223.57, 455.88, 296.88, 474.72),
+    "1-Meeting_1": (99.22, 694.2, 159.66, 713.04),
+    "1-Meeting_10": (99.22, 515.52, 159.66, 534.36),
+    "1-Meeting_11": (99.22, 495.72, 159.66, 514.56),
+    "1-Meeting_12": (99.22, 475.8, 159.66, 494.64),
+    "1-Meeting_2": (99.22, 674.28, 159.66, 693.12),
+    "1-Meeting_3": (99.22, 654.36, 159.66, 673.2),
+    "1-Meeting_4": (99.22, 634.56, 159.66, 653.4),
+    "1-Meeting_5": (99.22, 614.64, 159.66, 633.48),
+    "1-Meeting_6": (99.22, 594.84, 159.66, 613.68),
+    "1-Meeting_7": (99.22, 575.04, 159.66, 593.88),
+    "1-Meeting_8": (99.22, 555.24, 159.66, 574.08),
+    "1-Meeting_9": (99.22, 535.32, 159.66, 554.16),
+    "2-Attendance_1": (441.97, 694.2, 502.53, 713.04),
+    "2-Attendance_10": (441.97, 515.52, 502.53, 534.36),
+    "2-Attendance_11": (441.97, 495.72, 502.53, 514.56),
+    "2-Attendance_12": (441.97, 475.8, 502.53, 494.64),
+    "2-Attendance_2": (441.97, 674.28, 502.53, 693.12),
+    "2-Attendance_3": (441.97, 654.36, 502.53, 673.2),
+    "2-Attendance_4": (441.97, 634.56, 502.53, 653.4),
+    "2-Attendance_5": (441.97, 614.64, 502.53, 633.48),
+    "2-Attendance_6": (441.97, 594.84, 502.53, 613.68),
+    "2-Attendance_7": (441.97, 575.04, 502.53, 593.88),
+    "2-Attendance_8": (441.97, 555.24, 502.53, 574.08),
+    "2-Attendance_9": (441.97, 535.32, 502.53, 554.16),
+    "2-Average_1": (503.83, 694.2, 577.68, 713.04),
+    "2-Average_10": (503.83, 515.52, 577.68, 534.36),
+    "2-Average_11": (503.83, 495.72, 577.68, 514.56),
+    "2-Average_12": (503.83, 475.8, 577.68, 494.64),
+    "2-Average_2": (503.83, 674.28, 577.68, 693.12),
+    "2-Average_3": (503.83, 654.36, 577.68, 673.2),
+    "2-Average_4": (503.83, 634.56, 577.68, 653.4),
+    "2-Average_5": (503.83, 614.64, 577.68, 633.48),
+    "2-Average_6": (503.83, 594.84, 577.68, 613.68),
+    "2-Average_7": (503.83, 575.04, 577.68, 593.88),
+    "2-Average_8": (503.83, 555.24, 577.68, 574.08),
+    "2-Average_9": (503.83, 535.32, 577.68, 554.16),
+    "2-Average_Total": (503.83, 455.88, 577.68, 474.72),
+    "2-Meeting_1": (380.04, 694.2, 440.1, 713.04),
+    "2-Meeting_10": (380.04, 515.52, 440.1, 534.36),
+    "2-Meeting_11": (380.04, 495.72, 440.1, 514.56),
+    "2-Meeting_12": (380.04, 475.8, 440.1, 494.64),
+    "2-Meeting_2": (380.04, 674.28, 440.1, 693.12),
+    "2-Meeting_3": (380.04, 654.36, 440.1, 673.2),
+    "2-Meeting_4": (380.04, 634.56, 440.1, 653.4),
+    "2-Meeting_5": (380.04, 614.64, 440.1, 633.48),
+    "2-Meeting_6": (380.04, 594.84, 440.1, 613.68),
+    "2-Meeting_7": (380.04, 575.04, 440.1, 593.88),
+    "2-Meeting_8": (380.04, 555.24, 440.1, 574.08),
+    "2-Meeting_9": (380.04, 535.32, 440.1, 554.16),
+    "3-Attendance_1": (161.84, 345.24, 221.65, 364.08),
+    "3-Attendance_10": (161.84, 166.56, 221.65, 185.4),
+    "3-Attendance_11": (161.84, 146.76, 221.65, 165.6),
+    "3-Attendance_12": (161.84, 126.96, 221.65, 145.8),
+    "3-Attendance_2": (161.84, 325.32, 221.65, 344.16),
+    "3-Attendance_3": (161.84, 305.52, 221.65, 324.36),
+    "3-Attendance_4": (161.84, 285.6, 221.65, 304.44),
+    "3-Attendance_5": (161.84, 265.68, 221.65, 284.52),
+    "3-Attendance_6": (161.84, 245.88, 221.65, 264.72),
+    "3-Attendance_7": (161.84, 226.08, 221.65, 244.92),
+    "3-Attendance_8": (161.84, 206.28, 221.65, 225.12),
+    "3-Attendance_9": (161.84, 186.36, 221.65, 205.2),
+    "3-Average_1": (223.57, 345.24, 296.88, 364.08),
+    "3-Average_10": (223.57, 166.56, 296.88, 185.4),
+    "3-Average_11": (223.57, 146.76, 296.88, 165.6),
+    "3-Average_12": (223.57, 126.96, 296.88, 145.8),
+    "3-Average_2": (223.57, 325.32, 296.88, 344.16),
+    "3-Average_3": (223.57, 305.52, 296.88, 324.36),
+    "3-Average_4": (223.57, 285.6, 296.88, 304.44),
+    "3-Average_5": (223.57, 265.68, 296.88, 284.52),
+    "3-Average_6": (223.57, 245.88, 296.88, 264.72),
+    "3-Average_7": (223.57, 226.08, 296.88, 244.92),
+    "3-Average_8": (223.57, 206.28, 296.88, 225.12),
+    "3-Average_9": (223.57, 186.36, 296.88, 205.2),
+    "3-Average_Total": (223.57, 106.92, 296.88, 125.76),
+    "3-Meeting_1": (99.22, 345.24, 159.66, 364.08),
+    "3-Meeting_10": (99.22, 166.56, 159.66, 185.4),
+    "3-Meeting_11": (99.22, 146.76, 159.66, 165.6),
+    "3-Meeting_12": (99.22, 126.96, 159.66, 145.8),
+    "3-Meeting_2": (99.22, 325.32, 159.66, 344.16),
+    "3-Meeting_3": (99.22, 305.52, 159.66, 324.36),
+    "3-Meeting_4": (99.22, 285.6, 159.66, 304.44),
+    "3-Meeting_5": (99.22, 265.68, 159.66, 284.52),
+    "3-Meeting_6": (99.22, 245.88, 159.66, 264.72),
+    "3-Meeting_7": (99.22, 226.08, 159.66, 244.92),
+    "3-Meeting_8": (99.22, 206.28, 159.66, 225.12),
+    "3-Meeting_9": (99.22, 186.36, 159.66, 205.2),
+    "4-Attendance_1": (441.97, 345.24, 502.53, 364.08),
+    "4-Attendance_10": (441.97, 166.56, 502.53, 185.4),
+    "4-Attendance_11": (441.97, 146.76, 502.53, 165.6),
+    "4-Attendance_12": (441.97, 126.96, 502.53, 145.8),
+    "4-Attendance_2": (441.97, 325.32, 502.53, 344.16),
+    "4-Attendance_3": (441.97, 305.52, 502.53, 324.36),
+    "4-Attendance_4": (441.97, 285.6, 502.53, 304.44),
+    "4-Attendance_5": (441.97, 265.68, 502.53, 284.52),
+    "4-Attendance_6": (441.97, 245.88, 502.53, 264.72),
+    "4-Attendance_7": (441.97, 226.08, 502.53, 244.92),
+    "4-Attendance_8": (441.97, 206.28, 502.53, 225.12),
+    "4-Attendance_9": (441.97, 186.36, 502.53, 205.2),
+    "4-Average_1": (503.83, 345.24, 577.68, 364.08),
+    "4-Average_10": (503.83, 166.56, 577.68, 185.4),
+    "4-Average_11": (503.83, 146.76, 577.68, 165.6),
+    "4-Average_12": (503.83, 126.13, 577.68, 144.97),
+    "4-Average_2": (503.83, 325.32, 577.68, 344.16),
+    "4-Average_3": (503.83, 305.52, 577.68, 324.36),
+    "4-Average_4": (503.83, 285.6, 577.68, 304.44),
+    "4-Average_5": (503.83, 265.68, 577.68, 284.52),
+    "4-Average_6": (503.83, 245.88, 577.68, 264.72),
+    "4-Average_7": (503.83, 226.08, 577.68, 244.92),
+    "4-Average_8": (503.83, 205.45, 577.68, 224.29),
+    "4-Average_9": (503.83, 186.36, 577.68, 205.2),
+    "4-Average_Total": (503.83, 106.92, 577.68, 125.76),
+    "4-Meeting_1": (380.04, 345.24, 440.1, 364.08),
+    "4-Meeting_10": (380.04, 166.56, 440.1, 185.4),
+    "4-Meeting_11": (380.04, 146.76, 440.1, 165.6),
+    "4-Meeting_12": (380.04, 126.96, 440.1, 145.8),
+    "4-Meeting_2": (380.04, 325.32, 440.1, 344.16),
+    "4-Meeting_3": (380.04, 305.52, 440.1, 324.36),
+    "4-Meeting_4": (380.04, 285.6, 440.1, 304.44),
+    "4-Meeting_5": (380.04, 265.68, 440.1, 284.52),
+    "4-Meeting_6": (380.04, 245.88, 440.1, 264.72),
+    "4-Meeting_7": (380.04, 226.08, 440.1, 244.92),
+    "4-Meeting_8": (380.04, 206.28, 440.1, 225.12),
+    "4-Meeting_9": (380.04, 186.36, 440.1, 205.2),
+    "Service Year_1": (18.84, 714.12, 97.92, 735.84),
+    "Service Year_2": (299.28, 714.12, 378.36, 735.84),
+    "Service Year_3": (18.84, 365.16, 97.92, 386.76),
+    "Service Year_4": (299.28, 365.16, 378.36, 386.76),
+}
+
+S88_MESI_ORDINE_SERVIZIO = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]  # Settembre..Agosto
+
+
+def _s88_testo_centrato(c: rl_canvas.Canvas, testo: str, rect: tuple,
+                         font_name: str = "Helvetica", font_size: float = 9.0):
+    """Scrive 'testo' perfettamente centrato (orizzontale e verticale)
+    dentro una casella le cui coordinate (x0, y0, x1, y1) sono in sistema
+    PDF nativo (origine in basso), come i campi del modulo S-88. Stessa
+    tecnica di centratura usata per le cartoline S-21."""
+    x0, y0, x1, y1 = rect
+    largo_testo = c.stringWidth(testo, font_name, font_size)
+    x = (x0 + x1) / 2 - largo_testo / 2
+    fattore_altezza = 0.32  # approssimazione per centrare verticalmente la baseline
+    y = (y0 + y1) / 2 - (font_size * fattore_altezza)
+    c.setFont(font_name, font_size)
+    c.drawString(x, y, testo)
+
+
+def _s88_calcola_dati(df_presenze: pd.DataFrame, tipo_adunanza: str, anno_teocratico: int) -> dict:
+    """Calcola, per ciascuno dei 12 mesi dell'anno di servizio indicato
+    (Settembre anno_teocratico -> Agosto anno_teocratico+1), il numero di
+    adunanze, il totale dei presenti e la media settimanale, per il tipo
+    di adunanza scelto ('Infrasettimanale' o 'Fine settimana'). Ritorna
+    anche la media mensile finale (media aritmetica delle medie settimanali
+    dei soli mesi con almeno un'adunanza registrata)."""
+    df = df_presenze.copy()
+    df["_dt"] = pd.to_datetime(df["Data"], format="%d/%m/%Y", errors="coerce")
+    df = df.dropna(subset=["_dt"])
+    df["_presenza_num"] = df["In Presenza"].apply(a_float_it)
+    df["_zoom_num"] = df["Su Zoom"].apply(a_float_it)
+    if "Totale" in df.columns:
+        df["_totale_num"] = df["Totale"].apply(a_float_it)
+    else:
+        df["_totale_num"] = df["_presenza_num"] + df["_zoom_num"]
+    df = df[df["Tipo Adunanza"] == tipo_adunanza]
+
+    mesi = []
+    medie_valide = []
+    for mese in S88_MESI_ORDINE_SERVIZIO:
+        anno_calendario = anno_teocratico if mese >= 9 else anno_teocratico + 1
+        sotto = df[(df["_dt"].dt.year == anno_calendario) & (df["_dt"].dt.month == mese)]
+        n = len(sotto)
+        totale = sotto["_totale_num"].sum()
+        media = (totale / n) if n else None
+        mesi.append({"numero": n, "totale": totale, "media": media})
+        if media is not None:
+            medie_valide.append(media)
+    media_finale = (sum(medie_valide) / len(medie_valide)) if medie_valide else None
+    return {"mesi": mesi, "media_finale": media_finale}
+
+
+def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
+    """Genera il modulo S-88 compilato con i dati dell'anno di servizio
+    corrente e di quello precedente (rilevati automaticamente dalla data
+    odierna), sia per le adunanze infrasettimanali che per quelle del fine
+    settimana. I numeri sono disegnati centrati in ogni casella (stessa
+    tecnica delle cartoline S-21), non inseriti come valori di campo
+    modulo (il PDF originale ha un riferimento a un font mancante che
+    manda in errore il riempimento automatico dei campi)."""
+    oggi = datetime.now()
+    anno_corrente = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
+    anno_precedente = anno_corrente - 1
+    etichetta_corrente = f"{anno_corrente}-{anno_corrente + 1}"
+    etichetta_precedente = f"{anno_precedente}-{anno_precedente + 1}"
+
+    # 1/3 = anno precedente (colonna sinistra), 2/4 = anno corrente (colonna destra)
+    mappa_blocchi = {
+        1: ("Infrasettimanale", anno_precedente, etichetta_precedente),
+        2: ("Infrasettimanale", anno_corrente, etichetta_corrente),
+        3: ("Fine settimana", anno_precedente, etichetta_precedente),
+        4: ("Fine settimana", anno_corrente, etichetta_corrente),
+    }
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=(S88_PAGE_W, S88_PAGE_H))
+    for blocco, (tipo, anno, etichetta_anno) in mappa_blocchi.items():
+        rect_anno = S88_CAMPI_RECT.get(f"Service Year_{blocco}")
+        if rect_anno:
+            _s88_testo_centrato(c, etichetta_anno, rect_anno, "Helvetica-Bold", 10.0)
+
+        dati = _s88_calcola_dati(df_presenze, tipo, anno)
+        for i, dati_mese in enumerate(dati["mesi"], start=1):
+            if dati_mese["numero"] > 0:
+                _s88_testo_centrato(c, str(dati_mese["numero"]), S88_CAMPI_RECT[f"{blocco}-Meeting_{i}"])
+                _s88_testo_centrato(c, str(int(dati_mese["totale"])), S88_CAMPI_RECT[f"{blocco}-Attendance_{i}"])
+                _s88_testo_centrato(c, formatta_numero_it(dati_mese["media"]), S88_CAMPI_RECT[f"{blocco}-Average_{i}"])
+        if dati["media_finale"] is not None:
+            _s88_testo_centrato(c, formatta_numero_it(dati["media_finale"]),
+                                 S88_CAMPI_RECT[f"{blocco}-Average_Total"], "Helvetica-Bold", 9.5)
+    c.save()
+    buf.seek(0)
+
+    overlay_reader = PdfReader(buf)
+    template_reader = PdfReader(PERCORSO_MODULO_S88)
+    writer = PdfWriter()
+
+    pagina = template_reader.pages[0]
+    pagina.merge_page(overlay_reader.pages[0])
+    if "/Annots" in pagina:
+        del pagina["/Annots"]  # rimuove le caselle modulo originali (vuote sotto il testo disegnato)
+    writer.add_page(pagina)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────
 def _form_modifica_presenza(dati_selezione: dict):
     """Form di modifica di una riga del foglio 'Presenze Adunanze'."""
     riga = dati_selezione["riga"]
@@ -2991,6 +3265,26 @@ def mostra_presenze_adunanze():
     if df.empty:
         st.info("Nessuna presenza registrata ancora.")
         return
+
+    # ── Genera modulo S-88 ────────────────────────────────────────────
+    if not os.path.exists(PERCORSO_MODULO_S88):
+        st.warning("Modulo S-88 non trovato: metti il file «S-88_I.pdf» nella stessa cartella di app.py "
+                   "per poterlo generare.")
+    else:
+        if st.button("📄 Genera modulo S-88", key="genera_s88", use_container_width=True):
+            with st.spinner("Genero il modulo S-88…"):
+                st.session_state.s88_pdf_pronto = genera_pdf_s88(df)
+
+        if st.session_state.get("s88_pdf_pronto"):
+            st.download_button(
+                "⬇️ Scarica modulo S-88 (PDF)",
+                data=st.session_state.s88_pdf_pronto,
+                file_name="Modulo_S-88.pdf",
+                mime="application/pdf",
+                key="download_s88",
+                use_container_width=True,
+                on_click=lambda: st.session_state.pop("s88_pdf_pronto", None),
+            )
 
     # ── 1. PREPARAZIONE DATI E CREAZIONE MENU MESI ──
     df_prep = df.copy()
@@ -3496,4 +3790,3 @@ elif st.session_state.pagina == "presenze":
     mostra_presenze_adunanze()    
 else:
     mostra_home()
-
