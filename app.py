@@ -3,7 +3,7 @@ app.py
 Gestione Registrazioni SEG - Web App (Streamlit + Google Sheets)
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import os
 import re
@@ -102,6 +102,74 @@ RIGA_INTESTAZIONE_RISPOSTE = 9
 NOME_FOGLIO_PRESENZE = "Presenze Adunanze"
 RIGA_INTESTAZIONE_PRESENZE = 1
 TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
+
+# ── Impostazioni configurabili (es. giorni in cui si tengono le adunanze) ──
+# Foglio con due colonne: "Chiave" (A) e "Valore" (B). Se il foglio non
+# esiste ancora, va creato a mano nel documento Google con queste due
+# intestazioni in A1/B1 — vale lo stesso principio degli altri fogli.
+NOME_FOGLIO_IMPOSTAZIONI = "Impostazioni"
+RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
+CHIAVE_GIORNI_ADUNANZE = "Giorni Adunanze"
+GIORNI_SETTIMANA_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+GIORNI_ADUNANZE_DEFAULT = ["Giovedì", "Domenica"]
+
+
+def leggi_giorni_adunanze(_workbook) -> list:
+    """Legge dal foglio 'Impostazioni' i giorni della settimana in cui si
+    tengono le adunanze. Se il foglio non esiste, non è ancora stato
+    impostato, o c'è un problema di lettura, usa il default (Giovedì e
+    Domenica) senza far fallire nulla: le impostazioni sono opzionali."""
+    if _workbook is None:
+        return list(GIORNI_ADUNANZE_DEFAULT)
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
+        valori = ws.get_all_values()
+        for riga in valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]:
+            if len(riga) >= 2 and riga[0].strip().lower() == CHIAVE_GIORNI_ADUNANZE.lower():
+                giorni = [g.strip() for g in riga[1].split(",") if g.strip()]
+                giorni_validi = [g for g in giorni if g in GIORNI_SETTIMANA_IT]
+                if giorni_validi:
+                    return giorni_validi
+    except Exception:
+        pass
+    return list(GIORNI_ADUNANZE_DEFAULT)
+
+
+def salva_giorni_adunanze(_workbook, giorni: list):
+    """Salva (o crea) la riga 'Giorni Adunanze' nel foglio 'Impostazioni'.
+    Ritorna (successo, errore)."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
+    except Exception:
+        return False, (f"Il foglio «{NOME_FOGLIO_IMPOSTAZIONI}» non esiste ancora nel documento Google. "
+                       f"Creane uno con questo nome esatto e metti «Chiave» in A1 e «Valore» in B1, poi riprova.")
+    try:
+        valori = ws.get_all_values()
+        valore_str = ",".join(giorni)
+        for i, riga in enumerate(valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:],
+                                  start=RIGA_INTESTAZIONE_IMPOSTAZIONI + 1):
+            if len(riga) >= 1 and riga[0].strip().lower() == CHIAVE_GIORNI_ADUNANZE.lower():
+                ws.update_cell(i, 2, valore_str)
+                return True, None
+        ws.append_row([CHIAVE_GIORNI_ADUNANZE, valore_str], value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante il salvataggio: {e}"
+
+
+def _prossima_data_valida_precedente(data_scelta, giorni_validi: list):
+    """Se 'data_scelta' cade in uno dei giorni della settimana validi,
+    ritorna (True, None). Altrimenti ritorna (False, data_proposta) con la
+    data valida più recente PRIMA di quella scelta (tornando indietro nel
+    calendario giorno per giorno)."""
+    nome_giorno = GIORNI_SETTIMANA_IT[data_scelta.weekday()]
+    if nome_giorno in giorni_validi:
+        return True, None
+    for delta in range(1, 8):
+        candidata = data_scelta - timedelta(days=delta)
+        if GIORNI_SETTIMANA_IT[candidata.weekday()] in giorni_validi:
+            return False, candidata
+    return False, None  # nessun giorno valido configurato (caso limite)
 
 NOME_FOGLIO_ANAGRAFICA = "Anagrafica"
 RIGA_INTESTAZIONE_ANAGRAFICA = 1
@@ -1905,13 +1973,14 @@ def mostra_home():
         ("📊", "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
         ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
         ("📥", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
+        ("⚙️", "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
     riga3 = st.columns(2)
     riga4 = st.columns(2)
     riga5 = st.columns(2)
-    colonne = riga1 + riga2 + riga3 + riga4+ riga5
+    colonne = riga1 + riga2 + riga3 + riga4 + riga5
     for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
@@ -3393,47 +3462,75 @@ def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
 
 
 # ─────────────────────────────────────────────────────────────────
+def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
+                          presenza_default: int, zoom_default: int, giorni_validi: list):
+    """Disegna i campi Data / Tipo adunanza / In presenza / Su Zoom (FUORI
+    da un st.form, apposta: serve per validare la data e ricalcolare il
+    Totale in tempo reale a ogni modifica, cosa che un st.form non
+    permette perché aggiorna solo al submit). Mostra un avviso con la data
+    valida più vicina se quella scelta non cade in un giorno di adunanza
+    configurato. Ritorna (data_scelta, tipo_adunanza, in_presenza, su_zoom,
+    totale, data_valida: bool)."""
+    data_scelta = st.date_input("Data", value=data_default, format="DD/MM/YYYY",
+                                 key=f"{chiave_prefix}_data")
+    indice_tipo = TIPI_ADUNANZA.index(tipo_default) if tipo_default in TIPI_ADUNANZA else 0
+    tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, index=indice_tipo,
+                                  key=f"{chiave_prefix}_tipo")
+
+    data_valida, data_proposta = _prossima_data_valida_precedente(data_scelta, giorni_validi)
+    if not data_valida:
+        if data_proposta is not None:
+            testo_giorni = " o ".join(giorni_validi)
+            st.error(f"⚠️ Data selezionata non valida: le adunanze si tengono di {testo_giorni}. "
+                     f"Data valida più vicina: **{data_proposta.strftime('%d/%m/%Y')} "
+                     f"({GIORNI_SETTIMANA_IT[data_proposta.weekday()]})**.")
+            if st.button("📅 Usa la data proposta", key=f"{chiave_prefix}_usa_proposta"):
+                st.session_state[f"{chiave_prefix}_data"] = data_proposta
+                st.rerun()
+        else:
+            st.warning("Nessun giorno di adunanza configurato — impostalo nella card ⚙️ Impostazioni "
+                       "in Home per attivare il controllo sulla data.")
+
+    col_p, col_z = st.columns(2)
+    with col_p:
+        in_presenza = st.number_input("In presenza", min_value=0, step=1, value=presenza_default,
+                                       key=f"{chiave_prefix}_presenza")
+    with col_z:
+        su_zoom = st.number_input("Su Zoom", min_value=0, step=1, value=zoom_default,
+                                   key=f"{chiave_prefix}_zoom")
+
+    totale = int(in_presenza) + int(su_zoom)
+    st.metric("Totale (calcolato)", totale)
+
+    return data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida
+
+
 def _form_modifica_presenza(dati_selezione: dict):
     """Form di modifica di una riga del foglio 'Presenze Adunanze'."""
     riga = dati_selezione["riga"]
     numero_riga_foglio = dati_selezione["numero_riga_foglio"]
 
     st.markdown("#### ✏️ Modifica presenza")
-    
+
     try:
-        data_default = datetime.strptime(str(riga.get("Data", "")), "%d/%m/%Y")
+        data_default = datetime.strptime(str(riga.get("Data", "")), "%d/%m/%Y").date()
     except Exception:
-        data_default = datetime.now()
+        data_default = datetime.now().date()
 
-    tipo_val = riga.get("Tipo Adunanza", "")
-    indice_tipo = TIPI_ADUNANZA.index(tipo_val) if tipo_val in TIPI_ADUNANZA else 0
+    giorni_validi = leggi_giorni_adunanze(workbook)
+    chiave_prefix = f"presenze_mod_{numero_riga_foglio}"
+    data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
+        chiave_prefix, data_default, riga.get("Tipo Adunanza", ""),
+        int(a_float_it(riga.get("In Presenza", "0"))), int(a_float_it(riga.get("Su Zoom", "0"))),
+        giorni_validi,
+    )
 
-    with st.form("form_modifica_presenza", clear_on_submit=False):
-        data_adunanza = st.date_input("Data", value=data_default, format="DD/MM/YYYY")
-        tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, index=indice_tipo)
-        
-        col_p, col_z = st.columns(2)
-        with col_p:
-            in_presenza = st.number_input(
-                "In presenza", min_value=0, step=1, 
-                value=int(a_float_it(riga.get("In Presenza", "0")))
-            )
-        with col_z:
-            su_zoom = st.number_input(
-                "Su Zoom", min_value=0, step=1, 
-                value=int(a_float_it(riga.get("Su Zoom", "0")))
-            )
-        
-        totale = st.number_input(
-            "Totale", min_value=0, step=1, 
-            value=int(a_float_it(riga.get("Totale", "0")))
-        )
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
-        with col_btn2:
-            annulla = st.form_submit_button(" Annulla", use_container_width=True)
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        invia = st.button("✔ Salva", type="primary", use_container_width=True,
+                          disabled=not data_valida, key=f"{chiave_prefix}_salva")
+    with col_btn2:
+        annulla = st.button("✖ Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
 
     if annulla:
         st.session_state.presenze_modifica = None
@@ -3441,7 +3538,7 @@ def _form_modifica_presenza(dati_selezione: dict):
 
     if invia:
         valori = {
-            "Data": data_adunanza.strftime("%d/%m/%Y"),
+            "Data": data_scelta.strftime("%d/%m/%Y"),
             "Tipo Adunanza": tipo_adunanza,
             "In Presenza": str(int(in_presenza)),
             "Su Zoom": str(int(su_zoom)),
@@ -3709,31 +3806,30 @@ def _form_nuova_presenza():
     (data, tipo adunanza, presenti in sala/su Zoom, totale)."""
     st.markdown("#### ➕ Inserisci presenti alle adunanze")
 
-    with st.form("form_nuova_presenza", clear_on_submit=True):
-        data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
-        tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
+    giorni_validi = leggi_giorni_adunanze(workbook)
+    data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
+        "presenze_nuovo", datetime.now().date(), TIPI_ADUNANZA[0], 0, 0, giorni_validi,
+    )
 
-        col_p, col_z = st.columns(2)
-        with col_p:
-            in_presenza = st.number_input("In presenza", min_value=0, step=1, value=0)
-        with col_z:
-            su_zoom = st.number_input("Su Zoom", min_value=0, step=1, value=0)
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        invia = st.button("✔ Salva", type="primary", use_container_width=True,
+                          disabled=not data_valida, key="presenze_nuovo_salva")
+    with col_btn2:
+        annulla = st.button("✖ Annulla", use_container_width=True, key="presenze_nuovo_annulla")
 
-        totale = st.number_input("Totale", min_value=0, step=1, value=0)
-
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
-        with col_btn2:
-            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
+    def _pulisci_campi_nuovo():
+        for suffisso in ("_data", "_tipo", "_presenza", "_zoom"):
+            st.session_state.pop(f"presenze_nuovo{suffisso}", None)
 
     if annulla:
         st.session_state.presenze_form_nuovo_aperto = False
+        _pulisci_campi_nuovo()
         st.rerun()
 
     if invia:
         valori = {
-            "Data": data_adunanza.strftime("%d/%m/%Y"),
+            "Data": data_scelta.strftime("%d/%m/%Y"),
             "Tipo Adunanza": tipo_adunanza,
             "In Presenza": str(int(in_presenza)),
             "Su Zoom": str(int(su_zoom)),
@@ -3743,10 +3839,45 @@ def _form_nuova_presenza():
         if ok:
             st.cache_data.clear()
             st.session_state.presenze_form_nuovo_aperto = False
+            _pulisci_campi_nuovo()
             st.success("✔ Presenza inserita correttamente.")
             st.rerun()
         else:
             st.error(err_salva)
+
+
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: IMPOSTAZIONI
+# ─────────────────────────────────────────────────────────────────
+def mostra_impostazioni():
+    st.title("⚙️ Impostazioni")
+    if st.button("🏠 Torna alla Home", key="home_da_impostazioni", use_container_width=True):
+        vai_a("home")
+        st.rerun()
+
+    if not collegato:
+        st.warning("⚠️ Nessun foglio dati collegato.")
+        return
+
+    st.subheader("📅 Giorni delle adunanze")
+    st.caption("Usati per controllare che la data inserita in «Presenti alle adunanze» sia corretta. "
+               "Se cambiano in futuro, aggiornali qui — non serve toccare il codice del programma.")
+
+    giorni_attuali = leggi_giorni_adunanze(workbook)
+    giorni_scelti = st.multiselect("Giorni in cui si tengono le adunanze", GIORNI_SETTIMANA_IT,
+                                    default=giorni_attuali, key="impostazioni_giorni_adunanze")
+
+    if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
+                disabled=not giorni_scelti):
+        ok, err_salva = salva_giorni_adunanze(workbook, giorni_scelti)
+        if ok:
+            st.cache_data.clear()
+            st.success("✔ Giorni delle adunanze aggiornati.")
+        else:
+            st.error(err_salva)
+
+    if not giorni_scelti:
+        st.info("Seleziona almeno un giorno.")
 
 
 def mostra_presenze_adunanze():
@@ -4346,5 +4477,7 @@ elif st.session_state.pagina == "presenze":
     mostra_presenze_adunanze()    
 elif st.session_state.pagina == "importa_s21":
     mostra_importa_s21()
+elif st.session_state.pagina == "Configurazioni":
+    mostra_impostazioni()
 else:
     mostra_home()
