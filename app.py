@@ -1895,6 +1895,7 @@ def mostra_home():
             badge_rapporti = ""
 
 st.subheader("Sezioni")
+
 card_data = [
     ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
     ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
@@ -1906,6 +1907,21 @@ card_data = [
     ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
     ("📥", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
 ]
+
+riga1 = st.columns(2)
+riga2 = st.columns(2)
+riga3 = st.columns(2)
+riga4 = st.columns(2)
+riga5 = st.columns(2)  # Aggiunta per coprire la 9ª card
+colonne = riga1 + riga2 + riga3 + riga4 + riga5
+
+for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
+    with col:
+        with st.container(border=True):
+            st.markdown(f"#### {icon}  {titolo}{badge}", unsafe_allow_html=True)
+            st.caption(desc)
+            st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
+                      use_container_width=True, on_click=vai_a, args=(pagina,))
 
 # Genera le colonne a blocchi di 2 in modo dinamico
 num_cols = 2
