@@ -107,7 +107,7 @@ TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 # Foglio con due colonne: "Chiave" (A) e "Valore" (B). Se il foglio non
 # esiste ancora, va creato a mano nel documento Google con queste due
 # intestazioni in A1/B1 — vale lo stesso principio degli altri fogli.
-NOME_FOGLIO_IMPOSTAZIONI = "Configurazioni"
+NOME_FOGLIO_IMPOSTAZIONI = "Impostazioni"
 RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
 CHIAVE_GIORNI_ADUNANZE = "Giorni Adunanze"
 GIORNI_SETTIMANA_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
@@ -136,7 +136,7 @@ def leggi_giorni_adunanze(_workbook) -> list:
 
 
 def salva_giorni_adunanze(_workbook, giorni: list):
-    """Salva (o crea) la riga 'Giorni Adunanze' nel foglio 'Configurazioni'.
+    """Salva (o crea) la riga 'Giorni Adunanze' nel foglio 'Impostazioni'.
     Ritorna (successo, errore)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
@@ -4477,7 +4477,7 @@ elif st.session_state.pagina == "presenze":
     mostra_presenze_adunanze()    
 elif st.session_state.pagina == "importa_s21":
     mostra_importa_s21()
-elif st.session_state.pagina == "Configurazioni":
+elif st.session_state.pagina == "impostazioni":
     mostra_impostazioni()
 else:
     mostra_home()
