@@ -6,6 +6,7 @@ Gestione Registrazioni SEG - Web App (Streamlit + Google Sheets)
 from datetime import datetime
 import io
 import os
+import re
 import zipfile
 
 import pandas as pd
@@ -14,6 +15,7 @@ from streamlit_gsheets import GSheetsConnection
 
 import gspread
 from google.oauth2.service_account import Credentials
+import pdfplumber
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
@@ -99,7 +101,7 @@ RIGA_INTESTAZIONE_RISPOSTE = 9
 
 NOME_FOGLIO_PRESENZE = "Presenze Adunanze"
 RIGA_INTESTAZIONE_PRESENZE = 1
-TIPI_ADUNANZA = ["Adunanza infrasettimanale", "Adunanza del fine settimana"]
+TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 
 NOME_FOGLIO_ANAGRAFICA = "Anagrafica"
 RIGA_INTESTAZIONE_ANAGRAFICA = 1
@@ -886,6 +888,215 @@ def _s21_nome_file_sicuro(nome: str) -> str:
     (Windows e Dropbox in particolare non ammettono \\ / : * ? " < > |)."""
     nome_pulito = "".join(c for c in nome if c not in '\\/:*?"<>|').strip()
     return nome_pulito or "Senza_nome"
+
+
+# ─────────────────────────────────────────────────────────────────
+# IMPORTAZIONE S-21 RICEVUTA (da altra congregazione)
+# ─────────────────────────────────────────────────────────────────
+# Legge un modulo S-21 già compilato (ricevuto da un'altra congregazione al
+# trasferimento di un Proclamatore) usando ESATTAMENTE le stesse coordinate
+# con cui il nostro programma scrive le cartoline, ma al contrario: invece
+# di disegnare testo in quelle posizioni, ritaglia quelle posizioni e legge
+# il testo che vi si trova. Funziona solo se il PDF ha un vero livello di
+# testo (compilato al computer); se è una scansione/foto di un modulo
+# compilato a mano non c'è testo da estrarre — in quel caso lo segnaliamo
+# e l'inserimento va fatto a mano guardando l'immagine.
+
+def _s21_ripulisci_data(testo: str) -> str:
+    """Toglie l'eventuale età tra parentesi che potrebbe finire nel
+    ritaglio insieme alla data (es. '12/05/1990 (35)' o '12/05/1990
+    (35,2)' -> '12/05/1990')."""
+    return re.sub(r"\s*\([\d,\.]+\)\s*$", "", testo or "").strip()
+
+
+def _s21_estrai_dati_pdf(sorgente) -> dict:
+    """Estrae dal PDF sorgente (percorso o file-like) i dati dei due
+    pannelli del modulo S-21. Ritorna {'testo_rilevato': bool, 'pannelli':
+    [dict, dict]}. 'testo_rilevato' è False se non è stato letto nessun
+    valore in nessuna casella dati di nessuno dei due pannelli (probabile
+    scansione/foto senza livello di testo)."""
+    pannelli = []
+    almeno_un_valore = False
+
+    with pdfplumber.open(sorgente) as pdf:
+        pagina = pdf.pages[0]
+
+        def testo_in(x0: float, x1: float, top: float, bottom: float) -> str:
+            nonlocal almeno_un_valore
+            top_r = max(0.0, min(S21_PAGE_H, top))
+            bottom_r = max(0.0, min(S21_PAGE_H, bottom))
+            x0_r = max(0.0, min(S21_PAGE_W, x0))
+            x1_r = max(0.0, min(S21_PAGE_W, x1))
+            if top_r >= bottom_r or x0_r >= x1_r:
+                return ""
+            ritaglio = pagina.crop((x0_r, top_r, x1_r, bottom_r))
+            testo_grezzo = (ritaglio.extract_text() or "").strip()
+            # Il template ha un carattere "fantasma" (cid:N) in OGNI casella
+            # della tabella, anche vuota (probabile glifo decorativo del
+            # quadratino): va tolto per non falsare né i valori letti né il
+            # rilevamento "c'è del testo vero qui dentro".
+            testo = re.sub(r"\(cid:\d+\)", "", testo_grezzo).strip()
+            if testo:
+                almeno_un_valore = True
+            return testo
+
+        def casella_marcata(box: tuple, offset: float) -> bool:
+            x0, x1, top, bottom = box
+            return bool(testo_in(x0, x1, top + offset, bottom + offset))
+
+        for offset in (0.0, S21_OFFSET_PANNELLO):
+            nome = testo_in(116, 380, 51.5 - 9 + offset, 51.5 + 3 + offset)
+            data_nascita = _s21_ripulisci_data(testo_in(104, 260, 65.9 - 9 + offset, 65.9 + 3 + offset))
+            data_battesimo = _s21_ripulisci_data(testo_in(125, 260, 80.4 - 9 + offset, 80.4 + 3 + offset))
+            anno_testo = testo_in(*S21_COL_ANNO_SERVIZIO, S21_ANNO_LABEL_TOP - 9 + offset,
+                                   S21_ANNO_LABEL_TOP + 3 + offset)
+
+            sesso = "M" if casella_marcata(S21_BOX_SESSO_M, offset) else (
+                "F" if casella_marcata(S21_BOX_SESSO_F, offset) else "")
+            classe_spirituale = "Unto" if casella_marcata(S21_BOX_UNTO, offset) else (
+                "Altre pecore" if casella_marcata(S21_BOX_ALTRE_PECORE, offset) else "")
+            incarico = "Anziano" if casella_marcata(S21_BOX_ANZIANO, offset) else (
+                "Servitore di ministero" if casella_marcata(S21_BOX_SERVITORE, offset) else "")
+            if casella_marcata(S21_BOX_PIONIERE_REGOLARE, offset):
+                tipo = "Pioniere Regolare"
+            elif casella_marcata(S21_BOX_PIONIERE_SPECIALE, offset):
+                tipo = "Pioniere speciale"
+            elif casella_marcata(S21_BOX_MISSIONARIO, offset):
+                tipo = "Missionario sul campo"
+            else:
+                tipo = ""
+
+            mesi = {}
+            for mese in S21_ORDINE_MESI:
+                top, bottom = S21_RIGHE[mese]
+                ministero = casella_marcata((*S21_COL_MINISTERO, top, bottom), offset)
+                ausiliario = casella_marcata((*S21_COL_AUSILIARIO, top, bottom), offset)
+                studi = testo_in(*S21_COL_STUDI, top + offset, bottom + offset)
+                ore = testo_in(*S21_COL_ORE, top + offset, bottom + offset)
+                osservazioni = testo_in(S21_COL_OSSERVAZIONI_X, S21_PAGE_W - 12, top + offset, bottom + offset)
+                if ministero or ausiliario or studi or ore or osservazioni:
+                    mesi[mese] = {
+                        "ministero": ministero, "ausiliario": ausiliario,
+                        "studi": studi, "ore": ore, "osservazioni": osservazioni,
+                    }
+
+            pannelli.append({
+                "anno_testo": anno_testo, "nome": nome,
+                "data_nascita": data_nascita, "data_battesimo": data_battesimo,
+                "sesso": sesso, "classe_spirituale": classe_spirituale,
+                "incarico": incarico, "tipo": tipo, "mesi": mesi,
+            })
+
+    return {"testo_rilevato": almeno_un_valore, "pannelli": pannelli}
+
+
+def _s21_anno_da_testo(anno_testo: str):
+    """Estrae il primo anno (es. 2024 da '2024-2025') da un'etichetta di
+    anno di servizio letta dal PDF. Ritorna None se non riconosciuto."""
+    m = re.search(r"(20\d{2})", anno_testo or "")
+    return int(m.group(1)) if m else None
+
+
+def _s21_tipo_servizio_mese(tipo_panello: str, ministero: bool, ausiliario: bool) -> str:
+    """Deduce il valore da scrivere in 'Tipo Servizio' per un dato mese, a
+    partire dalla designazione annuale del pannello (Pioniere Regolare/
+    Speciale/Missionario, letta dalle caselle di testata) e dalle caselle
+    mensili (Ministero/Ausiliario). Se il pannello non ha nessuna
+    designazione speciale, un mese con la sola casella Ausiliario spuntata
+    è 'Pioniere Ausiliario'; altrimenti, se ha partecipato al ministero, è
+    'Proclamatore'."""
+    if tipo_panello == "Pioniere Regolare":
+        return "Pioniere Regolare"
+    if tipo_panello == "Pioniere speciale":
+        return "Pioniere Speciale"
+    if tipo_panello == "Missionario sul campo":
+        return "Missionario sul campo"
+    if ausiliario:
+        return "Pioniere Ausiliario"
+    return "Proclamatore"
+
+
+def _s21_costruisci_righe_import(dati_estratti: dict, mesi_gia_presenti: set) -> list:
+    """A partire dal risultato di '_s21_estrai_dati_pdf', costruisce la
+    lista di righe candidate all'importazione (una per mese con dati),
+    con 'mese_anno' (AAAA-MM) calcolato dall'anno di servizio letto sul
+    pannello. 'mesi_gia_presenti' è un insieme di 'AAAA-MM' già presenti
+    nel foglio Tutti per questa persona: quei mesi vengono inclusi
+    comunque nell'elenco ma marcati 'gia_presente' = True (saltati di
+    default, ma visibili per trasparenza)."""
+    righe = []
+    for pannello in dati_estratti["pannelli"]:
+        anno = _s21_anno_da_testo(pannello["anno_testo"])
+        for mese in S21_ORDINE_MESI:
+            dati_mese = pannello["mesi"].get(mese)
+            if not dati_mese:
+                continue
+            if anno is not None:
+                indice_mese = S21_ORDINE_MESI.index(mese)
+                mese_num = 9 + indice_mese if indice_mese <= 3 else indice_mese - 3
+                anno_calendario = anno if mese_num >= 9 else anno + 1
+                mese_anno = f"{anno_calendario}-{mese_num:02d}"
+            else:
+                mese_anno = ""  # anno non riconosciuto: l'utente lo imposterà a mano
+
+            tipo_servizio = _s21_tipo_servizio_mese(pannello["tipo"], dati_mese["ministero"],
+                                                     dati_mese["ausiliario"])
+            righe.append({
+                "Mese (dal modulo)": mese,
+                "Anno servizio letto": pannello["anno_testo"] or "(non letto)",
+                "Mese/Anno": mese_anno,
+                "Tipo Servizio": tipo_servizio,
+                "Ha partecipato al ministero": "Si" if dati_mese["ministero"] else "",
+                "Ore": dati_mese["ore"],
+                "Studi Biblici": dati_mese["studi"],
+                "Osservazioni": dati_mese["osservazioni"],
+                "gia_presente": bool(mese_anno) and mese_anno in mesi_gia_presenti,
+                "Importa": bool(mese_anno) and mese_anno not in mesi_gia_presenti,
+            })
+    return righe
+
+
+def aggiungi_riga_tutti(_workbook, nome: str, mese_anno: str, tipo_servizio: str,
+                         ministero: str, ore: str, studi: str, osservazioni: str):
+    """Aggiunge una nuova riga in fondo al foglio 'Tutti', per posizione di
+    colonna (A vuota, B..J come da COL_TUTTI_*) invece che per nome
+    intestazione, perché l'intestazione di questo foglio non è affidabile
+    per l'abbinamento automatico (leggi_foglio_tutti fa lo stesso). 'Cred.
+    Ore' viene lasciato vuoto: il modulo S-21 non riporta i crediti per
+    singolo mese, solo nel totale annuale. Ritorna (successo, errore)."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
+        riga = [""] * 10  # A..J
+        riga[COL_TUTTI_NOME] = nome
+        riga[COL_TUTTI_MESE] = mese_anno
+        riga[COL_TUTTI_TIPO_SERVIZIO] = tipo_servizio
+        riga[COL_TUTTI_MINISTERO] = ministero
+        riga[COL_TUTTI_ORE] = ore
+        riga[COL_TUTTI_STUDI] = studi
+        riga[COL_TUTTI_OSSERVAZIONI] = osservazioni
+        ws.append_row(riga, value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante il salvataggio: {e}"
+
+
+def _importa_s21_cerca_persona(df_anagrafica: pd.DataFrame, nome_letto: str) -> pd.DataFrame:
+    """Cerca possibili corrispondenze in Anagrafica per il nome letto dal
+    PDF (confronto semplice, senza distinzione maiuscole/minuscole, che
+    tollera un ordine parziale delle parole)."""
+    if df_anagrafica.empty or not nome_letto:
+        return df_anagrafica.iloc[0:0]
+    parole = [p.lower() for p in nome_letto.split() if len(p) > 2]
+    if not parole:
+        return df_anagrafica.iloc[0:0]
+
+    def punteggio(nome_anagrafica: str) -> int:
+        n = nome_anagrafica.lower()
+        return sum(1 for p in parole if p in n)
+
+    df = df_anagrafica.copy()
+    df["_punteggio"] = df["Cognome e Nome"].apply(punteggio)
+    return df[df["_punteggio"] > 0].sort_values("_punteggio", ascending=False).drop(columns="_punteggio")
 
 
 def _s21_anno_cartella_corrente() -> str:
@@ -1693,6 +1904,7 @@ def mostra_home():
         ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
         ("📊", "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
         ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        ("📥", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
     ]
     riga1 = st.columns(2)
     riga2 = st.columns(2)
@@ -3247,6 +3459,295 @@ def _form_modifica_presenza(dati_selezione: dict):
             st.error(err_salva)
 
 
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
+# ─────────────────────────────────────────────────────────────────
+def mostra_importa_s21():
+    st.title("📥 Importa da S-21")
+    if st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True):
+        for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta"):
+            st.session_state.pop(chiave, None)
+        vai_a("home")
+        st.rerun()
+
+    if not collegato:
+        st.warning("⚠️ Nessun foglio dati collegato.")
+        return
+
+    st.caption("Carica la S-21 ricevuta da un'altra congregazione per un Proclamatore trasferito (o mai "
+               "appartenuto qui): provo a leggere automaticamente ore, studi e mesi dal PDF, ma "
+               "**niente viene scritto in archivio finché non confermi tu**, riga per riga.")
+
+    file_caricato = st.file_uploader("Carica il PDF della S-21 ricevuta", type=["pdf"], key="importa_s21_file")
+    if file_caricato is None:
+        return
+
+    chiave_file = f"{file_caricato.name}_{file_caricato.size}"
+    if st.session_state.get("importa_s21_chiave_file") != chiave_file:
+        with st.spinner("Leggo il PDF…"):
+            try:
+                st.session_state.importa_s21_dati = _s21_estrai_dati_pdf(io.BytesIO(file_caricato.getvalue()))
+                st.session_state.importa_s21_chiave_file = chiave_file
+                st.session_state.pop("importa_s21_persona_scelta", None)
+                st.session_state.pop("importa_s21_tabella_editor", None)
+            except Exception as e:
+                st.error(f"Non sono riuscito a leggere questo PDF: {e}")
+                st.session_state.pop("importa_s21_dati", None)
+                return
+
+    dati_estratti = st.session_state.get("importa_s21_dati")
+    if not dati_estratti:
+        return
+
+    if not dati_estratti["testo_rilevato"]:
+        st.warning("⚠️ Non ho trovato testo leggibile nelle caselle dati di questo PDF — probabilmente "
+                   "è una scansione o una foto di un modulo compilato a mano. Non tento la lettura "
+                   "automatica della scrittura a mano (troppo rischiosa per dati ufficiali di servizio): "
+                   "apri il PDF a fianco su un'altra finestra, leggi i valori a occhio e inseriscili "
+                   "tu nella tabella qui sotto (puoi aggiungere righe con il tasto '+' in fondo).")
+    else:
+        st.success("✔ Testo letto correttamente dal PDF. Controlla comunque ogni valore prima di "
+                   "confermare — soprattutto \"Tipo Servizio\", che è solo una proposta automatica.")
+
+    # ── 1. Riconoscimento persona ───────────────────────────────────
+    st.subheader("1. Di chi è questa S-21?")
+    nomi_letti = [p["nome"].strip() for p in dati_estratti["pannelli"] if p["nome"].strip()]
+    nome_suggerito = nomi_letti[0] if nomi_letti else ""
+    if nome_suggerito:
+        st.caption(f"Nome letto dal modulo: **{nome_suggerito}**")
+    else:
+        st.caption("Nessun nome letto dal modulo (probabile scansione): scegli o cerca la persona a mano.")
+
+    df_anagrafica, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    if err:
+        st.error(err)
+        return
+
+    candidati = _importa_s21_cerca_persona(df_anagrafica, nome_suggerito)
+    opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
+    opzioni = [opzione_nuova] + candidati["Cognome e Nome"].tolist()
+    if not df_anagrafica.empty:
+        altri = [n for n in df_anagrafica["Cognome e Nome"].tolist() if n not in opzioni]
+        opzioni += altri
+    scelta_nome = st.selectbox("Abbina al Proclamatore:", opzioni, key="importa_s21_persona_scelta")
+
+    gruppi_disponibili = sorted({g.strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str))
+                                  if g and g.strip() and g.strip().lower() != "trasferiti"})
+
+    riga_anagrafica_esistente = None
+    if scelta_nome != opzione_nuova:
+        corrispondenza = df_anagrafica[df_anagrafica["Cognome e Nome"] == scelta_nome]
+        if not corrispondenza.empty:
+            riga_anagrafica_esistente = corrispondenza.iloc[0].to_dict()
+
+    nome_persona = scelta_nome
+    aggiornamento_anagrafica = None  # dizionario da salvare, se serve
+
+    if scelta_nome == opzione_nuova:
+        st.caption("Questa persona non è ancora in Anagrafica: verrà creata con i dati sotto.")
+        nome_persona = st.text_input("Nome completo", value=nome_suggerito, key="importa_s21_nuovo_nome")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            gruppo_nuovo = st.selectbox("Gruppo di servizio", gruppi_disponibili,
+                                         key="importa_s21_nuovo_gruppo") if gruppi_disponibili else \
+                st.text_input("Gruppo di servizio", key="importa_s21_nuovo_gruppo_testo")
+        with col_b:
+            st.caption("Stato")
+            st.write("Attivo (nuova persona)")
+        if nome_persona.strip():
+            pannello_rif = dati_estratti["pannelli"][-1] if dati_estratti["pannelli"] else {}
+            aggiornamento_anagrafica = {
+                "Cognome e Nome": nome_persona.strip(),
+                "Gruppo": gruppo_nuovo,
+                "Attivi / Inattivi": "A",
+                "Data Nascita": pannello_rif.get("data_nascita", ""),
+                "Data Battesimo": pannello_rif.get("data_battesimo", ""),
+                "Sesso": pannello_rif.get("sesso", ""),
+                "A/U": pannello_rif.get("classe_spirituale", ""),
+                "Incarico": pannello_rif.get("incarico", ""),
+                "Tipo": pannello_rif.get("tipo", ""),
+            }
+    elif riga_anagrafica_esistente is not None:
+        stato_attuale = categoria_stato_proclamatore(riga_anagrafica_esistente.get("Attivi / Inattivi", ""))
+        if stato_attuale in ("TR", "I"):
+            etichetta_stato = "Trasferito" if stato_attuale == "TR" else "Inattivo"
+            st.info(f"📌 **{nome_persona}** risulta attualmente **{etichetta_stato}** in Anagrafica. "
+                   f"Importando questi dati, lo riporto **Attivo** e gli assegno il gruppo scelto qui sotto.")
+            gruppo_attuale = (riga_anagrafica_esistente.get("Gruppo") or "").strip()
+            indice_default = (gruppi_disponibili.index(gruppo_attuale)
+                               if gruppo_attuale in gruppi_disponibili else 0)
+            gruppo_scelto = st.selectbox("Nuovo gruppo di servizio", gruppi_disponibili,
+                                          index=indice_default if gruppi_disponibili else 0,
+                                          key="importa_s21_gruppo_riattivazione") if gruppi_disponibili else \
+                st.text_input("Nuovo gruppo di servizio", value=gruppo_attuale,
+                               key="importa_s21_gruppo_riattivazione_testo")
+            aggiornamento_anagrafica = dict(riga_anagrafica_esistente)
+            aggiornamento_anagrafica["Gruppo"] = gruppo_scelto
+            aggiornamento_anagrafica["Attivi / Inattivi"] = "A"
+        else:
+            st.caption(f"**{nome_persona}** è già Attivo in Anagrafica — nessuna modifica necessaria lì, "
+                       "importo solo i mesi mancanti.")
+
+    if not nome_persona or not nome_persona.strip():
+        st.warning("Inserisci il nome della persona per continuare.")
+        return
+
+    # ── 2. Tabella di revisione ──────────────────────────────────────
+    st.subheader("2. Controlla i mesi da importare")
+
+    df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+    if err_tutti:
+        st.error(err_tutti)
+        return
+    mesi_gia_presenti = set()
+    if not df_tutti.empty:
+        righe_persona_tutti = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome_persona.strip().lower()]
+        mesi_gia_presenti = set(righe_persona_tutti["Mese/Anno"].tolist())
+
+    righe_proposte = _s21_costruisci_righe_import(dati_estratti, mesi_gia_presenti)
+
+    if not righe_proposte:
+        st.info("Nessun mese con dati trovato nel PDF. Se è una scansione, aggiungi righe a mano con "
+               "il tasto '+' della tabella qui sotto.")
+        righe_proposte = [{
+            "Mese (dal modulo)": "", "Anno servizio letto": "(manuale)", "Mese/Anno": "",
+            "Tipo Servizio": "Proclamatore", "Ha partecipato al ministero": "Si",
+            "Ore": "", "Studi Biblici": "", "Osservazioni": "",
+            "gia_presente": False, "Importa": True,
+        }]
+
+    df_proposte = pd.DataFrame(righe_proposte)
+    n_gia_presenti = int(df_proposte["gia_presente"].sum())
+    if n_gia_presenti:
+        st.caption(f"ℹ️ {n_gia_presenti} mese/i già presenti in archivio sono stati esclusi in automatico "
+                   "(casella 'Importa' deselezionata) — puoi comunque riattivarli se necessario.")
+
+    colonne_editor = ["Importa", "Mese/Anno", "Tipo Servizio", "Ha partecipato al ministero",
+                       "Ore", "Studi Biblici", "Osservazioni", "Anno servizio letto", "Mese (dal modulo)"]
+    tabella_modificata = st.data_editor(
+        df_proposte[colonne_editor],
+        hide_index=True,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="importa_s21_tabella_editor",
+        column_config={
+            "Importa": st.column_config.CheckboxColumn("Importa", width="small"),
+            "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small",
+                                                       help="Formato AAAA-MM, es. 2024-09"),
+            "Tipo Servizio": st.column_config.SelectboxColumn(
+                "Tipo Servizio", width="medium",
+                options=["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare",
+                         "Pioniere Speciale", "Missionario sul campo"]),
+            "Ha partecipato al ministero": st.column_config.SelectboxColumn(
+                "Ministero", width="small", options=["Si", ""]),
+            "Ore": st.column_config.TextColumn(width="small"),
+            "Studi Biblici": st.column_config.TextColumn("Studi", width="small"),
+            "Osservazioni": st.column_config.TextColumn(width="large"),
+            "Anno servizio letto": st.column_config.TextColumn("Anno letto sul modulo", width="small",
+                                                                  disabled=True),
+            "Mese (dal modulo)": st.column_config.TextColumn("Mese sul modulo", width="small", disabled=True),
+        },
+    )
+
+    # ── 3. Conferma e salvataggio ─────────────────────────────────────
+    st.subheader("3. Conferma")
+    righe_da_importare = tabella_modificata[tabella_modificata["Importa"] == True]
+    righe_da_importare = righe_da_importare[righe_da_importare["Mese/Anno"].str.strip() != ""]
+    st.caption(f"Righe selezionate per l'importazione: **{len(righe_da_importare)}**")
+
+    if st.button(f"✅ Importa {len(righe_da_importare)} mese/i per {nome_persona}",
+                use_container_width=True, disabled=righe_da_importare.empty):
+        errori = []
+        importate = 0
+
+        if aggiornamento_anagrafica is not None:
+            riga_numero = None
+            if riga_anagrafica_esistente is not None:
+                df_con_indice = df_anagrafica.reset_index(drop=True)
+                corrispondenza_idx = df_con_indice.index[
+                    df_con_indice["Cognome e Nome"] == scelta_nome].tolist()
+                if corrispondenza_idx:
+                    riga_numero = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + corrispondenza_idx[0]
+            ok, err_salva = salva_riga_anagrafica(workbook, aggiornamento_anagrafica, riga_numero)
+            if not ok:
+                errori.append(f"Anagrafica: {err_salva}")
+
+        # Ricontrolla i mesi già presenti al momento del salvataggio (l'utente
+        # potrebbe aver modificato Mese/Anno dopo il caricamento iniziale).
+        mesi_presenti_ora = set(mesi_gia_presenti)
+        for _, riga in righe_da_importare.iterrows():
+            mese_anno = riga["Mese/Anno"].strip()
+            if mese_anno in mesi_presenti_ora:
+                errori.append(f"{mese_anno}: saltato, già presente in archivio.")
+                continue
+            ok, err_salva = aggiungi_riga_tutti(
+                workbook, nome_persona.strip(), mese_anno, riga["Tipo Servizio"],
+                riga["Ha partecipato al ministero"], riga["Ore"], riga["Studi Biblici"],
+                riga["Osservazioni"],
+            )
+            if ok:
+                importate += 1
+                mesi_presenti_ora.add(mese_anno)
+            else:
+                errori.append(f"{mese_anno}: {err_salva}")
+
+        if importate:
+            st.cache_data.clear()
+            st.success(f"✔ Importati {importate} mese/i per {nome_persona}.")
+        for e in errori:
+            st.warning(e)
+        if importate:
+            for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_file",
+                           "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
+                st.session_state.pop(chiave, None)
+            st.rerun()
+
+
+def _form_nuova_presenza():
+    """Form per inserire una nuova riga nel foglio 'Presenze Adunanze'
+    (data, tipo adunanza, presenti in sala/su Zoom, totale)."""
+    st.markdown("#### ➕ Inserisci presenti alle adunanze")
+
+    with st.form("form_nuova_presenza", clear_on_submit=True):
+        data_adunanza = st.date_input("Data", value=datetime.now(), format="DD/MM/YYYY")
+        tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA)
+
+        col_p, col_z = st.columns(2)
+        with col_p:
+            in_presenza = st.number_input("In presenza", min_value=0, step=1, value=0)
+        with col_z:
+            su_zoom = st.number_input("Su Zoom", min_value=0, step=1, value=0)
+
+        totale = st.number_input("Totale", min_value=0, step=1, value=0)
+
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+        with col_btn2:
+            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
+
+    if annulla:
+        st.session_state.presenze_form_nuovo_aperto = False
+        st.rerun()
+
+    if invia:
+        valori = {
+            "Data": data_adunanza.strftime("%d/%m/%Y"),
+            "Tipo Adunanza": tipo_adunanza,
+            "In Presenza": str(int(in_presenza)),
+            "Su Zoom": str(int(su_zoom)),
+            "Totale": str(int(totale)),
+        }
+        ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
+        if ok:
+            st.cache_data.clear()
+            st.session_state.presenze_form_nuovo_aperto = False
+            st.success("✔ Presenza inserita correttamente.")
+            st.rerun()
+        else:
+            st.error(err_salva)
+
+
 def mostra_presenze_adunanze():
     st.title("🙌 Presenti alle adunanze")
     if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
@@ -3256,6 +3757,16 @@ def mostra_presenze_adunanze():
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
         return
+
+    if st.button("➕ Inserisci presenti alle adunanze", key="apri_nuova_presenza", use_container_width=True):
+        st.session_state.presenze_form_nuovo_aperto = not st.session_state.get(
+            "presenze_form_nuovo_aperto", False)
+        st.session_state.presenze_modifica = None
+    if st.session_state.get("presenze_form_nuovo_aperto"):
+        _form_nuova_presenza()
+
+    if st.session_state.get("presenze_modifica"):
+        _form_modifica_presenza(st.session_state.presenze_modifica)
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE)
     if err:
@@ -3368,13 +3879,57 @@ def mostra_presenze_adunanze():
         col: st.column_config.Column(alignment="center") 
         for col in colonne_visibili
     }
-    
-    st.dataframe(
-        df_mese[colonne_visibili],
+
+    df_mese_reset = df_mese.reset_index(drop=True)
+    evento_dettaglio = st.dataframe(
+        df_mese_reset[colonne_visibili],
         hide_index=True,
         use_container_width=True,
-        column_config=config_colonne
+        on_select="rerun",
+        selection_mode="single-row",
+        key="presenze_tabella_dettaglio",
+        column_config=config_colonne,
     )
+
+    righe_sel_dett = evento_dettaglio.selection.rows if evento_dettaglio and evento_dettaglio.selection else []
+
+    if righe_sel_dett:
+        riga_scelta = df_mese_reset.loc[righe_sel_dett[0]]
+        numero_riga_foglio = int(riga_scelta["_riga_foglio"])
+
+        col_mod, col_elim = st.columns(2)
+        with col_mod:
+            if st.button("✏️ Modifica riga selezionata", key="presenze_btn_mod", use_container_width=True):
+                st.session_state.presenze_form_nuovo_aperto = False
+                st.session_state.presenze_modifica = {
+                    "riga": riga_scelta.to_dict(),
+                    "numero_riga_foglio": numero_riga_foglio,
+                }
+                st.rerun()
+        with col_elim:
+            if st.button("🗑️ Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True):
+                st.session_state.presenze_conferma_elimina = numero_riga_foglio
+                st.rerun()
+
+        if st.session_state.get("presenze_conferma_elimina") == numero_riga_foglio:
+            st.warning("Sei sicuro di voler eliminare questa riga? L'operazione non è reversibile.")
+            col_si, col_no = st.columns(2)
+            with col_si:
+                if st.button("✔ Sì, elimina", key="presenze_conf_si", type="primary", use_container_width=True):
+                    ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
+                    if ok:
+                        st.cache_data.clear()
+                        st.session_state.presenze_conferma_elimina = None
+                        st.success("✔ Riga eliminata.")
+                        st.rerun()
+                    else:
+                        st.error(err_elim)
+            with col_no:
+                if st.button("No, annulla", key="presenze_conf_no", use_container_width=True):
+                    st.session_state.presenze_conferma_elimina = None
+                    st.rerun()
+    else:
+        st.session_state.presenze_conferma_elimina = None
 
 
 
@@ -3788,5 +4343,7 @@ elif st.session_state.pagina == "filiale":
     mostra_rapporto_filiale()
 elif st.session_state.pagina == "presenze":
     mostra_presenze_adunanze()    
+elif st.session_state.pagina == "importa_s21":
+    mostra_importa_s21()
 else:
     mostra_home()
