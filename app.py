@@ -107,7 +107,7 @@ TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 # Foglio con due colonne: "Chiave" (A) e "Valore" (B). Se il foglio non
 # esiste ancora, va creato a mano nel documento Google con queste due
 # intestazioni in A1/B1 — vale lo stesso principio degli altri fogli.
-NOME_FOGLIO_IMPOSTAZIONI = "Impostazioni"
+NOME_FOGLIO_IMPOSTAZIONI = "Configurazioni"
 RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
 CHIAVE_GIORNI_ADUNANZE = "Giorni Adunanze"
 GIORNI_SETTIMANA_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
