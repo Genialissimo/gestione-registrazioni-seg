@@ -1910,7 +1910,8 @@ def mostra_home():
     riga2 = st.columns(2)
     riga3 = st.columns(2)
     riga4 = st.columns(2)
-    colonne = riga1 + riga2 + riga3 + riga4
+    riga5 = st.columns(2)
+    colonne = riga1 + riga2 + riga3 + riga4+ riga5
     for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
