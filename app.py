@@ -107,37 +107,71 @@ TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 # Foglio con due colonne: "Chiave" (A) e "Valore" (B). Se il foglio non
 # esiste ancora, va creato a mano nel documento Google con queste due
 # intestazioni in A1/B1 — vale lo stesso principio degli altri fogli.
+# I giorni sono associati al tipo di adunanza (una o più per tipo, restando
+# liberi di sceglierne quanti si vuole), così proponendo una data si può
+# proporre anche il tipo di adunanza giusto per quel giorno.
 NOME_FOGLIO_IMPOSTAZIONI = "Configurazioni"
 RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
-CHIAVE_GIORNI_ADUNANZE = "Giorni Adunanze"
+CHIAVE_GIORNI_PER_TIPO = {
+    "Infrasettimanale": "Giorni Adunanza Infrasettimanale",
+    "Fine settimana": "Giorni Adunanza Fine Settimana",
+}
 GIORNI_SETTIMANA_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
-GIORNI_ADUNANZE_DEFAULT = ["Giovedì", "Domenica"]
+GIORNI_ADUNANZE_DEFAULT = {"Infrasettimanale": ["Giovedì"], "Fine settimana": ["Domenica"]}
 
 
-def leggi_giorni_adunanze(_workbook) -> list:
-    """Legge dal foglio 'Configurazioni' i giorni della settimana in cui si
-    tengono le adunanze. Se il foglio non esiste, non è ancora stato
-    impostato, o c'è un problema di lettura, usa il default (Giovedì e
-    Domenica) senza far fallire nulla: le impostazioni sono opzionali."""
+def leggi_giorni_adunanze_per_tipo(_workbook) -> dict:
+    """Legge dal foglio 'Configurazioni' i giorni della settimana per
+    ciascun tipo di adunanza (Infrasettimanale/Fine settimana). Se il
+    foglio non esiste, non è ancora stato impostato, o c'è un problema di
+    lettura, usa il default (Giovedì/Domenica) senza far fallire nulla: le
+    impostazioni sono opzionali. Ritorna {'Infrasettimanale': [...],
+    'Fine settimana': [...]}."""
+    risultato = {tipo: list(giorni) for tipo, giorni in GIORNI_ADUNANZE_DEFAULT.items()}
     if _workbook is None:
-        return list(GIORNI_ADUNANZE_DEFAULT)
+        return risultato
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
         valori = ws.get_all_values()
-        for riga in valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]:
-            if len(riga) >= 2 and riga[0].strip().lower() == CHIAVE_GIORNI_ADUNANZE.lower():
-                giorni = [g.strip() for g in riga[1].split(",") if g.strip()]
-                giorni_validi = [g for g in giorni if g in GIORNI_SETTIMANA_IT]
-                if giorni_validi:
-                    return giorni_validi
+        righe = valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]
+        for tipo, chiave in CHIAVE_GIORNI_PER_TIPO.items():
+            for riga in righe:
+                if len(riga) >= 2 and riga[0].strip().lower() == chiave.lower():
+                    giorni = [g.strip() for g in riga[1].split(",") if g.strip()]
+                    giorni_validi = [g for g in giorni if g in GIORNI_SETTIMANA_IT]
+                    if giorni_validi:
+                        risultato[tipo] = giorni_validi
+                    break
     except Exception:
         pass
-    return list(GIORNI_ADUNANZE_DEFAULT)
+    return risultato
 
 
-def salva_giorni_adunanze(_workbook, giorni: list):
-    """Salva (o crea) la riga 'Giorni Adunanze' nel foglio 'Configurazioni'.
-    Ritorna (successo, errore)."""
+def giorni_adunanze_tutti(giorni_per_tipo: dict) -> list:
+    """Unisce i giorni di tutti i tipi in un'unica lista (senza doppioni),
+    utile per il controllo 'questa data è un giorno di adunanza?'."""
+    tutti = []
+    for giorni in giorni_per_tipo.values():
+        for g in giorni:
+            if g not in tutti:
+                tutti.append(g)
+    return tutti
+
+
+def tipo_adunanza_del_giorno(nome_giorno: str, giorni_per_tipo: dict):
+    """Ritorna il tipo di adunanza (Infrasettimanale/Fine settimana)
+    associato al giorno della settimana indicato, o None se quel giorno
+    non è configurato per nessun tipo."""
+    for tipo, giorni in giorni_per_tipo.items():
+        if nome_giorno in giorni:
+            return tipo
+    return None
+
+
+def salva_giorni_adunanze_per_tipo(_workbook, giorni_per_tipo: dict):
+    """Salva (o crea) le righe 'Giorni Adunanza Infrasettimanale' e 'Giorni
+    Adunanza Fine Settimana' nel foglio 'Configurazioni'. Ritorna
+    (successo, errore)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
     except Exception:
@@ -145,13 +179,17 @@ def salva_giorni_adunanze(_workbook, giorni: list):
                        f"Creane uno con questo nome esatto e metti «Chiave» in A1 e «Valore» in B1, poi riprova.")
     try:
         valori = ws.get_all_values()
-        valore_str = ",".join(giorni)
-        for i, riga in enumerate(valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:],
-                                  start=RIGA_INTESTAZIONE_IMPOSTAZIONI + 1):
-            if len(riga) >= 1 and riga[0].strip().lower() == CHIAVE_GIORNI_ADUNANZE.lower():
-                ws.update_cell(i, 2, valore_str)
-                return True, None
-        ws.append_row([CHIAVE_GIORNI_ADUNANZE, valore_str], value_input_option="USER_ENTERED")
+        righe = valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]
+        for tipo, chiave in CHIAVE_GIORNI_PER_TIPO.items():
+            valore_str = ",".join(giorni_per_tipo.get(tipo, []))
+            trovata = False
+            for i, riga in enumerate(righe, start=RIGA_INTESTAZIONE_IMPOSTAZIONI + 1):
+                if len(riga) >= 1 and riga[0].strip().lower() == chiave.lower():
+                    ws.update_cell(i, 2, valore_str)
+                    trovata = True
+                    break
+            if not trovata:
+                ws.append_row([chiave, valore_str], value_input_option="USER_ENTERED")
         return True, None
     except Exception as e:
         return False, f"Errore durante il salvataggio: {e}"
@@ -3463,33 +3501,41 @@ def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
 
 # ─────────────────────────────────────────────────────────────────
 def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
-                          presenza_default: int, zoom_default: int, giorni_validi: list):
+                          presenza_default: int, zoom_default: int, giorni_per_tipo: dict):
     """Disegna i campi Data / Tipo adunanza / In presenza / Su Zoom (FUORI
-    da un st.form, apposta: serve per validare la data e ricalcolare il
-    Totale in tempo reale a ogni modifica, cosa che un st.form non
-    permette perché aggiorna solo al submit). Mostra un avviso con la data
-    valida più vicina se quella scelta non cade in un giorno di adunanza
-    configurato. Ritorna (data_scelta, tipo_adunanza, in_presenza, su_zoom,
-    totale, data_valida: bool)."""
-    data_scelta = st.date_input("Data", value=data_default, format="DD/MM/YYYY",
-                                 key=f"{chiave_prefix}_data")
-    indice_tipo = TIPI_ADUNANZA.index(tipo_default) if tipo_default in TIPI_ADUNANZA else 0
-    tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, index=indice_tipo,
-                                  key=f"{chiave_prefix}_tipo")
+    da un st.form, apposta: serve per validare la data, ricalcolare il
+    Totale e proporre il tipo di adunanza giusto in tempo reale, cosa che
+    un st.form non permette perché aggiorna solo al submit). Se la data
+    scelta non cade in un giorno di adunanza configurato, la corregge da
+    sola alla data valida più vicina; quando la data (corretta o già
+    valida) corrisponde a un giorno associato a un tipo di adunanza
+    specifico, propone anche quel tipo. Ritorna (data_scelta,
+    tipo_adunanza, in_presenza, su_zoom, totale, data_valida: bool)."""
+    giorni_validi = giorni_adunanze_tutti(giorni_per_tipo)
+    chiave_data = f"{chiave_prefix}_data"
+    chiave_tipo = f"{chiave_prefix}_tipo"
+
+    if chiave_data not in st.session_state:
+        st.session_state[chiave_data] = data_default
+    if chiave_tipo not in st.session_state:
+        st.session_state[chiave_tipo] = tipo_default if tipo_default in TIPI_ADUNANZA else TIPI_ADUNANZA[0]
+
+    data_scelta = st.date_input("Data", format="DD/MM/YYYY", key=chiave_data)
 
     data_valida, data_proposta = _prossima_data_valida_precedente(data_scelta, giorni_validi)
     if not data_valida:
         if data_proposta is not None:
-            testo_giorni = " o ".join(giorni_validi)
-            st.error(f"⚠️ Data selezionata non valida: le adunanze si tengono di {testo_giorni}. "
-                     f"Data valida più vicina: **{data_proposta.strftime('%d/%m/%Y')} "
-                     f"({GIORNI_SETTIMANA_IT[data_proposta.weekday()]})**.")
-            if st.button("📅 Usa la data proposta", key=f"{chiave_prefix}_usa_proposta"):
-                st.session_state[f"{chiave_prefix}_data"] = data_proposta
-                st.rerun()
+            st.session_state[chiave_data] = data_proposta
+            tipo_suggerito = tipo_adunanza_del_giorno(GIORNI_SETTIMANA_IT[data_proposta.weekday()],
+                                                        giorni_per_tipo)
+            if tipo_suggerito:
+                st.session_state[chiave_tipo] = tipo_suggerito
+            st.rerun()
         else:
             st.warning("Nessun giorno di adunanza configurato — impostalo nella card ⚙️ Impostazioni "
                        "in Home per attivare il controllo sulla data.")
+
+    tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, key=chiave_tipo)
 
     col_p, col_z = st.columns(2)
     with col_p:
@@ -3517,12 +3563,12 @@ def _form_modifica_presenza(dati_selezione: dict):
     except Exception:
         data_default = datetime.now().date()
 
-    giorni_validi = leggi_giorni_adunanze(workbook)
+    giorni_per_tipo = leggi_giorni_adunanze_per_tipo(workbook)
     chiave_prefix = f"presenze_mod_{numero_riga_foglio}"
     data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
         chiave_prefix, data_default, riga.get("Tipo Adunanza", ""),
         int(a_float_it(riga.get("In Presenza", "0"))), int(a_float_it(riga.get("Su Zoom", "0"))),
-        giorni_validi,
+        giorni_per_tipo,
     )
 
     col_btn1, col_btn2 = st.columns(2)
@@ -3806,9 +3852,9 @@ def _form_nuova_presenza():
     (data, tipo adunanza, presenti in sala/su Zoom, totale)."""
     st.markdown("#### ➕ Inserisci presenti alle adunanze")
 
-    giorni_validi = leggi_giorni_adunanze(workbook)
+    giorni_per_tipo = leggi_giorni_adunanze_per_tipo(workbook)
     data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
-        "presenze_nuovo", datetime.now().date(), TIPI_ADUNANZA[0], 0, 0, giorni_validi,
+        "presenze_nuovo", datetime.now().date(), TIPI_ADUNANZA[0], 0, 0, giorni_per_tipo,
     )
 
     col_btn1, col_btn2 = st.columns(2)
@@ -3860,24 +3906,29 @@ def mostra_impostazioni():
         return
 
     st.subheader("📅 Giorni delle adunanze")
-    st.caption("Usati per controllare che la data inserita in «Presenti alle adunanze» sia corretta. "
-               "Se cambiano in futuro, aggiornali qui — non serve toccare il codice del programma.")
+    st.caption("Usati in «Presenti alle adunanze» per controllare la data inserita e proporre in automatico "
+               "il tipo di adunanza giusto per quel giorno. Se cambiano in futuro, aggiornali qui — non "
+               "serve toccare il codice del programma. Puoi scegliere anche più giorni per tipo.")
 
-    giorni_attuali = leggi_giorni_adunanze(workbook)
-    giorni_scelti = st.multiselect("Giorni in cui si tengono le adunanze", GIORNI_SETTIMANA_IT,
-                                    default=giorni_attuali, key="impostazioni_giorni_adunanze")
+    giorni_attuali = leggi_giorni_adunanze_per_tipo(workbook)
+    giorni_scelti = {}
+    for tipo in TIPI_ADUNANZA:
+        giorni_scelti[tipo] = st.multiselect(f"Giorni — {tipo}", GIORNI_SETTIMANA_IT,
+                                              default=giorni_attuali.get(tipo, []),
+                                              key=f"impostazioni_giorni_{tipo}")
 
+    tutti_vuoti = not any(giorni_scelti.values())
     if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
-                disabled=not giorni_scelti):
-        ok, err_salva = salva_giorni_adunanze(workbook, giorni_scelti)
+                disabled=tutti_vuoti):
+        ok, err_salva = salva_giorni_adunanze_per_tipo(workbook, giorni_scelti)
         if ok:
             st.cache_data.clear()
             st.success("✔ Giorni delle adunanze aggiornati.")
         else:
             st.error(err_salva)
 
-    if not giorni_scelti:
-        st.info("Seleziona almeno un giorno.")
+    if tutti_vuoti:
+        st.info("Seleziona almeno un giorno per almeno un tipo di adunanza.")
 
 
 def mostra_presenze_adunanze():
