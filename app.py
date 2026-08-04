@@ -136,7 +136,7 @@ def leggi_giorni_adunanze(_workbook) -> list:
 
 
 def salva_giorni_adunanze(_workbook, giorni: list):
-    """Salva (o crea) la riga 'Giorni Adunanze' nel foglio 'Impostazioni'.
+    """Salva (o crea) la riga 'Giorni Adunanze' nel foglio 'Configurazioni'.
     Ritorna (successo, errore)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
