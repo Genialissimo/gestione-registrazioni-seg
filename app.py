@@ -3663,6 +3663,10 @@ def _form_modifica_presenza(dati_selezione: dict):
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
 # ─────────────────────────────────────────────────────────────────
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Con opzione Inserimento Manuale)
 # ─────────────────────────────────────────────────────────────────
@@ -3717,29 +3721,30 @@ def mostra_importa_s21():
             opzioni_proclamatori.append(etichetta)
             mappa_nomi_reali[etichetta] = nome
 
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
-        
-        nome_finale = ""
+        # 1. Selection Box Proclamatore (in alto)
+        scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
         nuova_persona_flag = (scelta_etichetta == opzione_nuova)
         
+        # 2. Se è nuova persona, il campo di input appare SUBITO SOTTO (ottimizzato mobile)
         if nuova_persona_flag:
-            with col_b:
-                nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
+            nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
         else:
-            nome_finale = mappa_nomi_reali[scelta_etichetta]
+            nome_finale = mappa_nomi_reali.get(scelta_etichetta, "")
 
+        # 3. Altri campi (Gruppo e Stato) affiancati
         gruppi_disponibili = sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
-        with col_b if not nuova_persona_flag else col_c:
+        
+        col_grp, col_st = st.columns(2)
+        with col_grp:
             sorvegliante_gruppo = st.selectbox("Sorvegliante del gruppo:", gruppi_disponibili, key="s21_man_gruppo")
-            
-        with col_c if not nuova_persona_flag else col_a:
+        with col_st:
             st.text_input("Stato", value="Attivo", disabled=True, key="s21_man_stato_vis")
 
         st.markdown("##### 📅 Dati di Servizio (Schema S-21)")
         
-        anno_servizio = st.number_input("Anno di Servizio (es. 2025):", min_value=2000, max_value=2099, value=2025, step=1)
+        # Anno corrente di default
+        anno_corrente = datetime.now().year
+        anno_servizio = st.number_input("Anno di Servizio:", min_value=2000, max_value=2099, value=anno_corrente, step=1, key="s21_man_anno")
         
         mesi_s21 = [
             f"{anno_servizio-1}-09", f"{anno_servizio-1}-10", f"{anno_servizio-1}-11", f"{anno_servizio-1}-12",
@@ -3751,7 +3756,7 @@ def mostra_importa_s21():
             "Mese/Anno": mesi_s21,
             "Partecipato": [True]*12,
             "Tipo Servizio": ["Proclamatore"]*12,
-            "Ore": [""]*12,
+            "Ore": [0]*12,
             "Studi Biblici": [0]*12,
             "Pioniere Ausiliario": [False]*12,
             "Osservazioni": [""]*12
@@ -3764,11 +3769,11 @@ def mostra_importa_s21():
             num_rows="dynamic",
             key="s21_manuale_editor",
             column_config={
-                "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small"),
+                "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center"),
                 "Partecipato": st.column_config.CheckboxColumn("Ministero", width="small"),
                 "Tipo Servizio": st.column_config.SelectboxColumn("Tipo Servizio", options=["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare"]),
-                "Ore": st.column_config.TextColumn("Ore", width="small"),
-                "Studi Biblici": st.column_config.NumberColumn("Studi", width="small", min_value=0, step=1),
+                "Ore": st.column_config.NumberColumn("Ore", width="small", min_value=0, step=1, alignment="center"),
+                "Studi Biblici": st.column_config.NumberColumn("Studi", width="small", min_value=0, step=1, alignment="center"),
                 "Pioniere Ausiliario": st.column_config.CheckboxColumn("Pion. Aus.", width="small"),
                 "Osservazioni": st.column_config.TextColumn("Osservazioni", width="large")
             }
@@ -3811,8 +3816,8 @@ def mostra_importa_s21():
                         mese_anno=m_a,
                         tipo_servizio=tipo,
                         ha_partecipato=part,
-                        ore=str(r["Ore"]),
-                        studi=str(r["Studi Biblici"]),
+                        ore=str(r["Ore"]) if r["Ore"] is not None else "",
+                        studi=str(r["Studi Biblici"]) if r["Studi Biblici"] is not None else "0",
                         osservazioni=str(r["Osservazioni"])
                     )
                     if ok:
@@ -3984,7 +3989,7 @@ def mostra_importa_s21():
         key="importa_s21_tabella_editor",
         column_config={
             "Importa": st.column_config.CheckboxColumn("Importa", width="small"),
-            "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small",
+            "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center",
                                                      help="Formato AAAA-MM, es. 2024-09"),
             "Tipo Servizio": st.column_config.SelectboxColumn(
                 "Tipo Servizio", width="medium",
@@ -3992,12 +3997,12 @@ def mostra_importa_s21():
                          "Pioniere Speciale", "Missionario sul campo"]),
             "Ha partecipato al ministero": st.column_config.SelectboxColumn(
                 "Ministero", width="small", options=["Si", ""]),
-            "Ore": st.column_config.TextColumn(width="small"),
-            "Studi Biblici": st.column_config.TextColumn("Studi", width="small"),
+            "Ore": st.column_config.TextColumn(width="small", alignment="center"),
+            "Studi Biblici": st.column_config.TextColumn("Studi", width="small", alignment="center"),
             "Osservazioni": st.column_config.TextColumn("Osservazioni", width="large"),
             "Anno servizio letto": st.column_config.TextColumn("Anno letto sul modulo", width="small",
-                                                                disabled=True),
-            "Mese (dal modulo)": st.column_config.TextColumn("Mese sul modulo", width="small", disabled=True),
+                                                                disabled=True, alignment="center"),
+            "Mese (dal modulo)": st.column_config.TextColumn("Mese sul modulo", width="small", disabled=True, alignment="center"),
         },
     )
 
