@@ -3668,7 +3668,7 @@ import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: IMPORTA DA S-21 (Con opzione Inserimento Manuale)
+# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Sovrascrittura Dati)
 # ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
@@ -3690,17 +3690,22 @@ def mostra_importa_s21():
         st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
-    # ── 1. FORM INSERIMENTO MANUALE (Se attivato) ─────────────────
+    # ── 1. FORM INSERIMENTO MANUALE ───────────────────────────────
     if st.session_state.get("s21_form_manuale_aperto", False):
         st.markdown("---")
-        st.subheader("📝 Inserimento Storico S-21 Manuale")
+        st.subheader("📝 Inserimento/Modifica Storico S-21 Manuale")
 
-        df_anagrafica, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
-        if err:
-            st.error(err)
+        df_anagrafica, err_anag = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+        if err_anag:
+            st.error(err_anag)
             return
 
-        # Costruzione elenco proclamatori con stato visibile (Attivi, Inattivi, Trasferiti)
+        df_tutti, err_tutti = leggi_foglio_tutti(workbook)
+        if err_tutti:
+            st.error(err_tutti)
+            return
+
+        # 1. Elenco proclamatori (Attivi, Inattivi, Trasferiti)
         opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
         opzioni_proclamatori = [opzione_nuova]
         mappa_nomi_reali = {}
@@ -3721,24 +3726,23 @@ def mostra_importa_s21():
             opzioni_proclamatori.append(etichetta)
             mappa_nomi_reali[etichetta] = nome
 
-        # 1. Selection Box Proclamatore
         scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
         nuova_persona_flag = (scelta_etichetta == opzione_nuova)
         
-        # 2. Nome nuovo proclamatore (se nuova persona)
         if nuova_persona_flag:
             nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
         else:
             nome_finale = mappa_nomi_reali.get(scelta_etichetta, "")
 
-        # 3. Campo opzionale Tipo Servizio (subito dopo il nome)
+        # 2. Tipo Servizio (opzionale)
         tipo_servizio_scelto = st.selectbox(
             "Tipo Servizio (opzionale):",
             ["Proclamatore", "Pioniere Regolare", "Pioniere Speciale", "Missionario sul campo"],
             key="s21_man_tipo_servizio"
         )
+        ore_disabilitate = (tipo_servizio_scelto == "Proclamatore")
 
-        # 4. Altri campi (Gruppo e Stato) affiancati
+        # 3. Gruppo e Stato
         gruppi_disponibili = sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
         
         col_grp, col_st = st.columns(2)
@@ -3757,26 +3761,58 @@ def mostra_importa_s21():
             f"{anno_servizio}-01", f"{anno_servizio}-02", f"{anno_servizio}-03", f"{anno_servizio}-04",
             f"{anno_servizio}-05", f"{anno_servizio}-06", f"{anno_servizio}-07", f"{anno_servizio}-08"
         ]
-        
-        df_iniziale = pd.DataFrame({
-            "Mese/Anno": mesi_s21,
-            "Partecipato": [True]*12,
-            "Ore": [0]*12,
-            "Studi Biblici": [0]*12,
-            "Pioniere Ausiliario": [False]*12,
-            "Osservazioni": [""]*12
-        })
+
+        # 4. CARICAMENTO DATI ESISTENTI DAL FOGLIO "TUTTI"
+        mappa_esistenti = {}
+        if not df_tutti.empty and nome_finale.strip():
+            df_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome_finale.strip().lower()]
+            for idx, riga in df_persona.iterrows():
+                m_a = str(riga.get("Mese/Anno", "")).strip()
+                if m_a:
+                    mappa_esistenti[m_a] = {
+                        "index_df": idx,
+                        "partecipato": str(riga.get("Ha partecipato al ministero", "")).strip().lower() in ("si", "sì", "1", "true"),
+                        "tipo": str(riga.get("Tipo Servizio", "")).strip(),
+                        "ore": pd.to_numeric(riga.get("Ore", 0), errors="coerce") if not ore_disabilitate else None,
+                        "studi": int(pd.to_numeric(riga.get("Studi Biblici", 0), errors="coerce") or 0),
+                        "osservazioni": str(riga.get("Osservazioni", "")).strip()
+                    }
+
+        # Precompilazione righe griglia
+        righe_griglia = []
+        for m in mesi_s21:
+            if m in mappa_esistenti:
+                dati_m = mappa_esistenti[m]
+                righe_griglia.append({
+                    "Mese/Anno": m,
+                    "Partecipato": dati_m["partecipato"],
+                    "Ore": dati_m["ore"] if not ore_disabilitate else None,
+                    "Studi Biblici": dati_m["studi"],
+                    "Pioniere Ausiliario": (dati_m["tipo"] == "Pioniere Ausiliario"),
+                    "Osservazioni": dati_m["osservazioni"]
+                })
+            else:
+                righe_griglia.append({
+                    "Mese/Anno": m,
+                    "Partecipato": True,
+                    "Ore": 0 if not ore_disabilitate else None,
+                    "Studi Biblici": 0,
+                    "Pioniere Ausiliario": False,
+                    "Osservazioni": ""
+                })
+
+        df_iniziale = pd.DataFrame(righe_griglia)
 
         tabella_manuale = st.data_editor(
             df_iniziale,
             hide_index=True,
             use_container_width=True,
             num_rows="dynamic",
-            key="s21_manuale_editor",
+            key=f"s21_manuale_editor_{nome_finale}_{anno_servizio}",
             column_config={
                 "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center"),
                 "Partecipato": st.column_config.CheckboxColumn("Ministero", width="small"),
-                "Ore": st.column_config.NumberColumn("Ore", width="small", min_value=0, step=1, alignment="center"),
+                "Ore": st.column_config.NumberColumn("Ore", width="small", min_value=0, step=1, alignment="center", disabled=ore_disabilitate),
                 "Studi Biblici": st.column_config.NumberColumn("Studi", width="small", min_value=0, step=1, alignment="center"),
                 "Pioniere Ausiliario": st.column_config.CheckboxColumn("Pion. Aus.", width="small"),
                 "Osservazioni": st.column_config.TextColumn("Osservazioni", width="large")
@@ -3793,6 +3829,7 @@ def mostra_importa_s21():
             st.session_state.s21_form_manuale_aperto = False
             st.rerun()
 
+        # 5. SALVATAGGIO (SOVRASCRITTURA / AGGIUNTA)
         if btn_salva:
             if not nome_finale.strip():
                 st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
@@ -3805,7 +3842,9 @@ def mostra_importa_s21():
                     }
                     salva_riga_anagrafica(workbook, nuovo_rec, riga_numero=None)
 
-                righe_salvate = 0
+                aggiornati = 0
+                inseriti = 0
+                
                 for _, r in tabella_manuale.iterrows():
                     m_a = str(r["Mese/Anno"]).strip()
                     if not m_a:
@@ -3813,22 +3852,43 @@ def mostra_importa_s21():
                     
                     part = "Si" if r["Partecipato"] else ""
                     tipo = "Pioniere Ausiliario" if r["Pioniere Ausiliario"] else tipo_servizio_scelto
+                    valore_ore = "" if ore_disabilitate else (str(r["Ore"]) if pd.notna(r["Ore"]) else "")
+                    valore_studi = str(r["Studi Biblici"]) if pd.notna(r["Studi Biblici"]) else "0"
                     
-                    ok, err_s = aggiungi_riga_tutti(
-                        workbook,
-                        nome_persona=nome_finale.strip(),
-                        mese_anno=m_a,
-                        tipo_servizio=tipo,
-                        ha_partecipato=part,
-                        ore=str(r["Ore"]) if r["Ore"] is not None else "",
-                        studi=str(r["Studi Biblici"]) if r["Studi Biblici"] is not None else "0",
-                        osservazioni=str(r["Osservazioni"])
-                    )
-                    if ok:
-                        righe_salvate += 1
+                    # Se esiste già nel foglio Tutti -> Sovrascrivi/Aggiorna
+                    if m_a in mappa_esistenti:
+                        riga_idx = mappa_esistenti[m_a]["index_df"]
+                        riga_excel_numero = RIGA_INTESTAZIONE_TUTTI + 1 + riga_idx
+                        
+                        valori_aggiornati = {
+                            "Nome": nome_finale.strip(),
+                            "Mese/Anno": m_a,
+                            "Tipo Servizio": tipo,
+                            "Ha partecipato al ministero": part,
+                            "Ore": valore_ore,
+                            "Studi Biblici": valore_studi,
+                            "Osservazioni": str(r["Osservazioni"])
+                        }
+                        ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_aggiornati, riga_numero=riga_excel_numero)
+                        if ok:
+                            aggiornati += 1
+                    else:
+                        # Se non esiste -> Inserisci nuova riga
+                        ok, _ = aggiungi_riga_tutti(
+                            workbook,
+                            nome_persona=nome_finale.strip(),
+                            mese_anno=m_a,
+                            tipo_servizio=tipo,
+                            ha_partecipato=part,
+                            ore=valore_ore,
+                            studi=valore_studi,
+                            osservazioni=str(r["Osservazioni"])
+                        )
+                        if ok:
+                            inseriti += 1
 
                 st.cache_data.clear()
-                st.success(f"✔ Salvate con successo {righe_salvate} righe nel foglio Tutti per {nome_finale}!")
+                st.success(f"✔ Operazione completata per {nome_finale}: {aggiornati} mesi aggiornati, {inseriti} nuovi mesi inseriti.")
                 st.session_state.s21_form_manuale_aperto = False
                 st.rerun()
 
@@ -4060,7 +4120,6 @@ def mostra_importa_s21():
                            "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
                 st.session_state.pop(chiave, None)
             st.rerun()
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPOSTAZIONI
 # ─────────────────────────────────────────────────────────────────
