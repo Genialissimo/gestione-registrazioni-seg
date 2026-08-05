@@ -3674,25 +3674,28 @@ import streamlit as st
 # ─────────────────────────────────────────────────────────────────
 def normalizza_mese_anno(valore):
     """
-    Estrae e formatta una o più date nel formato YYYY-MM.
-    Se passato ad esempio "2025-092026-12026-42026-5", rileva:
-    - 2025-09
-    - 2026-01
-    - 2026-04
-    - 2026-05
+    Estrae e formatta una o più date nel formato YYYY-MM come TESTO PURO.
+    Garantisce che mesi ad una sola cifra (es. 2026-5) diventino '2026-05'.
     """
-    valore = str(valore).strip()
-    if not valore:
+    if pd.isna(valore) or valore is None:
+        return ""
+        
+    valore_str = str(valore).strip()
+    if not valore_str:
         return ""
     
+    # Se per errore viene passata una data intera ISO/datetime (es. 2026-05-01)
+    if len(valore_str) >= 10 and valore_str[4] == '-' and valore_str[7] == '-':
+        valore_str = valore_str[:7]
+        
     pattern = r'(\d{4})-(\d{1,2})'
-    matches = re.findall(pattern, valore)
+    matches = re.findall(pattern, valore_str)
     
     if matches:
         date_formattate = [f"{anno}-{int(mese):02d}" for anno, mese in matches]
         return date_formattate[0] if len(date_formattate) == 1 else date_formattate
     
-    return valore
+    return valore_str
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -3941,7 +3944,9 @@ def mostra_importa_s21():
                         if not r["Partecipato"]:
                             continue
 
-                        m_a = normalizza_mese_anno(r["Mese/Anno"])
+                        # Garantisce la formattazione esplicita YYYY-MM come stringa di testo pura
+                        m_a_raw = r["Mese/Anno"]
+                        m_a = normalizza_mese_anno(m_a_raw)
                         if isinstance(m_a, list):
                             m_a = m_a[0]
                         if not m_a:
@@ -3958,10 +3963,11 @@ def mostra_importa_s21():
                             
                         valore_studi = str(int(r["Studi Biblici"])) if pd.notna(r["Studi Biblici"]) else "0"
                         
+                        # Il campo "Mese" è esplicitamente convertito in stringa di testo
                         valori_riga = {
                             "Informazioni cronologiche": data_ora_consegna,
                             "Cognome e Nome": nome_pulito,
-                            "Mese": m_a,
+                            "Mese": str(m_a),
                             "Hai servito come ?": tipo,
                             "Servizio": part,
                             "Ore": valore_ore,
@@ -4204,7 +4210,7 @@ def mostra_importa_s21():
     # ── 2.3 Conferma e salvataggio da PDF ─────────────────────────
     st.subheader("3. Conferma")
     righe_da_importare = tabella_modificata[tabella_modificata["Importa"] == True]
-    righe_da_importare = righe_da_importare[righe_da_importare["Mese/Anno"].str.strip() != ""]
+    righe_da_importare = righe_da_importare[righe_da_importare["Mese/Anno"].astype(str).str.strip() != ""]
     st.caption(f"Righe selezionate per l'importazione: **{len(righe_da_importare)}**")
 
     if st.button(f"✅ Importa {len(righe_da_importare)} mese/i per {nome_persona}",
@@ -4244,7 +4250,7 @@ def mostra_importa_s21():
             valori_pdf = {
                 "Informazioni cronologiche": data_ora_consegna_pdf,
                 "Cognome e Nome": nome_persona.strip(),
-                "Mese": mese_anno,
+                "Mese": str(mese_anno),
                 "Hai servito come ?": riga["Tipo Servizio"],
                 "Servizio": riga["Ha partecipato al ministero"],
                 "Ore": riga["Ore"],
