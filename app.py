@@ -3668,7 +3668,7 @@ import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Mappatura Nominale Foglio Tutti)
+# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Controllo Flessibile Colonne)
 # ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
@@ -3777,22 +3777,41 @@ def mostra_importa_s21():
                 f"{anno_servizio}-05", f"{anno_servizio}-06", f"{anno_servizio}-07", f"{anno_servizio}-08"
             ]
 
-            # 4. CARICAMENTO DATI ESISTENTI DAL FOGLIO "TUTTI"
+            # 4. CARICAMENTO DATI ESISTENTI DAL FOGLIO "TUTTI" (Con rilevamento flessibile colonna Nome/Mese)
             mappa_esistenti = {}
             if not df_tutti.empty and nome_finale.strip():
-                df_persona = df_tutti[df_tutti["Cognome e Nome"].astype(str).str.strip().str.lower() == nome_finale.strip().lower()]
-                for idx, riga in df_persona.iterrows():
-                    m_a = str(riga.get("Mese", "")).strip()
-                    if m_a:
-                        valore_serv = str(riga.get("Servizio", "")).strip().lower()
-                        mappa_esistenti[m_a] = {
-                            "index_df": idx,
-                            "partecipato": valore_serv in ("si", "sì", "1", "true"),
-                            "tipo": str(riga.get("Hai servito come ?", "")).strip(),
-                            "ore": pd.to_numeric(riga.get("Ore", 0), errors="coerce"),
-                            "studi": int(pd.to_numeric(riga.get("Studi Biblici", 0), errors="coerce") or 0),
-                            "osservazioni": str(riga.get("Commenti:", "")).strip()
-                        }
+                # Individua dinamicamente il nome colonna per il Nome
+                col_nome_tutti = None
+                for c in df_tutti.columns:
+                    if str(c).strip().lower() in ("cognome e nome", "nome", "proclamatore"):
+                        col_nome_tutti = c
+                        break
+                if not col_nome_tutti and len(df_tutti.columns) > 1:
+                    col_nome_tutti = df_tutti.columns[1]
+
+                # Individua dinamicamente il nome colonna per il Mese
+                col_mese_tutti = None
+                for c in df_tutti.columns:
+                    if str(c).strip().lower() in ("mese", "mese/anno"):
+                        col_mese_tutti = c
+                        break
+                if not col_mese_tutti and len(df_tutti.columns) > 2:
+                    col_mese_tutti = df_tutti.columns[2]
+
+                if col_nome_tutti and col_mese_tutti:
+                    df_persona = df_tutti[df_tutti[col_nome_tutti].astype(str).str.strip().str.lower() == nome_finale.strip().lower()]
+                    for idx, riga in df_persona.iterrows():
+                        m_a = str(riga.get(col_mese_tutti, "")).strip()
+                        if m_a:
+                            valore_serv = str(riga.get("Servizio", riga.get("Ha partecipato al ministero", ""))).strip().lower()
+                            mappa_esistenti[m_a] = {
+                                "index_df": idx,
+                                "partecipato": valore_serv in ("si", "sì", "1", "true"),
+                                "tipo": str(riga.get("Hai servito come ?", riga.get("Tipo Servizio", ""))).strip(),
+                                "ore": pd.to_numeric(riga.get("Ore", 0), errors="coerce"),
+                                "studi": int(pd.to_numeric(riga.get("Studi Biblici", 0), errors="coerce") or 0),
+                                "osservazioni": str(riga.get("Commenti:", riga.get("Osservazioni", ""))).strip()
+                            }
 
             # Precompilazione righe griglia
             righe_griglia = []
@@ -4041,10 +4060,12 @@ def mostra_importa_s21():
         return
     mesi_gia_presenti = set()
     if not df_tutti.empty:
-        col_nome_tutti = "Cognome e Nome" if "Cognome e Nome" in df_tutti.columns else "Nome"
-        col_mese_tutti = "Mese" if "Mese" in df_tutti.columns else "Mese/Anno"
-        righe_persona_tutti = df_tutti[df_tutti[col_nome_tutti].astype(str).str.strip().str.lower() == nome_persona.strip().lower()]
-        mesi_gia_presenti = set(righe_persona_tutti[col_mese_tutti].tolist())
+        col_nome_tutti = next((c for c in df_tutti.columns if str(c).strip().lower() in ("cognome e nome", "nome", "proclamatore")), df_tutti.columns[1] if len(df_tutti.columns) > 1 else None)
+        col_mese_tutti = next((c for c in df_tutti.columns if str(c).strip().lower() in ("mese", "mese/anno")), df_tutti.columns[2] if len(df_tutti.columns) > 2 else None)
+        
+        if col_nome_tutti and col_mese_tutti:
+            righe_persona_tutti = df_tutti[df_tutti[col_nome_tutti].astype(str).str.strip().str.lower() == nome_persona.strip().lower()]
+            mesi_gia_presenti = set(righe_persona_tutti[col_mese_tutti].tolist())
 
     righe_proposte = _s21_costruisci_righe_import(dati_estratti, mesi_gia_presenti)
 
