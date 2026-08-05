@@ -3668,7 +3668,7 @@ import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Controllo Flessibile Colonne)
+# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Salvataggio Sicuro)
 # ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
@@ -3705,7 +3705,7 @@ def mostra_importa_s21():
             st.error(err_tutti)
             return
 
-        # 1. Elenco proclamatori (Attivi, Inattivi, Trasferiti)
+        # 1. Elenco proclamatori
         opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
         opzioni_proclamatori = [""] + [opzione_nuova]
         mappa_nomi_reali = {}
@@ -3777,10 +3777,9 @@ def mostra_importa_s21():
                 f"{anno_servizio}-05", f"{anno_servizio}-06", f"{anno_servizio}-07", f"{anno_servizio}-08"
             ]
 
-            # 4. CARICAMENTO DATI ESISTENTI DAL FOGLIO "TUTTI" (Con rilevamento flessibile colonna Nome/Mese)
+            # 4. CARICAMENTO DATI ESISTENTI DAL FOGLIO "TUTTI"
             mappa_esistenti = {}
             if not df_tutti.empty and nome_finale.strip():
-                # Individua dinamicamente il nome colonna per il Nome
                 col_nome_tutti = None
                 for c in df_tutti.columns:
                     if str(c).strip().lower() in ("cognome e nome", "nome", "proclamatore"):
@@ -3789,7 +3788,6 @@ def mostra_importa_s21():
                 if not col_nome_tutti and len(df_tutti.columns) > 1:
                     col_nome_tutti = df_tutti.columns[1]
 
-                # Individua dinamicamente il nome colonna per il Mese
                 col_mese_tutti = None
                 for c in df_tutti.columns:
                     if str(c).strip().lower() in ("mese", "mese/anno"):
@@ -3813,7 +3811,6 @@ def mostra_importa_s21():
                                 "osservazioni": str(riga.get("Commenti:", riga.get("Osservazioni", ""))).strip()
                             }
 
-            # Precompilazione righe griglia
             righe_griglia = []
             for m in mesi_s21:
                 if m in mappa_esistenti:
@@ -3864,12 +3861,12 @@ def mostra_importa_s21():
                 st.session_state.s21_form_manuale_aperto = False
                 st.rerun()
 
-            # 5. SALVATAGGIO CON MAPPATURA NOMI COLONNE
+            # 5. SALVATAGGIO ROBUSTO (Gestione flessibile firme e parametri)
             if btn_salva:
                 if not nome_finale.strip():
                     st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
                 else:
-                    # 5.1 Salva in Anagrafica se nuova persona
+                    # 5.1 Anagrafica se nuova persona
                     if nuova_persona_flag:
                         nuovo_rec = {
                             "Cognome e Nome": nome_finale.strip(),
@@ -3884,7 +3881,7 @@ def mostra_importa_s21():
                     aggiornati = 0
                     inseriti = 0
                     
-                    # 5.2 Scrittura riga per riga sul foglio Tutti usando i nomi esatti delle colonne
+                    # 5.2 Scrittura su Foglio Tutti
                     for _, r in tabella_manuale.iterrows():
                         m_a = str(r["Mese/Anno"]).strip()
                         if not m_a:
@@ -3901,7 +3898,6 @@ def mostra_importa_s21():
                             
                         valore_studi = str(int(r["Studi Biblici"])) if pd.notna(r["Studi Biblici"]) else "0"
                         
-                        # Mappa esatta colonne foglio 'Tutti'
                         valori_riga = {
                             "Cognome e Nome": nome_finale.strip(),
                             "Mese": m_a,
@@ -3917,11 +3913,23 @@ def mostra_importa_s21():
                         if m_a in mappa_esistenti:
                             riga_idx = mappa_esistenti[m_a]["index_df"]
                             riga_excel_numero = RIGA_INTESTAZIONE_TUTTI + 1 + riga_idx
-                            ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga, riga_numero=riga_excel_numero)
+                            try:
+                                ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga, riga_excel_numero)
+                            except TypeError:
+                                try:
+                                    ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga, riga_numero=riga_excel_numero)
+                                except TypeError:
+                                    ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga)
                             if ok:
                                 aggiornati += 1
                         else:
-                            ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga, riga_numero=None)
+                            try:
+                                ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga, None)
+                            except TypeError:
+                                try:
+                                    ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga, riga_numero=None)
+                                except TypeError:
+                                    ok, _ = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_riga)
                             if ok:
                                 inseriti += 1
 
@@ -4159,7 +4167,14 @@ def mostra_importa_s21():
                 "Sorvegliante del gruppo": aggiornamento_anagrafica.get("Gruppo", "") if aggiornamento_anagrafica else ""
             }
             
-            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_pdf, riga_numero=None)
+            try:
+                ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_pdf, None)
+            except TypeError:
+                try:
+                    ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_pdf, riga_numero=None)
+                except TypeError:
+                    ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_pdf)
+
             if ok:
                 importate += 1
                 mesi_presenti_ora.add(mese_anno)
