@@ -3668,7 +3668,7 @@ import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Sovrascrittura Dati)
+# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Matrice Regole Ore/Pionieri)
 # ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
@@ -3740,7 +3740,9 @@ def mostra_importa_s21():
             ["Proclamatore", "Pioniere Regolare", "Pioniere Speciale", "Missionario sul campo"],
             key="s21_man_tipo_servizio"
         )
-        ore_disabilitate = (tipo_servizio_scelto == "Proclamatore")
+
+        # Regola Matrice: Se non è Proclamatore, la casella Pioniere Ausiliario deve essere disattivata
+        pion_aus_disabilitato = (tipo_servizio_scelto != "Proclamatore")
 
         # 3. Gruppo e Stato
         gruppi_disponibili = sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
@@ -3769,11 +3771,12 @@ def mostra_importa_s21():
             for idx, riga in df_persona.iterrows():
                 m_a = str(riga.get("Mese/Anno", "")).strip()
                 if m_a:
+                    valore_min = str(riga.get("Ha partecipato al ministero", "")).strip().lower()
                     mappa_esistenti[m_a] = {
                         "index_df": idx,
-                        "partecipato": str(riga.get("Ha partecipato al ministero", "")).strip().lower() in ("si", "sì", "1", "true"),
+                        "partecipato": valore_min in ("si", "sì", "1", "true"),
                         "tipo": str(riga.get("Tipo Servizio", "")).strip(),
-                        "ore": pd.to_numeric(riga.get("Ore", 0), errors="coerce") if not ore_disabilitate else None,
+                        "ore": pd.to_numeric(riga.get("Ore", 0), errors="coerce"),
                         "studi": int(pd.to_numeric(riga.get("Studi Biblici", 0), errors="coerce") or 0),
                         "osservazioni": str(riga.get("Osservazioni", "")).strip()
                     }
@@ -3786,16 +3789,16 @@ def mostra_importa_s21():
                 righe_griglia.append({
                     "Mese/Anno": m,
                     "Partecipato": dati_m["partecipato"],
-                    "Ore": dati_m["ore"] if not ore_disabilitate else None,
+                    "Ore": dati_m["ore"] if pd.notna(dati_m["ore"]) else 0,
                     "Studi Biblici": dati_m["studi"],
-                    "Pioniere Ausiliario": (dati_m["tipo"] == "Pioniere Ausiliario"),
+                    "Pioniere Ausiliario": False if pion_aus_disabilitato else (dati_m["tipo"] == "Pioniere Ausiliario"),
                     "Osservazioni": dati_m["osservazioni"]
                 })
             else:
                 righe_griglia.append({
                     "Mese/Anno": m,
-                    "Partecipato": True,
-                    "Ore": 0 if not ore_disabilitate else None,
+                    "Partecipato": False,  # Falso se la riga non esiste in archivio
+                    "Ore": 0,
                     "Studi Biblici": 0,
                     "Pioniere Ausiliario": False,
                     "Osservazioni": ""
@@ -3808,13 +3811,13 @@ def mostra_importa_s21():
             hide_index=True,
             use_container_width=True,
             num_rows="dynamic",
-            key=f"s21_manuale_editor_{nome_finale}_{anno_servizio}",
+            key=f"s21_manuale_editor_{nome_finale}_{anno_servizio}_{tipo_servizio_scelto}",
             column_config={
                 "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center"),
                 "Partecipato": st.column_config.CheckboxColumn("Ministero", width="small"),
-                "Ore": st.column_config.NumberColumn("Ore", width="small", min_value=0, step=1, alignment="center", disabled=ore_disabilitate),
+                "Ore": st.column_config.NumberColumn("Ore", width="small", min_value=0, step=1, alignment="center"),
                 "Studi Biblici": st.column_config.NumberColumn("Studi", width="small", min_value=0, step=1, alignment="center"),
-                "Pioniere Ausiliario": st.column_config.CheckboxColumn("Pion. Aus.", width="small"),
+                "Pioniere Ausiliario": st.column_config.CheckboxColumn("Pion. Aus.", width="small", disabled=pion_aus_disabilitato),
                 "Osservazioni": st.column_config.TextColumn("Osservazioni", width="large")
             }
         )
@@ -3829,7 +3832,7 @@ def mostra_importa_s21():
             st.session_state.s21_form_manuale_aperto = False
             st.rerun()
 
-        # 5. SALVATAGGIO (SOVRASCRITTURA / AGGIUNTA)
+        # 5. SALVATAGGIO CON VERIFICA DELLE REGOLE
         if btn_salva:
             if not nome_finale.strip():
                 st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
@@ -3851,11 +3854,17 @@ def mostra_importa_s21():
                         continue
                     
                     part = "Si" if r["Partecipato"] else ""
-                    tipo = "Pioniere Ausiliario" if r["Pioniere Ausiliario"] else tipo_servizio_scelto
-                    valore_ore = "" if ore_disabilitate else (str(r["Ore"]) if pd.notna(r["Ore"]) else "")
+                    is_pion_aus = False if pion_aus_disabilitato else bool(r["Pioniere Ausiliario"])
+                    tipo = "Pioniere Ausiliario" if is_pion_aus else tipo_servizio_scelto
+                    
+                    # Se resta semplice Proclamatore (senza spunta Pioniere Ausiliario) -> Ore vuote ""
+                    if tipo == "Proclamatore":
+                        valore_ore = ""
+                    else:
+                        valore_ore = str(r["Ore"]) if pd.notna(r["Ore"]) else "0"
+                        
                     valore_studi = str(r["Studi Biblici"]) if pd.notna(r["Studi Biblici"]) else "0"
                     
-                    # Se esiste già nel foglio Tutti -> Sovrascrivi/Aggiorna
                     if m_a in mappa_esistenti:
                         riga_idx = mappa_esistenti[m_a]["index_df"]
                         riga_excel_numero = RIGA_INTESTAZIONE_TUTTI + 1 + riga_idx
@@ -3873,7 +3882,6 @@ def mostra_importa_s21():
                         if ok:
                             aggiornati += 1
                     else:
-                        # Se non esiste -> Inserisci nuova riga
                         ok, _ = aggiungi_riga_tutti(
                             workbook,
                             nome_persona=nome_finale.strip(),
