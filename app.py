@@ -3721,17 +3721,24 @@ def mostra_importa_s21():
             opzioni_proclamatori.append(etichetta)
             mappa_nomi_reali[etichetta] = nome
 
-        # 1. Selection Box Proclamatore (in alto)
+        # 1. Selection Box Proclamatore
         scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
         nuova_persona_flag = (scelta_etichetta == opzione_nuova)
         
-        # 2. Se è nuova persona, il campo di input appare SUBITO SOTTO (ottimizzato mobile)
+        # 2. Nome nuovo proclamatore (se nuova persona)
         if nuova_persona_flag:
             nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
         else:
             nome_finale = mappa_nomi_reali.get(scelta_etichetta, "")
 
-        # 3. Altri campi (Gruppo e Stato) affiancati
+        # 3. Campo opzionale Tipo Servizio (subito dopo il nome)
+        tipo_servizio_scelto = st.selectbox(
+            "Tipo Servizio (opzionale):",
+            ["Proclamatore", "Pioniere Regolare", "Pioniere Speciale", "Missionario sul campo"],
+            key="s21_man_tipo_servizio"
+        )
+
+        # 4. Altri campi (Gruppo e Stato) affiancati
         gruppi_disponibili = sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
         
         col_grp, col_st = st.columns(2)
@@ -3742,7 +3749,6 @@ def mostra_importa_s21():
 
         st.markdown("##### 📅 Dati di Servizio (Schema S-21)")
         
-        # Anno corrente di default
         anno_corrente = datetime.now().year
         anno_servizio = st.number_input("Anno di Servizio:", min_value=2000, max_value=2099, value=anno_corrente, step=1, key="s21_man_anno")
         
@@ -3755,7 +3761,6 @@ def mostra_importa_s21():
         df_iniziale = pd.DataFrame({
             "Mese/Anno": mesi_s21,
             "Partecipato": [True]*12,
-            "Tipo Servizio": ["Proclamatore"]*12,
             "Ore": [0]*12,
             "Studi Biblici": [0]*12,
             "Pioniere Ausiliario": [False]*12,
@@ -3771,7 +3776,6 @@ def mostra_importa_s21():
             column_config={
                 "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center"),
                 "Partecipato": st.column_config.CheckboxColumn("Ministero", width="small"),
-                "Tipo Servizio": st.column_config.SelectboxColumn("Tipo Servizio", options=["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare"]),
                 "Ore": st.column_config.NumberColumn("Ore", width="small", min_value=0, step=1, alignment="center"),
                 "Studi Biblici": st.column_config.NumberColumn("Studi", width="small", min_value=0, step=1, alignment="center"),
                 "Pioniere Ausiliario": st.column_config.CheckboxColumn("Pion. Aus.", width="small"),
@@ -3808,7 +3812,7 @@ def mostra_importa_s21():
                         continue
                     
                     part = "Si" if r["Partecipato"] else ""
-                    tipo = "Pioniere Ausiliario" if r["Pioniere Ausiliario"] else r["Tipo Servizio"]
+                    tipo = "Pioniere Ausiliario" if r["Pioniere Ausiliario"] else tipo_servizio_scelto
                     
                     ok, err_s = aggiungi_riga_tutti(
                         workbook,
