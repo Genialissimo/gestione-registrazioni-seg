@@ -3668,7 +3668,7 @@ import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: IMPORTA DA S-21 (Con Form Manuale e Salvataggio Sicuro)
+# PAGINA: IMPORTA DA S-21 (Con Gestione ID Anagrafica e Filtro Spunte)
 # ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
@@ -3861,33 +3861,55 @@ def mostra_importa_s21():
                 st.session_state.s21_form_manuale_aperto = False
                 st.rerun()
 
-            # 5. SALVATAGGIO ROBUSTO (Gestione flessibile firme e parametri)
+            # 5. SALVATAGGIO
             if btn_salva:
-                if not nome_finale.strip():
+                nome_pulito = nome_finale.strip()
+                if not nome_pulito:
                     st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
                 else:
-                    # 5.1 Anagrafica se nuova persona
-                    if nuova_persona_flag:
-                        nuovo_rec = {
-                            "Cognome e Nome": nome_finale.strip(),
-                            "Gruppo": sorvegliante_gruppo,
-                            "Attivi / Inattivi": "A"
-                        }
-                        try:
-                            salva_riga_anagrafica(workbook, nuovo_rec, None)
-                        except TypeError:
-                            salva_riga_anagrafica(workbook, nuovo_rec)
+                    # 5.1 SALVATAGGIO IN ANAGRAFICA (Con Controllo Duplicato e Calcolo ID)
+                    # Verifica se il nome esiste già in Anagrafica
+                    nomi_esistenti_anag = [str(x).strip().lower() for x in df_anagrafica.get("Cognome e Nome", pd.Series(dtype=str)) if str(x).strip()]
+                    
+                    if nuova_persona_flag or (nome_pulito.lower() not in nomi_esistenti_anag):
+                        if nome_pulito.lower() in nomi_esistenti_anag:
+                            st.warning(f"⚠️ **{nome_pulito}** è già presente in Anagrafica. Inserimento anagrafico saltato.")
+                        else:
+                            # Calcolo del nuovo ID progressivo (Max ID + 1)
+                            id_massimo = 0
+                            if "ID" in df_anagrafica.columns:
+                                ids_numerici = pd.to_numeric(df_anagrafica["ID"], errors="coerce").dropna()
+                                if not ids_numerici.empty:
+                                    id_massimo = int(ids_numerici.max())
+                            nuovo_id = id_massimo + 1
+
+                            nuovo_rec = {
+                                "ID": nuovo_id,
+                                "Cognome e Nome": nome_pulito,
+                                "Tipo": tipo_servizio_scelto,
+                                "Gruppo": sorvegliante_gruppo,
+                                "Attivi / Inattivi": "A"
+                            }
+                            
+                            try:
+                                salva_riga_anagrafica(workbook, nuovo_rec, None)
+                            except TypeError:
+                                salva_riga_anagrafica(workbook, nuovo_rec)
 
                     aggiornati = 0
                     inseriti = 0
                     
-                    # 5.2 Scrittura su Foglio Tutti
+                    # 5.2 SALVATAGGIO SU FOGLIO TUTTI (SOLO RIGHE CON MINISTERO SPUNTATO)
                     for _, r in tabella_manuale.iterrows():
+                        # Salva/Sovrascrivi solo se il checkbox Ministero è spuntato (Vero)
+                        if not r["Partecipato"]:
+                            continue
+
                         m_a = str(r["Mese/Anno"]).strip()
                         if not m_a:
                             continue
                         
-                        part = "Si" if r["Partecipato"] else ""
+                        part = "Si"
                         is_pion_aus = False if pion_aus_disabilitato else bool(r["Pioniere Ausiliario"])
                         tipo = "Pioniere Ausiliario" if is_pion_aus else tipo_servizio_scelto
                         
@@ -3899,7 +3921,7 @@ def mostra_importa_s21():
                         valore_studi = str(int(r["Studi Biblici"])) if pd.notna(r["Studi Biblici"]) else "0"
                         
                         valori_riga = {
-                            "Cognome e Nome": nome_finale.strip(),
+                            "Cognome e Nome": nome_pulito,
                             "Mese": m_a,
                             "Hai servito come ?": tipo,
                             "Servizio": part,
@@ -3934,7 +3956,7 @@ def mostra_importa_s21():
                                 inseriti += 1
 
                     st.cache_data.clear()
-                    st.success(f"✔ Operazione completata per {nome_finale}: {aggiornati} mesi aggiornati, {inseriti} nuovi mesi inseriti.")
+                    st.success("✔️ S-21 Salvati correttamente")
                     st.session_state.s21_form_manuale_aperto = False
                     st.rerun()
 
@@ -4183,7 +4205,7 @@ def mostra_importa_s21():
 
         if importate:
             st.cache_data.clear()
-            st.success(f"✔ Importati {importate} mese/i per {nome_persona}.")
+            st.success("✔️ S-21 Salvati correttamente")
         for e in errori:
             st.warning(e)
         if importate:
