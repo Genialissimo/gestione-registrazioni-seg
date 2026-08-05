@@ -2287,6 +2287,7 @@ def mostra_registrazioni():
             _riga_proclamatore_rapporto(nome)
         st.divider()
 
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
 # ─────────────────────────────────────────────────────────────────
@@ -3197,7 +3198,48 @@ def mostra_gruppi_servizio():
                 if scelta == "➕ Nuovo sorvegliante…":
                     nuovo_nome_gruppo = st.text_input("Nome del nuovo sorvegliante", key="gruppi_nuovo_nome")
 
-                if st.button("✔ Abbina", type="primary", use_container_width=True, key="gruppi_conferma_abbina"):
+                col_abbina, col_annulla, col_elimina = st.columns(3)
+                with col_abbina:
+                    conferma_abbina = st.button("✔ Abbina", type="primary", use_container_width=True,
+                                                key="gruppi_conferma_abbina")
+                with col_annulla:
+                    conferma_annulla = st.button("✖ Annulla", use_container_width=True,
+                                                 key="gruppi_conferma_annulla")
+                with col_elimina:
+                    conferma_elimina = st.button("🗑️ Elimina", use_container_width=True,
+                                                 key="gruppi_conferma_elimina")
+
+                if conferma_annulla:
+                    st.session_state.gruppi_mostra_scelta = False
+                    for nome in selezionati:
+                        st.session_state.pop(_chiave_cb(nome), None)
+                    st.rerun()
+
+                if conferma_elimina:
+                    errori = []
+                    with st.spinner("Rimuovo il gruppo dai Proclamatori selezionati…"):
+                        for nome in selezionati:
+                            idx_lista = df.index[df["Cognome e Nome"].astype(str).str.strip() == nome]
+                            if len(idx_lista) == 0:
+                                continue
+                            idx = idx_lista[0]
+                            numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
+                            valori = df.loc[idx].to_dict()
+                            valori["Gruppo"] = ""
+                            ok, err_salva = salva_riga_anagrafica(workbook, valori,
+                                                                   riga_da_aggiornare=numero_riga_foglio)
+                            if not ok:
+                                errori.append(f"{nome}: {err_salva}")
+                    for nome in selezionati:
+                        st.session_state.pop(_chiave_cb(nome), None)
+                    if errori:
+                        st.error("Alcune rimozioni non sono riuscite:\n" + "\n".join(errori))
+                    else:
+                        st.cache_data.clear()
+                        st.session_state.gruppi_mostra_scelta = False
+                        st.success(f"✔ Gruppo rimosso per {n_sel} Proclamatori.")
+
+                if conferma_abbina:
                     nome_gruppo_finale = nuovo_nome_gruppo.strip() if scelta == "➕ Nuovo sorvegliante…" else scelta
                     if not nome_gruppo_finale:
                         st.error("Indica il nome del sorvegliante di gruppo.")
@@ -4547,4 +4589,3 @@ elif st.session_state.pagina == "impostazioni":
     mostra_impostazioni()
 else:
     mostra_home()
-
