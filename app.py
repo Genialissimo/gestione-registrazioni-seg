@@ -3520,20 +3520,33 @@ def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
     if chiave_tipo not in st.session_state:
         st.session_state[chiave_tipo] = tipo_default if tipo_default in TIPI_ADUNANZA else TIPI_ADUNANZA[0]
 
+    # Corregge il valore in session_state PRIMA di disegnare il widget:
+    # Streamlit non permette di modificare session_state di una chiave
+    # dopo che il widget con quella chiave è già stato istanziato in
+    # questo stesso giro di esecuzione.
+    data_valida, data_proposta = _prossima_data_valida_precedente(
+        st.session_state[chiave_data], giorni_validi)
+    if not data_valida and data_proposta is not None:
+        st.session_state[chiave_data] = data_proposta
+        data_valida = True
+
+    # Ogni volta che la data (eventualmente appena corretta) risulta
+    # diversa dall'ultima vista, propone il tipo di adunanza giusto per
+    # quel giorno — sia che la data sia stata corretta in automatico, sia
+    # che l'utente abbia scelto direttamente un altro giorno già valido.
+    chiave_ultima_data = f"{chiave_prefix}_ultima_data_vista"
+    if st.session_state.get(chiave_ultima_data) != st.session_state[chiave_data]:
+        st.session_state[chiave_ultima_data] = st.session_state[chiave_data]
+        tipo_suggerito = tipo_adunanza_del_giorno(
+            GIORNI_SETTIMANA_IT[st.session_state[chiave_data].weekday()], giorni_per_tipo)
+        if tipo_suggerito:
+            st.session_state[chiave_tipo] = tipo_suggerito
+
     data_scelta = st.date_input("Data", format="DD/MM/YYYY", key=chiave_data)
 
-    data_valida, data_proposta = _prossima_data_valida_precedente(data_scelta, giorni_validi)
-    if not data_valida:
-        if data_proposta is not None:
-            st.session_state[chiave_data] = data_proposta
-            tipo_suggerito = tipo_adunanza_del_giorno(GIORNI_SETTIMANA_IT[data_proposta.weekday()],
-                                                        giorni_per_tipo)
-            if tipo_suggerito:
-                st.session_state[chiave_tipo] = tipo_suggerito
-            st.rerun()
-        else:
-            st.warning("Nessun giorno di adunanza configurato — impostalo nella card ⚙️ Impostazioni "
-                       "in Home per attivare il controllo sulla data.")
+    if not data_valida and not giorni_validi:
+        st.warning("Nessun giorno di adunanza configurato — impostalo nella card ⚙️ Impostazioni "
+                   "in Home per attivare il controllo sulla data.")
 
     tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, key=chiave_tipo)
 
