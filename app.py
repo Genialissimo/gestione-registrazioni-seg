@@ -2063,17 +2063,17 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
                     opzioni = [valore_attuale] + opzioni
                 indice = opzioni.index(valore_attuale) if valore_attuale in opzioni else 0
                 valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice,
-                                                         key=f"campo_{colonna}_{chiave}")
+                                                        key=f"campo_{colonna}_{chiave}")
             elif chiave_norm in colonne_numeriche:
                 try:
                     default_num = float(str(valore_attuale).replace(",", ".")) if valore_attuale else 0.0
                 except ValueError:
                     default_num = 0.0
                 valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0,
-                                                            key=f"campo_{colonna}_{chiave}")
+                                                           key=f"campo_{colonna}_{chiave}")
             else:
                 valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale),
-                                                          key=f"campo_{colonna}_{chiave}")
+                                                         key=f"campo_{colonna}_{chiave}")
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -2233,14 +2233,17 @@ def mostra_registrazioni():
             righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
             idx_originale = None
             if righe_sel:
-                idx_originale = righe_persona.index[righe_sel[0]]
+                sel_idx = righe_sel[0]
+                # Controllo di sicurezza per evitare IndexError in caso di disallineamento temporaneo della selezione
+                if sel_idx < len(righe_persona):
+                    idx_originale = righe_persona.index[sel_idx]
 
             chiave_conferma_elim = f"rapp_elim_{nome}"
 
             col_mod, col_elim = st.columns(2)
             with col_mod:
                 if st.button("✏️ Modifica riga selezionata", key=f"btn_mod_{nome}",
-                             disabled=idx_originale is None, use_container_width=True):
+                            disabled=idx_originale is None, use_container_width=True):
                     numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx_originale
                     st.session_state.rapporto_modifica_globale = {
                         "df": df,
@@ -2251,7 +2254,7 @@ def mostra_registrazioni():
                     st.rerun()
             with col_elim:
                 if st.button("🗑️ Elimina riga selezionata", key=f"btn_elim_{nome}",
-                             disabled=idx_originale is None, use_container_width=True):
+                            disabled=idx_originale is None, use_container_width=True):
                     st.session_state[chiave_conferma_elim] = True
                     st.rerun()
 
@@ -2261,7 +2264,7 @@ def mostra_registrazioni():
                 col_si, col_no = st.columns(2)
                 with col_si:
                     if st.button("✔ Sì, elimina", key=f"btn_conf_si_{nome}",
-                                 type="primary", use_container_width=True):
+                                   type="primary", use_container_width=True):
                         ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
                         if ok:
                             st.cache_data.clear()
@@ -2275,15 +2278,14 @@ def mostra_registrazioni():
                         st.session_state[chiave_conferma_elim] = False
                         st.rerun()
 
-                if len(righe_persona) > 1:
-                    st.divider()
+            if len(righe_persona) > 1:
+                st.divider()
 
     for gruppo in sorted(gruppi.keys()):
         st.markdown(f"#### 👤 {gruppo}")
         for nome in gruppi[gruppo]:
             _riga_proclamatore_rapporto(nome)
         st.divider()
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
