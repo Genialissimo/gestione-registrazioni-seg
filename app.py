@@ -3663,18 +3663,169 @@ def _form_modifica_presenza(dati_selezione: dict):
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
 # ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: IMPORTA DA S-21 (Con opzione Inserimento Manuale)
+# ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
-    if st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True):
-        for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta"):
-            st.session_state.pop(chiave, None)
-        vai_a("home")
-        st.rerun()
+    
+    # ── Tastiera Navigazione ──────────────────────────────────────
+    col_home, col_manuale = st.columns([1, 1])
+    with col_home:
+        if st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True):
+            for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta", "s21_form_manuale_aperto"):
+                st.session_state.pop(chiave, None)
+            vai_a("home")
+            st.rerun()
+            
+    with col_manuale:
+        if st.button("➕ Inserisci storico manualmente", key="s21_apri_manuale", use_container_width=True, type="primary"):
+            st.session_state.s21_form_manuale_aperto = not st.session_state.get("s21_form_manuale_aperto", False)
 
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
+    # ── 1. FORM INSERIMENTO MANUALE (Se attivato) ─────────────────
+    if st.session_state.get("s21_form_manuale_aperto", False):
+        st.markdown("---")
+        st.subheader("📝 Inserimento Storico S-21 Manuale")
+
+        df_anagrafica, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+        if err:
+            st.error(err)
+            return
+
+        # Costruzione elenco proclamatori con stato visibile (Attivi, Inattivi, Trasferiti)
+        opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
+        opzioni_proclamatori = [opzione_nuova]
+        mappa_nomi_reali = {}
+
+        for _, riga in df_anagrafica.iterrows():
+            nome = str(riga.get("Cognome e Nome", "")).strip()
+            if not nome:
+                continue
+            stato_cod = str(riga.get("Attivi / Inattivi", "")).strip().upper()
+            
+            if stato_cod in ("I", "INATTIVO"):
+                etichetta = f"⛔ {nome} (Inattivo)"
+            elif stato_cod in ("TR", "TRASFERITO"):
+                etichetta = f"🚚 {nome} (Trasferito)"
+            else:
+                etichetta = f"🟢 {nome}"
+            
+            opzioni_proclamatori.append(etichetta)
+            mappa_nomi_reali[etichetta] = nome
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
+        
+        nome_finale = ""
+        nuova_persona_flag = (scelta_etichetta == opzione_nuova)
+        
+        if nuova_persona_flag:
+            with col_b:
+                nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
+        else:
+            nome_finale = mappa_nomi_reali[scelta_etichetta]
+
+        gruppi_disponibili = sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
+        with col_b if not nuova_persona_flag else col_c:
+            sorvegliante_gruppo = st.selectbox("Sorvegliante del gruppo:", gruppi_disponibili, key="s21_man_gruppo")
+            
+        with col_c if not nuova_persona_flag else col_a:
+            st.text_input("Stato", value="Attivo", disabled=True, key="s21_man_stato_vis")
+
+        st.markdown("##### 📅 Dati di Servizio (Schema S-21)")
+        
+        anno_servizio = st.number_input("Anno di Servizio (es. 2025):", min_value=2000, max_value=2099, value=2025, step=1)
+        
+        mesi_s21 = [
+            f"{anno_servizio-1}-09", f"{anno_servizio-1}-10", f"{anno_servizio-1}-11", f"{anno_servizio-1}-12",
+            f"{anno_servizio}-01", f"{anno_servizio}-02", f"{anno_servizio}-03", f"{anno_servizio}-04",
+            f"{anno_servizio}-05", f"{anno_servizio}-06", f"{anno_servizio}-07", f"{anno_servizio}-08"
+        ]
+        
+        df_iniziale = pd.DataFrame({
+            "Mese/Anno": mesi_s21,
+            "Partecipato": [True]*12,
+            "Tipo Servizio": ["Proclamatore"]*12,
+            "Ore": [""]*12,
+            "Studi Biblici": [0]*12,
+            "Pioniere Ausiliario": [False]*12,
+            "Osservazioni": [""]*12
+        })
+
+        tabella_manuale = st.data_editor(
+            df_iniziale,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="s21_manuale_editor",
+            column_config={
+                "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small"),
+                "Partecipato": st.column_config.CheckboxColumn("Ministero", width="small"),
+                "Tipo Servizio": st.column_config.SelectboxColumn("Tipo Servizio", options=["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare"]),
+                "Ore": st.column_config.TextColumn("Ore", width="small"),
+                "Studi Biblici": st.column_config.NumberColumn("Studi", width="small", min_value=0, step=1),
+                "Pioniere Ausiliario": st.column_config.CheckboxColumn("Pion. Aus.", width="small"),
+                "Osservazioni": st.column_config.TextColumn("Osservazioni", width="large")
+            }
+        )
+
+        col_salva, col_annulla = st.columns(2)
+        with col_salva:
+            btn_salva = st.button("✔ Salva", type="primary", use_container_width=True, key="s21_man_salva")
+        with col_annulla:
+            btn_annulla = st.button("✖ Annulla", use_container_width=True, key="s21_man_annulla")
+
+        if btn_annulla:
+            st.session_state.s21_form_manuale_aperto = False
+            st.rerun()
+
+        if btn_salva:
+            if not nome_finale.strip():
+                st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
+            else:
+                if nuova_persona_flag:
+                    nuovo_rec = {
+                        "Cognome e Nome": nome_finale.strip(),
+                        "Gruppo": sorvegliante_gruppo,
+                        "Attivi / Inattivi": "A"
+                    }
+                    salva_riga_anagrafica(workbook, nuovo_rec, riga_numero=None)
+
+                righe_salvate = 0
+                for _, r in tabella_manuale.iterrows():
+                    m_a = str(r["Mese/Anno"]).strip()
+                    if not m_a:
+                        continue
+                    
+                    part = "Si" if r["Partecipato"] else ""
+                    tipo = "Pioniere Ausiliario" if r["Pioniere Ausiliario"] else r["Tipo Servizio"]
+                    
+                    ok, err_s = aggiungi_riga_tutti(
+                        workbook,
+                        nome_persona=nome_finale.strip(),
+                        mese_anno=m_a,
+                        tipo_servizio=tipo,
+                        ha_partecipato=part,
+                        ore=str(r["Ore"]),
+                        studi=str(r["Studi Biblici"]),
+                        osservazioni=str(r["Osservazioni"])
+                    )
+                    if ok:
+                        righe_salvate += 1
+
+                st.cache_data.clear()
+                st.success(f"✔ Salvate con successo {righe_salvate} righe nel foglio Tutti per {nome_finale}!")
+                st.session_state.s21_form_manuale_aperto = False
+                st.rerun()
+
+        st.markdown("---")
+
+    # ── 2. CARICAMENTO DA FILE PDF AUTOMATICO ─────────────────────
     st.caption("Carica la S-21 ricevuta da un'altra congregazione per un Proclamatore trasferito (o mai "
                "appartenuto qui): provo a leggere automaticamente ore, studi e mesi dal PDF, ma "
                "**niente viene scritto in archivio finché non confermi tu**, riga per riga.")
@@ -3710,7 +3861,7 @@ def mostra_importa_s21():
         st.success("✔ Testo letto correttamente dal PDF. Controlla comunque ogni valore prima di "
                    "confermare — soprattutto \"Tipo Servizio\", che è solo una proposta automatica.")
 
-    # ── 1. Riconoscimento persona ───────────────────────────────────
+    # ── 2.1 Riconoscimento persona dal PDF ────────────────────────
     st.subheader("1. Di chi è questa S-21?")
     nomi_letti = [p["nome"].strip() for p in dati_estratti["pannelli"] if p["nome"].strip()]
     nome_suggerito = nomi_letti[0] if nomi_letti else ""
@@ -3742,7 +3893,7 @@ def mostra_importa_s21():
             riga_anagrafica_esistente = corrispondenza.iloc[0].to_dict()
 
     nome_persona = scelta_nome
-    aggiornamento_anagrafica = None  # dizionario da salvare, se serve
+    aggiornamento_anagrafica = None
 
     if scelta_nome == opzione_nuova:
         st.caption("Questa persona non è ancora in Anagrafica: verrà creata con i dati sotto.")
@@ -3773,7 +3924,7 @@ def mostra_importa_s21():
         if stato_attuale in ("TR", "I"):
             etichetta_stato = "Trasferito" if stato_attuale == "TR" else "Inattivo"
             st.info(f"📌 **{nome_persona}** risulta attualmente **{etichetta_stato}** in Anagrafica. "
-                   f"Importando questi dati, lo riporto **Attivo** e gli assegno il gruppo scelto qui sotto.")
+                    f"Importando questi dati, lo riporto **Attivo** e gli assegno il gruppo scelto qui sotto.")
             gruppo_attuale = (riga_anagrafica_esistente.get("Gruppo") or "").strip()
             indice_default = (gruppi_disponibili.index(gruppo_attuale)
                                if gruppo_attuale in gruppi_disponibili else 0)
@@ -3793,7 +3944,7 @@ def mostra_importa_s21():
         st.warning("Inserisci il nome della persona per continuare.")
         return
 
-    # ── 2. Tabella di revisione ──────────────────────────────────────
+    # ── 2.2 Tabella di revisione dal PDF ──────────────────────────
     st.subheader("2. Controlla i mesi da importare")
 
     df_tutti, err_tutti = leggi_foglio_tutti(workbook)
@@ -3834,7 +3985,7 @@ def mostra_importa_s21():
         column_config={
             "Importa": st.column_config.CheckboxColumn("Importa", width="small"),
             "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small",
-                                                       help="Formato AAAA-MM, es. 2024-09"),
+                                                     help="Formato AAAA-MM, es. 2024-09"),
             "Tipo Servizio": st.column_config.SelectboxColumn(
                 "Tipo Servizio", width="medium",
                 options=["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare",
@@ -3843,14 +3994,14 @@ def mostra_importa_s21():
                 "Ministero", width="small", options=["Si", ""]),
             "Ore": st.column_config.TextColumn(width="small"),
             "Studi Biblici": st.column_config.TextColumn("Studi", width="small"),
-            "Osservazioni": st.column_config.TextColumn(width="large"),
+            "Osservazioni": st.column_config.TextColumn("Osservazioni", width="large"),
             "Anno servizio letto": st.column_config.TextColumn("Anno letto sul modulo", width="small",
-                                                                  disabled=True),
+                                                                disabled=True),
             "Mese (dal modulo)": st.column_config.TextColumn("Mese sul modulo", width="small", disabled=True),
         },
     )
 
-    # ── 3. Conferma e salvataggio ─────────────────────────────────────
+    # ── 2.3 Conferma e salvataggio da PDF ─────────────────────────
     st.subheader("3. Conferma")
     righe_da_importare = tabella_modificata[tabella_modificata["Importa"] == True]
     righe_da_importare = righe_da_importare[righe_da_importare["Mese/Anno"].str.strip() != ""]
@@ -3873,8 +4024,6 @@ def mostra_importa_s21():
             if not ok:
                 errori.append(f"Anagrafica: {err_salva}")
 
-        # Ricontrolla i mesi già presenti al momento del salvataggio (l'utente
-        # potrebbe aver modificato Mese/Anno dopo il caricamento iniziale).
         mesi_presenti_ora = set(mesi_gia_presenti)
         for _, riga in righe_da_importare.iterrows():
             mese_anno = riga["Mese/Anno"].strip()
@@ -3902,52 +4051,6 @@ def mostra_importa_s21():
                            "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
                 st.session_state.pop(chiave, None)
             st.rerun()
-
-
-def _form_nuova_presenza():
-    """Form per inserire una nuova riga nel foglio 'Presenze Adunanze'
-    (data, tipo adunanza, presenti in sala/su Zoom, totale)."""
-    st.markdown("#### ➕ Inserisci presenti alle adunanze")
-
-    giorni_per_tipo = leggi_giorni_adunanze_per_tipo(workbook)
-    data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
-        "presenze_nuovo", datetime.now().date(), TIPI_ADUNANZA[0], 0, 0, giorni_per_tipo,
-    )
-
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        invia = st.button("✔ Salva", type="primary", use_container_width=True,
-                          disabled=not data_valida, key="presenze_nuovo_salva")
-    with col_btn2:
-        annulla = st.button("✖ Annulla", use_container_width=True, key="presenze_nuovo_annulla")
-
-    def _pulisci_campi_nuovo():
-        for suffisso in ("_data", "_tipo", "_presenza", "_zoom"):
-            st.session_state.pop(f"presenze_nuovo{suffisso}", None)
-
-    if annulla:
-        st.session_state.presenze_form_nuovo_aperto = False
-        _pulisci_campi_nuovo()
-        st.rerun()
-
-    if invia:
-        valori = {
-            "Data": data_scelta.strftime("%d/%m/%Y"),
-            "Tipo Adunanza": tipo_adunanza,
-            "In Presenza": str(int(in_presenza)),
-            "Su Zoom": str(int(su_zoom)),
-            "Totale": str(int(totale)),
-        }
-        ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori)
-        if ok:
-            st.cache_data.clear()
-            st.session_state.presenze_form_nuovo_aperto = False
-            _pulisci_campi_nuovo()
-            st.success("✔ Presenza inserita correttamente.")
-            st.rerun()
-        else:
-            st.error(err_salva)
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPOSTAZIONI
