@@ -4226,7 +4226,7 @@ def mostra_importa_s21():
             "Studi Biblici": st.column_config.TextColumn("Studi", width="small", alignment="center"),
             "Osservazioni": st.column_config.TextColumn("Commenti:", width="large"),
             "Anno servizio letto": st.column_config.TextColumn("Anno letto sul modulo", width="small",
-                                                                disabled=True, alignment="center"),
+                                                               disabled=True, alignment="center"),
             "Mese (dal modulo)": st.column_config.TextColumn("Mese sul modulo", width="small", disabled=True, alignment="center"),
         },
     )
@@ -4238,7 +4238,7 @@ def mostra_importa_s21():
     st.caption(f"Righe selezionate per l'importazione: **{len(righe_da_importare)}**")
 
     if st.button(f"✅ Importa {len(righe_da_importare)} mese/i per {nome_persona}",
-                use_container_width=True, disabled=righe_da_importare.empty):
+                 use_container_width=True, disabled=righe_da_importare.empty):
         errori = []
         importate = 0
 
@@ -4299,16 +4299,17 @@ def mostra_importa_s21():
             else:
                 errori.append(f"{mese_anno}: {err_salva}")
 
-        if importate:
-            st.cache_data.clear()
-            st.success("✔️ S-21 Salvati correttamente")
-        for e in errori:
-            st.warning(e)
-        if importate:
-            for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_file",
-                           "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
-                st.session_state.pop(chiave, None)
-            st.rerun()
+        st.cache_data.clear()
+
+        if importate > 0:
+            st.success(f"✔️ Importati correttamente {importate} mese/i per {nome_persona}!")
+        if errori:
+            st.warning("Alcune note o errori durante l'importazione:\n- " + "\n- ".join(errori))
+
+        # Pulizia dello stato e ricaricamento della pagina
+        for k in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
+            st.session_state.pop(k, None)
+        st.rerun()
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPOSTAZIONI
 # ─────────────────────────────────────────────────────────────────
