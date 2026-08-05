@@ -3740,6 +3740,7 @@ def mostra_importa_s21():
         opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
         opzioni_proclamatori = [""] + [opzione_nuova]
         mappa_nomi_reali = {}
+        mappa_dati_anagrafici = {}
 
         for _, riga in df_anagrafica.iterrows():
             nome = str(riga.get("Cognome e Nome", "")).strip()
@@ -3756,30 +3757,51 @@ def mostra_importa_s21():
             
             opzioni_proclamatori.append(etichetta)
             mappa_nomi_reali[etichetta] = nome
+            # Salviamo i dati dell'anagrafica per il recupero automatico
+            mappa_dati_anagrafici[nome] = {
+                "gruppo": str(riga.get("Gruppo", "")).strip(),
+                "tipo": str(riga.get("Tipo", "")).strip()
+            }
 
         scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
         nuova_persona_flag = (scelta_etichetta == opzione_nuova)
         
         if nuova_persona_flag:
             nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
+            default_tipo = ""
+            default_gruppo = ""
         else:
             nome_finale = mappa_nomi_reali.get(scelta_etichetta, "")
+            # Recupero dati automatico dall'anagrafica
+            dati_rec = mappa_dati_anagrafici.get(nome_finale, {})
+            default_tipo = dati_rec.get("tipo", "")
+            default_gruppo = dati_rec.get("gruppo", "")
 
-        # 2. Tipo Servizio
+        # 2. Tipo Servizio (con default dall'Anagrafica)
+        opzioni_tipo_servizio = ["", "Proclamatore", "Pioniere Regolare", "Pioniere Speciale", "Missionario sul campo"]
+        idx_tipo = opzioni_tipo_servizio.index(default_tipo) if default_tipo in opzioni_tipo_servizio else 0
+
         tipo_servizio_scelto = st.selectbox(
             "Tipo Servizio (opzionale):",
-            ["", "Proclamatore", "Pioniere Regolare", "Pioniere Speciale", "Missionario sul campo"],
-            key="s21_man_tipo_servizio"
+            opzioni_tipo_servizio,
+            index=idx_tipo,
+            key=f"s21_man_tipo_servizio_{nome_finale}"
         )
 
         pion_aus_disabilitato = (tipo_servizio_scelto != "Proclamatore")
 
-        # 3. Gruppo e Stato
+        # 3. Gruppo e Stato (con default dall'Anagrafica)
         gruppi_disponibili = [""] + sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
-        
+        idx_gruppo = gruppi_disponibili.index(default_gruppo) if default_gruppo in gruppi_disponibili else 0
+
         col_grp, col_st = st.columns(2)
         with col_grp:
-            sorvegliante_gruppo = st.selectbox("Sorvegliante del gruppo:", gruppi_disponibili, key="s21_man_gruppo")
+            sorvegliante_gruppo = st.selectbox(
+                "Sorvegliante del gruppo:", 
+                gruppi_disponibili, 
+                index=idx_gruppo,
+                key=f"s21_man_gruppo_{nome_finale}"
+            )
         with col_st:
             st.text_input("Stato", value="Attivo", disabled=True, key="s21_man_stato_vis")
 
@@ -3874,10 +3896,12 @@ def mostra_importa_s21():
 
             df_iniziale = pd.DataFrame(righe_griglia)
 
+            # GRIGLIA CON ALTEZZA AUMENTATA (height=480) PER VEDERE TUTTE E 12 LE RIGHE
             tabella_manuale = st.data_editor(
                 df_iniziale,
                 hide_index=True,
                 use_container_width=True,
+                height=480,
                 num_rows="dynamic",
                 key=f"s21_manuale_editor_{nome_finale}_{anno_servizio}_{tipo_servizio_scelto}",
                 column_config={
@@ -3936,15 +3960,13 @@ def mostra_importa_s21():
                     aggiornati = 0
                     inseriti = 0
                     
-                    # Generazione data e ora consegna rapporto
                     data_ora_consegna = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-                    # 5.2 SALVATAGGIO SU FOGLIO TUTTI (SOLO RIGHE CON MINISTERO SPUNTATO)
+                    # 5.2 SALVATAGGIO SU FOGLIO TUTTI
                     for _, r in tabella_manuale.iterrows():
                         if not r["Partecipato"]:
                             continue
 
-                        # Garantisce la formattazione esplicita YYYY-MM come stringa di testo pura
                         m_a_raw = r["Mese/Anno"]
                         m_a = normalizza_mese_anno(m_a_raw)
                         if isinstance(m_a, list):
@@ -3963,7 +3985,6 @@ def mostra_importa_s21():
                             
                         valore_studi = str(int(r["Studi Biblici"])) if pd.notna(r["Studi Biblici"]) else "0"
                         
-                        # Il campo "Mese" è esplicitamente convertito in stringa di testo
                         valori_riga = {
                             "Informazioni cronologiche": data_ora_consegna,
                             "Cognome e Nome": nome_pulito,
@@ -4182,10 +4203,13 @@ def mostra_importa_s21():
 
     colonne_editor = ["Importa", "Mese/Anno", "Tipo Servizio", "Ha partecipato al ministero",
                        "Ore", "Studi Biblici", "Osservazioni", "Anno servizio letto", "Mese (dal modulo)"]
+    
+    # GRIGLIA IMPORTAZIONE PDF CON ALTEZZA AUMENTATA (height=480)
     tabella_modificata = st.data_editor(
         df_proposte[colonne_editor],
         hide_index=True,
         use_container_width=True,
+        height=480,
         num_rows="dynamic",
         key="importa_s21_tabella_editor",
         column_config={
