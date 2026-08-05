@@ -3677,7 +3677,7 @@ def normalizza_mese_anno(valore):
     Estrae e formatta una o più date nel formato YYYY-MM.
     Se passato ad esempio "2025-092026-12026-42026-5", rileva:
     - 2025-09
-    - 2026-01 (se 2026-1 seguito da 2... gestito via regex su YYYY-M/MM)
+    - 2026-01
     - 2026-04
     - 2026-05
     """
@@ -3828,7 +3828,6 @@ def mostra_importa_s21():
                     df_persona = df_tutti[df_tutti[col_nome_tutti].astype(str).str.strip().str.lower() == nome_finale.strip().lower()]
                     for idx, riga in df_persona.iterrows():
                         m_a = str(riga.get(col_mese_tutti, "")).strip()
-                        # Normalizzazione Mese/Anno in formato standard YYYY-MM
                         m_a_norm = normalizza_mese_anno(m_a)
                         if isinstance(m_a_norm, list):
                             m_a_norm = m_a_norm[0]
@@ -3904,14 +3903,13 @@ def mostra_importa_s21():
                 if not nome_pulito:
                     st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
                 else:
-                    # 5.1 SALVATAGGIO IN ANAGRAFICA (Con Controllo Duplicato, Calcolo ID, Tipo in Col. G)
+                    # 5.1 SALVATAGGIO IN ANAGRAFICA
                     nomi_esistenti_anag = [str(x).strip().lower() for x in df_anagrafica.get("Cognome e Nome", pd.Series(dtype=str)) if str(x).strip()]
                     
                     if nuova_persona_flag or (nome_pulito.lower() not in nomi_esistenti_anag):
                         if nome_pulito.lower() in nomi_esistenti_anag:
                             st.warning(f"⚠️ **{nome_pulito}** è già presente in Anagrafica. Inserimento anagrafico saltato.")
                         else:
-                            # Calcolo progressivo ID (Max ID + 1)
                             id_massimo = 0
                             if "ID" in df_anagrafica.columns:
                                 ids_numerici = pd.to_numeric(df_anagrafica["ID"], errors="coerce").dropna()
@@ -3920,11 +3918,11 @@ def mostra_importa_s21():
                             nuovo_id = id_massimo + 1
 
                             nuovo_rec = {
-                                "ID": nuovo_id,                          # Colonna A
-                                "Cognome e Nome": nome_pulito,           # Colonna B
-                                "Tipo": tipo_servizio_scelto,            # Colonna G
-                                "Gruppo": sorvegliante_gruppo,           # Colonna K
-                                "Attivi / Inattivi": "A"                # Colonna O
+                                "ID": nuovo_id,
+                                "Cognome e Nome": nome_pulito,
+                                "Tipo": tipo_servizio_scelto,
+                                "Gruppo": sorvegliante_gruppo,
+                                "Attivi / Inattivi": "A"
                             }
                             
                             try:
@@ -3935,13 +3933,14 @@ def mostra_importa_s21():
                     aggiornati = 0
                     inseriti = 0
                     
+                    # Generazione data e ora consegna rapporto
+                    data_ora_consegna = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
                     # 5.2 SALVATAGGIO SU FOGLIO TUTTI (SOLO RIGHE CON MINISTERO SPUNTATO)
                     for _, r in tabella_manuale.iterrows():
-                        # Salva/Sovrascrivi solo se il checkbox Ministero è spuntato (Vero)
                         if not r["Partecipato"]:
                             continue
 
-                        # Garantisce la formattazione pulita YYYY-MM
                         m_a = normalizza_mese_anno(r["Mese/Anno"])
                         if isinstance(m_a, list):
                             m_a = m_a[0]
@@ -3960,6 +3959,7 @@ def mostra_importa_s21():
                         valore_studi = str(int(r["Studi Biblici"])) if pd.notna(r["Studi Biblici"]) else "0"
                         
                         valori_riga = {
+                            "Informazioni cronologiche": data_ora_consegna,
                             "Cognome e Nome": nome_pulito,
                             "Mese": m_a,
                             "Hai servito come ?": tipo,
@@ -3968,7 +3968,8 @@ def mostra_importa_s21():
                             "Cred. Ore": "",
                             "Studi Biblici": valore_studi,
                             "Commenti:": str(r["Osservazioni"]).strip(),
-                            "Sorvegliante del gruppo": sorvegliante_gruppo
+                            "Sorvegliante del gruppo": sorvegliante_gruppo,
+                            "ND": "ND"
                         }
                         
                         if m_a in mappa_esistenti:
@@ -4085,7 +4086,6 @@ def mostra_importa_s21():
         if nome_persona.strip():
             pannello_rif = dati_estratti["pannelli"][-1] if dati_estratti["pannelli"] else {}
             
-            # Calcolo ID progressivo
             id_massimo = 0
             if "ID" in df_anagrafica.columns:
                 ids_numerici = pd.to_numeric(df_anagrafica["ID"], errors="coerce").dropna()
@@ -4153,7 +4153,6 @@ def mostra_importa_s21():
 
     righe_proposte = _s21_costruisci_righe_import(dati_estratti, mesi_gia_presenti)
 
-    # Normalizzazione date nelle righe proposte
     for riga in righe_proposte:
         if "Mese/Anno" in riga:
             m_norm = normalizza_mese_anno(riga["Mese/Anno"])
@@ -4230,7 +4229,9 @@ def mostra_importa_s21():
             if not ok:
                 errori.append(f"Anagrafica: {err_salva}")
 
+        data_ora_consegna_pdf = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         mesi_presenti_ora = set(mesi_gia_presenti)
+
         for _, riga in righe_da_importare.iterrows():
             mese_anno = normalizza_mese_anno(riga["Mese/Anno"])
             if isinstance(mese_anno, list):
@@ -4241,6 +4242,7 @@ def mostra_importa_s21():
                 continue
             
             valori_pdf = {
+                "Informazioni cronologiche": data_ora_consegna_pdf,
                 "Cognome e Nome": nome_persona.strip(),
                 "Mese": mese_anno,
                 "Hai servito come ?": riga["Tipo Servizio"],
@@ -4249,7 +4251,8 @@ def mostra_importa_s21():
                 "Cred. Ore": "",
                 "Studi Biblici": riga["Studi Biblici"],
                 "Commenti:": str(riga["Osservazioni"]).strip(),
-                "Sorvegliante del gruppo": aggiornamento_anagrafica.get("Gruppo", "") if aggiornamento_anagrafica else ""
+                "Sorvegliante del gruppo": aggiornamento_anagrafica.get("Gruppo", "") if aggiornamento_anagrafica else "",
+                "ND": "ND"
             }
             
             try:
