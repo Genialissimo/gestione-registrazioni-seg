@@ -4464,6 +4464,14 @@ def mostra_presenze_adunanze():
         key="select_anno_mese"
     )
 
+    # Se il mese cambia rispetto all'ultima volta, la selezione di riga della
+    # griglia sotto (legata a "presenze_tabella_dettaglio") va azzerata:
+    # altrimenti resterebbe un indice riferito al mese precedente, che nel
+    # nuovo mese può non esistere o puntare a una riga sbagliata.
+    if st.session_state.get("presenze_ultimo_mese_visto") != mese_selezionato:
+        st.session_state.presenze_ultimo_mese_visto = mese_selezionato
+        st.session_state.pop("presenze_tabella_dettaglio", None)
+
     # Filtriamo i dati per il mese selezionato
     df_mese = df_prep[df_prep["_anno_mese"] == mese_selezionato].copy()
 
@@ -4536,6 +4544,12 @@ def mostra_presenze_adunanze():
     )
 
     righe_sel_dett = evento_dettaglio.selection.rows if evento_dettaglio and evento_dettaglio.selection else []
+    # Protezione: tiene solo indici ancora esistenti nel dataframe attuale.
+    # Dopo un'eliminazione (o un cambio di mese) il dataframe può essere più
+    # corto di prima, e un indice "vecchio" rimasto nello stato della griglia
+    # causerebbe un KeyError su .loc[] — invece di far crashare l'app, in quel
+    # caso la selezione viene semplicemente considerata vuota.
+    righe_sel_dett = [i for i in righe_sel_dett if i < len(df_mese_reset)]
 
     if righe_sel_dett:
         riga_scelta = df_mese_reset.loc[righe_sel_dett[0]]
@@ -4564,6 +4578,10 @@ def mostra_presenze_adunanze():
                     if ok:
                         st.cache_data.clear()
                         st.session_state.presenze_conferma_elimina = None
+                        # Azzera la selezione della griglia: la riga eliminata
+                        # non esiste più, quindi l'indice salvato non è più
+                        # valido nel prossimo giro di esecuzione.
+                        st.session_state.pop("presenze_tabella_dettaglio", None)
                         st.success("✔ Riga eliminata.")
                         st.rerun()
                     else:
