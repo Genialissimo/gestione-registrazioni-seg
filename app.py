@@ -1966,55 +1966,77 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME
+# PAGINA: HOME (Design Futuristico Neon/Glassmorphism)
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # Style CSS Custom per Card e Badge Responsive
+    # CSS Custom Futuristico
     st.markdown("""
     <style>
+        /* Card con effetto Glassmorphism e Neon Border */
+        [data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
+            background: rgba(15, 23, 42, 0.75) !important;
+            border: 1px solid rgba(56, 189, 248, 0.2) !important;
+            border-radius: 16px !important;
+            backdrop-filter: blur(12px) !important;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37) !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+        
+        /* Effetto Hover Neon */
+        [data-testid="stVerticalBlock"] > div[data-testid="stBlock"]:hover {
+            border-color: rgba(56, 189, 248, 0.8) !important;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4), inset 0 0 15px rgba(56, 189, 248, 0.1) !important;
+            transform: translateY(-4px) scale(1.01);
+        }
+
         .card-title-container {
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
         .card-title {
-            font-size: 1.1rem;
+            font-size: 1.15rem;
             font-weight: 700;
-            color: #1e293b;
-            margin: 0;
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
-        .badge-pill {
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 0.82rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+
+        /* Badge HUD con effetto Glow */
+        .hud-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
         }
-        .badge-green {
-            background-color: #e6f4ea;
-            color: #137333;
-            border: 1px solid #ceead6;
+        .hud-green {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(52, 211, 153, 0.4);
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
         }
-        .badge-yellow {
-            background-color: #fef7e0;
-            color: #b06000;
-            border: 1px solid #feefc3;
+        .hud-yellow {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            box-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
         }
-        .badge-red {
-            background-color: #fce8e6;
-            color: #c5221f;
-            border: 1px solid #fad2cf;
+        .hud-red {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(248, 113, 113, 0.4);
+            box-shadow: 0 0 10px rgba(248, 113, 113, 0.3);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2051,10 +2073,10 @@ def mostra_home():
 
                     conteggio_consegnati_home = len(nomi_consegnati_home)
                     completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
-                    cls_badge = "badge-green" if completo else "badge-red"
-                    badge_rapporti = f'<span class="badge-pill {cls_badge}">{conteggio_consegnati_home} di {conteggio_attivi_home}</span>'
+                    cls_badge = "hud-green" if completo else "hud-red"
+                    badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
 
-                # ── 2. BADGE ANAGRAFICHE (Completi 🟢 / Incompleti 🟡) ──
+                # ── 2. BADGE ANAGRAFICHE ──
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Data Battesimo", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
                     df_attivi_ana = df_anagrafica_home[
@@ -2078,9 +2100,9 @@ def mostra_home():
                         
                         b_list = []
                         if tot_comp > 0:
-                            b_list.append(f'<span class="badge-pill badge-green">🟢 Completi: {tot_comp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
                         if tot_incomp > 0:
-                            b_list.append(f'<span class="badge-pill badge-yellow">🟡 Incompleti: {tot_incomp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
                         
                         badge_anagrafica = " ".join(b_list)
 
@@ -2097,7 +2119,7 @@ def mostra_home():
         ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
         ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
         ("📊", "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
-        ("🙌", "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        ("🙌", "Presenti alle adunanze", "Registra e monitora les presenze alle due adunanze.", "presenze", ""),
         ("📥", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
         ("⚙️", "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
     ]
@@ -2115,7 +2137,7 @@ def mostra_home():
                 st.markdown(
                     f"""
                     <div class="card-title-container">
-                        <span class="card-title">{icon} {titolo}</span>
+                        <span class="card-title"><span>{icon}</span> {titolo}</span>
                         <div>{badge}</div>
                     </div>
                     """,
@@ -2129,7 +2151,6 @@ def mostra_home():
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
         st.cache_data.clear()
         st.rerun()
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
