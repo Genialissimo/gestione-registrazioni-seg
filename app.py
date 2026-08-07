@@ -1966,30 +1966,30 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Design Futuristico Neon/Glassmorphism)
+# PAGINA: HOME (Design Futuristico con Icone Vividissime e Colorate)
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # CSS Custom Futuristico
+    # CSS Custom con icone colorate, nitide e distinte
     st.markdown("""
     <style>
-        /* Card con effetto Glassmorphism e Neon Border */
+        /* Card Glassmorphism */
         [data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
             background: rgba(15, 23, 42, 0.75) !important;
-            border: 1px solid rgba(56, 189, 248, 0.2) !important;
+            border: 1px solid rgba(56, 189, 248, 0.25) !important;
             border-radius: 16px !important;
             backdrop-filter: blur(12px) !important;
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37) !important;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }
         
-        /* Effetto Hover Neon */
+        /* Hover Neon Effect */
         [data-testid="stVerticalBlock"] > div[data-testid="stBlock"]:hover {
             border-color: rgba(56, 189, 248, 0.8) !important;
             box-shadow: 0 0 20px rgba(56, 189, 248, 0.4), inset 0 0 15px rgba(56, 189, 248, 0.1) !important;
-            transform: translateY(-4px) scale(1.01);
+            transform: translateY(-4px);
         }
 
         .card-title-container {
@@ -1998,27 +1998,49 @@ def mostra_home():
             align-items: center;
             flex-wrap: wrap;
             gap: 8px;
-            margin-bottom: 6px;
-        }
-        .card-title {
-            font-size: 1.15rem;
-            font-weight: 700;
-            background: linear-gradient(90deg, #38bdf8, #818cf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            margin-bottom: 8px;
         }
 
-        /* Badge HUD con effetto Glow */
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #ffffff !important;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* Box dell'Icona: Preserva i colori reali dell'emoji/icona */
+        .icon-box {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+            /* Forza la resa a colori nitidi */
+            filter: none !important;
+            -webkit-text-fill-color: initial !important;
+        }
+
+        /* Gradienti specifici per ciascun tipo di icona */
+        .bg-orange { background: rgba(249, 115, 22, 0.2); border: 1px solid rgba(249, 115, 22, 0.5); box-shadow: 0 0 10px rgba(249, 115, 22, 0.3); }
+        .bg-blue   { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); }
+        .bg-green  { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); box-shadow: 0 0 10px rgba(16, 185, 129, 0.3); }
+        .bg-purple { background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); box-shadow: 0 0 10px rgba(168, 85, 247, 0.3); }
+        .bg-cyan   { background: rgba(6, 182, 212, 0.2); border: 1px solid rgba(6, 182, 212, 0.5); box-shadow: 0 0 10px rgba(6, 182, 212, 0.3); }
+        .bg-amber  { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); box-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
+        .bg-slate  { background: rgba(100, 116, 139, 0.2); border: 1px solid rgba(100, 116, 139, 0.5); box-shadow: 0 0 10px rgba(100, 116, 139, 0.3); }
+
+        /* Badge HUD Stato */
         .hud-badge {
             padding: 4px 10px;
             border-radius: 20px;
             font-size: 0.78rem;
             font-weight: 700;
             letter-spacing: 0.5px;
-            text-transform: uppercase;
         }
         .hud-green {
             background: rgba(16, 185, 129, 0.15);
@@ -2111,17 +2133,19 @@ def mostra_home():
             badge_anagrafica = ""
 
     st.subheader("Sezioni")
+    
+    # Insieme di card con icone, colori dedicati per la sfumatura e pagine
     card_data = [
-        ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
-        ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
-        ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
-        ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
-        ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
-        ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
-        ("📊", "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
-        ("🙌", "Presenti alle adunanze", "Registra e monitora les presenze alle due adunanze.", "presenze", ""),
-        ("📥", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
-        ("⚙️", "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
+        ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
+        ("📚", "bg-blue",   "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
+        ("🗂️", "bg-green",  "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
+        ("📇", "bg-cyan",   "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
+        ("👥", "bg-purple", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
+        ("🏢", "bg-amber",  "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
+        ("📊", "bg-blue",   "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
+        ("🙌", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        ("📥", "bg-orange", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
+        ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
     ]
 
     riga1 = st.columns(2)
@@ -2131,13 +2155,16 @@ def mostra_home():
     riga5 = st.columns(2)
     colonne = riga1 + riga2 + riga3 + riga4 + riga5
 
-    for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
+    for col, (icon, bg_cls, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
                 st.markdown(
                     f"""
                     <div class="card-title-container">
-                        <span class="card-title"><span>{icon}</span> {titolo}</span>
+                        <span class="card-title">
+                            <span class="icon-box {bg_cls}">{icon}</span>
+                            <span>{titolo}</span>
+                        </span>
                         <div>{badge}</div>
                     </div>
                     """,
