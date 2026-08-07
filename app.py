@@ -4878,10 +4878,11 @@ def mostra_storico_proclamatori():
 
     col_anno, col_ricerca = st.columns([1, 3])
     with col_anno:
+        # Formattazione corretta senza decimali (.0)
         anno_scelto = st.selectbox(
             "Anno teocratico",
             anni_presenti,
-            format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
+            format_func=lambda a: f"{int(a)} – {int(a) + 1} (set {int(a)} → ago {int(a) + 1})",
         )
     with col_ricerca:
         ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_storico_proclamatori")
@@ -4906,33 +4907,38 @@ def mostra_storico_proclamatori():
     if testo_ricerca:
         nomi = [n for n in nomi if testo_ricerca in n.lower()]
 
-    # ── LOGICA CALCOLO STATO BASATA ESCLUSIVAMENTE SUL FOGLIO TUTTI (COLONNA E) ──
+    # ── LOGICA CALCOLO STATO LIMITATA ALL'ANNO TEOCRATICO SELEZIONATO (COLONNA C/E) ──
     def calcola_stato_proclamatore(nome: str) -> str:
         col_partecipazione = "Ha partecipato al ministero"
         righe_p = df_tutti[df_tutti["Nome"].astype(str).str.strip().str.lower() == nome.lower()]
         
         if not righe_p.empty and col_partecipazione in righe_p.columns:
-            righe_ordinate = righe_p.sort_values("Mese/Anno")
-            # Convertiamo la colonna E in booleano (True se "No", "False" o "0")
-            valori_no = [
-                str(v).strip().lower() in ["no", "false", "0"]
-                for v in righe_ordinate[col_partecipazione]
-            ]
+            # 1. Filtriamo per la colonna C (Mese/Anno) limitatamente all'anno teocratico corrente/selezionato
+            righe_anno_corrente = righe_p[
+                righe_p["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
+            ].sort_values("Mese/Anno")
             
-            # Conta quanti "No" consecutivi ci sono a partire dal mese più recente indietro
-            consecutivi_no = 0
-            for e_no in reversed(valori_no):
-                if e_no:
-                    consecutivi_no += 1
-                else:
-                    break
+            if not righe_anno_corrente.empty:
+                # Convertiamo la colonna E in booleano (True se "No", "False" o "0")
+                valori_no = [
+                    str(v).strip().lower() in ["no", "false", "0"]
+                    for v in righe_anno_corrente[col_partecipazione]
+                ]
+                
+                # Calcolo "No" consecutivi a partire dall'ultimo mese registrato dell'anno
+                consecutivi_no = 0
+                for e_no in reversed(valori_no):
+                    if e_no:
+                        consecutivi_no += 1
+                    else:
+                        break
 
-            # Se ha 6 o più "No" consecutivi -> Inattivo
-            if consecutivi_no >= 6:
-                return "inattivo"
-            # Se ha almeno un "No" negli ultimi mesi ma meno di 6 consecutivi -> Irregolare
-            elif any(valori_no[-6:]):
-                return "irregolare"
+                # 6 "No" consecutivi nell'anno -> Inattivo
+                if consecutivi_no >= 6:
+                    return "inattivo"
+                # Almeno un "No" registrato nei mesi dell'anno corrente -> Irregolare
+                elif any(valori_no):
+                    return "irregolare"
 
         return "attivo"
 
@@ -5044,11 +5050,10 @@ def mostra_storico_proclamatori():
     # ── RENDERING FILTRATO PER GRUPPO ──────────────────────────────────
     for gruppo in sorted(gruppi.keys()):
         if gruppi[gruppo]:
-            st.markdown(f"#### 👨‍💼 {gruppo}")
+            st.markdown(f"#### 👤 {gruppo}")
             for nome in gruppi[gruppo]:
                 _riga_proclamatore(nome)
             st.divider()
-
 # ─────────────────────────────────────────────────────────────────
 # ROUTING — navigazione solo tramite le card della Home
 # ─────────────────────────────────────────────────────────────────
