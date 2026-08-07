@@ -1973,40 +1973,81 @@ def mostra_home():
     st.title("Pannello di controllo")
 
     badge_rapporti = ""
+    badge_anagrafica = ""
+
     if collegato:
         try:
             df_anagrafica_home, err_ana_home = leggi_foglio_come_df(
                 workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
             df_risposte_home, err_risp_home = leggi_foglio_come_df(
                 workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
-            if not err_ana_home and not err_risp_home and not df_anagrafica_home.empty:
+
+            if not err_ana_home and not df_anagrafica_home.empty:
+                # ── 1. BADGE RAPPORTI CONSEGNATI ──
+                if not err_risp_home:
+                    if "Attivi / Inattivi" in df_anagrafica_home.columns:
+                        categorie_home = df_anagrafica_home["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+                    else:
+                        categorie_home = pd.Series(["A"] * len(df_anagrafica_home), index=df_anagrafica_home.index)
+                    
+                    nomi_attivi_home = set(
+                        df_anagrafica_home.loc[categorie_home == "A", "Cognome e Nome"].astype(str).str.strip()
+                    )
+                    conteggio_attivi_home = len(nomi_attivi_home)
+
+                    if "Cognome e Nome" in df_risposte_home.columns:
+                        nomi_consegnati_home = set(
+                            df_risposte_home["Cognome e Nome"].astype(str).str.strip()
+                        ) & nomi_attivi_home
+                    else:
+                        nomi_consegnati_home = set()
+
+                    conteggio_consegnati_home = len(nomi_consegnati_home)
+                    completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
+                    colore_badge = "#2E8B57" if completo else "#C0392B"
+                    badge_rapporti = (f" <span style='color:{colore_badge};font-weight:700;'>"
+                                       f"({conteggio_consegnati_home} di {conteggio_attivi_home})</span>")
+
+                # ── 2. BADGE ANAGRAFICHE (Completi 🟢 / Incompleti 🟡) ──
+                colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Data Battesimo", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
-                    categorie_home = df_anagrafica_home["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
-                else:
-                    categorie_home = pd.Series(["A"] * len(df_anagrafica_home), index=df_anagrafica_home.index)
-                nomi_attivi_home = set(
-                    df_anagrafica_home.loc[categorie_home == "A", "Cognome e Nome"].astype(str).str.strip()
-                )
-                conteggio_attivi_home = len(nomi_attivi_home)
-                if "Cognome e Nome" in df_risposte_home.columns:
-                    nomi_consegnati_home = set(
-                        df_risposte_home["Cognome e Nome"].astype(str).str.strip()
-                    ) & nomi_attivi_home
-                else:
-                    nomi_consegnati_home = set()
-                conteggio_consegnati_home = len(nomi_consegnati_home)
-                completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
-                colore_badge = "#2E8B57" if completo else "#C0392B"
-                badge_rapporti = (f" <span style='color:{colore_badge};font-weight:700;'>"
-                                   f"({conteggio_consegnati_home} di {conteggio_attivi_home})</span>")
+                    df_attivi_ana = df_anagrafica_home[
+                        df_anagrafica_home["Attivi / Inattivi"].astype(str).str.strip().str.upper().str.startswith("A")
+                    ].copy()
+
+                    def riga_completa_home(riga):
+                        for col in colonne_obbligatorie:
+                            if col in riga:
+                                val = str(riga[col]).strip()
+                                if not val or val.lower() in ["none", "nan", "null"]:
+                                    return False
+                            else:
+                                return False
+                        return True
+
+                    if not df_attivi_ana.empty:
+                        esiti = df_attivi_ana.apply(riga_completa_home, axis=1)
+                        tot_comp = esiti.sum()
+                        tot_incomp = len(df_attivi_ana) - tot_comp
+                        
+                        parti_badge = []
+                        if tot_comp > 0:
+                            parti_badge.append(f"<span style='color:#2E8B57;font-weight:600;'>🟢 Completi: {tot_comp}</span>")
+                        if tot_incomp > 0:
+                            parti_badge.append(f"<span style='color:#D4AC0D;font-weight:600;'>🟡 Incompleti: {tot_incomp}</span>")
+                        
+                        if parti_badge:
+                            badge_anagrafica = f" <span style='font-size:0.85rem;'>({' '.join(parti_badge)})</span>"
+
         except Exception:
             badge_rapporti = ""
+            badge_anagrafica = ""
 
     st.subheader("Sezioni")
     card_data = [
         ("📖", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
         ("📚", "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
-        ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", ""),
+        ("🗂️", "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
         ("📇", "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
         ("👥", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
         ("🏢", "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
@@ -2021,13 +2062,14 @@ def mostra_home():
     riga4 = st.columns(2)
     riga5 = st.columns(2)
     colonne = riga1 + riga2 + riga3 + riga4 + riga5
+
     for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
                 st.markdown(f"#### {icon}  {titolo}{badge}", unsafe_allow_html=True)
                 st.caption(desc)
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
-                          use_container_width=True, on_click=vai_a, args=(pagina,))
+                           use_container_width=True, on_click=vai_a, args=(pagina,))
 
     if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
