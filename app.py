@@ -2165,6 +2165,7 @@ def mostra_registrazioni():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
+    # Campo di ricerca dinamico
     ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
 
     def e_attivo(valore: str) -> bool:
@@ -2188,8 +2189,14 @@ def mostra_registrazioni():
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
     if colonna_stato:
         nomi = [n for n in nomi if e_attivo(stato_per_nome.get(n, ""))]
-    if ricerca:
-        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
+    
+    # ── FILTRAGGIO DINAMICO PER NOME ─────────────────────────────────
+    if ricerca.strip():
+        nomi = [n for n in nomi if ricerca.lower().strip() in n.lower()]
+
+    if not nomi:
+        st.info("Nessun Proclamatore corrisponde alla ricerca.")
+        return
 
     conteggi = {}
     if "Cognome e Nome" in df.columns:
@@ -2235,7 +2242,6 @@ def mostra_registrazioni():
             idx_originale = None
             if righe_sel:
                 sel_idx = righe_sel[0]
-                # Controllo di sicurezza per evitare IndexError in caso di disallineamento temporaneo della selezione
                 if sel_idx < len(righe_persona):
                     idx_originale = righe_persona.index[sel_idx]
 
@@ -2282,11 +2288,14 @@ def mostra_registrazioni():
             if len(righe_persona) > 1:
                 st.divider()
 
+    # ── RENDERING FILTRATO PER GRUPPO ─────────────────────────────────
     for gruppo in sorted(gruppi.keys()):
-        st.markdown(f"#### 👤 {gruppo}")
-        for nome in gruppi[gruppo]:
-            _riga_proclamatore_rapporto(nome)
-        st.divider()
+        # Mostra il gruppo solo se contiene almeno un nome dopo il filtro
+        if gruppi[gruppo]:
+            st.markdown(f"#### 👤 {gruppo}")
+            for nome in gruppi[gruppo]:
+                _riga_proclamatore_rapporto(nome)
+            st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────
