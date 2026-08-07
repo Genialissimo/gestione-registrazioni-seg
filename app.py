@@ -4884,59 +4884,90 @@ def mostra_storico_proclamatori():
             format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
         )
     with col_ricerca:
-        # Ricerca dinamica ad ogni tasto premuto con st_keyup
         ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_storico_proclamatori")
 
     if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
-    def e_inattivo(valore: str) -> bool:
-        """Riconosce lo stato 'Inattivo' sia scritto come 'I' che come
-        'Inattivi'/'Inattivo' per esteso — tutto ciò che inizia con 'i'."""
-        return (valore or "").strip().lower().startswith("i")
-
-    def stato_valido(valore: str) -> bool:
-        """Include solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
-        esclude tutto il resto (es. 'TR'/'Trasferiti')."""
-        v = (valore or "").strip().lower()
-        return v.startswith("a") or v.startswith("i")
-
-    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
     colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
 
-    stato_per_nome = {}
     gruppo_per_nome = {}
     for _, riga in df_anagrafica.iterrows():
         n = str(riga.get("Cognome e Nome", "")).strip()
         if not n:
             continue
-        if colonna_stato:
-            stato_per_nome[n] = riga.get(colonna_stato, "")
         if colonna_gruppo:
             gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
-    # 1. Estrazione e pulizia nomi
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
     
-    # 2. Filtro per stati validi (Attivi / Inattivi)
-    if colonna_stato:
-        nomi = [n for n in nomi if stato_valido(stato_per_nome.get(n, ""))]
-    
-    # 3. Filtro dinamico per nome digitato
     testo_ricerca = ricerca.strip().lower()
     if testo_ricerca:
         nomi = [n for n in nomi if testo_ricerca in n.lower()]
 
+    # ── LOGICA CALCOLO STATO BASATA ESCLUSIVAMENTE SUL FOGLIO TUTTI (COLONNA E) ──
+    def calcola_stato_proclamatore(nome: str) -> str:
+        col_partecipazione = "Ha partecipato al ministero"
+        righe_p = df_tutti[df_tutti["Nome"].astype(str).str.strip().str.lower() == nome.lower()]
+        
+        if not righe_p.empty and col_partecipazione in righe_p.columns:
+            righe_ordinate = righe_p.sort_values("Mese/Anno")
+            # Convertiamo la colonna E in booleano (True se "No", "False" o "0")
+            valori_no = [
+                str(v).strip().lower() in ["no", "false", "0"]
+                for v in righe_ordinate[col_partecipazione]
+            ]
+            
+            # Conta quanti "No" consecutivi ci sono a partire dal mese più recente indietro
+            consecutivi_no = 0
+            for e_no in reversed(valori_no):
+                if e_no:
+                    consecutivi_no += 1
+                else:
+                    break
+
+            # Se ha 6 o più "No" consecutivi -> Inattivo
+            if consecutivi_no >= 6:
+                return "inattivo"
+            # Se ha almeno un "No" negli ultimi mesi ma meno di 6 consecutivi -> Irregolare
+            elif any(valori_no[-6:]):
+                return "irregolare"
+
+        return "attivo"
+
+    mappa_stati = {n: calcola_stato_proclamatore(n) for n in nomi}
+
+    tot_attivi = sum(1 for s in mappa_stati.values() if s == "attivo")
+    tot_inattivi = sum(1 for s in mappa_stati.values() if s == "inattivo")
+    tot_irregolari = sum(1 for s in mappa_stati.values() if s == "irregolare")
+
+    # ── FILTRO RADIO BUTTONS ──────────────────────────────────────────────
+    scelta_stato = st.radio(
+        "Filtra per stato:",
+        options=["Tutti", "Attivi", "Inattivi", "Irregolari"],
+        format_func=lambda op: {
+            "Tutti": f"👥 Tutti ({len(nomi)})",
+            "Attivi": f"🟢 Attivi ({tot_attivi})",
+            "Inattivi": f"🔺 Inattivi ({tot_inattivi})",
+            "Irregolari": f"⚠️ Irregolari ({tot_irregolari})"
+        }[op],
+        horizontal=True,
+        key="filtro_stato_radio_storico"
+    )
+
+    if scelta_stato == "Attivi":
+        nomi = [n for n in nomi if mappa_stati[n] == "attivo"]
+    elif scelta_stato == "Inattivi":
+        nomi = [n for n in nomi if mappa_stati[n] == "inattivo"]
+    elif scelta_stato == "Irregolari":
+        nomi = [n for n in nomi if mappa_stati[n] == "irregolare"]
+
     if not nomi:
-        st.info("Nessun Proclamatore corrisponde alla ricerca.")
+        st.info("Nessun Proclamatore corrisponde ai criteri di ricerca.")
         return
 
-    conteggio_attivi = sum(1 for n in nomi if not e_inattivo(stato_per_nome.get(n, "")))
-    conteggio_inattivi = sum(1 for n in nomi if e_inattivo(stato_per_nome.get(n, "")))
-    st.caption(f"🟢 {conteggio_attivi} Proclamatori Attivi. 🔺 {conteggio_inattivi} Proclamatori Inattivi.")
-
-    # 4. Raggruppamento alfabetico per Gruppo dei soli nomi filtrati
+    # ── RAGGRUPPAMENTO PER GRUPPO ────────────────────────────────────────
     gruppi = {}
     for n in nomi:
         g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
@@ -4945,8 +4976,8 @@ def mostra_storico_proclamatori():
         gruppi[g].sort()
 
     def _riga_proclamatore(nome: str):
-        inattivo = e_inattivo(stato_per_nome.get(nome, ""))
-        indicatore = "🔺 " if inattivo else ""
+        st_proc = mappa_stati.get(nome, "attivo")
+        indicatore = "🔺 " if st_proc == "inattivo" else "⚠️ " if st_proc == "irregolare" else "🟢 "
         etichetta = f"{indicatore}{nome}"
 
         with st.expander(etichetta):
@@ -4997,7 +5028,6 @@ def mostra_storico_proclamatori():
                 righe_sel = evento_tabella.selection.rows if evento_tabella and evento_tabella.selection else []
                 if righe_sel:
                     posizione = righe_sel[0]
-                    # La riga "Totale" (ultima) non è modificabile
                     if posizione < len(righe_persona):
                         idx_originale = righe_persona.index[posizione]
                         riga_dati = df_tutti.loc[idx_originale]
@@ -5011,14 +5041,13 @@ def mostra_storico_proclamatori():
                             }
                             st.rerun()
 
-    # 5. Rendering dei soli gruppi che contengono elementi filtrati
+    # ── RENDERING FILTRATO PER GRUPPO ──────────────────────────────────
     for gruppo in sorted(gruppi.keys()):
         if gruppi[gruppo]:
-            st.markdown(f"#### 👤 {gruppo}")
+            st.markdown(f"#### 👨‍💼 {gruppo}")
             for nome in gruppi[gruppo]:
                 _riga_proclamatore(nome)
             st.divider()
-
 
 # ─────────────────────────────────────────────────────────────────
 # ROUTING — navigazione solo tramite le card della Home
