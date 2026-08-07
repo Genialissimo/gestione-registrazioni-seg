@@ -4843,9 +4843,6 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 # ─────────────────────────────────────────────────────────────────
 # Pagina: Storico rapporti consegnati
 # ─────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────
-# Pagina: Storico rapporti consegnati
-# ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
     if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
@@ -4900,11 +4897,11 @@ def mostra_storico_proclamatori():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
+    # Controlla la colonna O dell'Anagrafica ("Attivi / Inattivi")
     def stato_valido_anagrafica(valore: str) -> bool:
-        """Mantiene solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
-        Esclude Trasferiti ('TR'/'Trasferito'), rimossi o vuoti."""
-        v = (valore or "").strip().lower()
-        return v.startswith("a") or v.startswith("i")
+        v = (valore or "").strip().upper()
+        # Mantiene solo A (Attivi) e I (Inattivi), esclude TR (Trasferiti) e altro
+        return v.startswith("A") or v.startswith("I")
 
     colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
     colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
@@ -4922,7 +4919,7 @@ def mostra_storico_proclamatori():
 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
 
-    # ── CONTROLLO ANAGRAFICA: Esclude i Trasferiti ──
+    # ── CONTROLLO COLONNA O ANAGRAFICA: Esclude i Trasferiti ("TR") ──
     if colonna_stato:
         nomi = [n for n in nomi if stato_valido_anagrafica(stato_anagrafica_per_nome.get(n, ""))]
     
