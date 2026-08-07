@@ -3638,6 +3638,10 @@ def _form_modifica_presenza(dati_selezione: dict):
 
     if annulla:
         st.session_state.presenze_modifica = None
+        # Deseleziona la riga nella griglia sottostante: altrimenti, tornando
+        # alla vista normale, la riga resterebbe ancora selezionata e i
+        # pulsanti Modifica/Elimina rimarrebbero visibili "a vuoto".
+        st.session_state.pop("presenze_tabella_dettaglio", None)
         st.rerun()
 
     if invia:
@@ -3655,11 +3659,12 @@ def _form_modifica_presenza(dati_selezione: dict):
         if ok:
             st.cache_data.clear()
             st.session_state.presenze_modifica = None
+            # Stessa deselezione anche dopo un salvataggio riuscito.
+            st.session_state.pop("presenze_tabella_dettaglio", None)
             st.success("✔ Modificato correttamente.")
             st.rerun()
         else:
             st.error(err_salva)
-
 def _form_nuova_presenza():
     """Form di inserimento di una nuova riga nel foglio 'Presenze Adunanze'."""
     st.markdown("#### ➕ Nuova presenza")
