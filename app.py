@@ -1968,14 +1968,14 @@ collegato = workbook is not None
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Design Pulito, Titoli e Icone Vividi e Visibili)
 # ─────────────────────────────────────────────────────────────────
+
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # CSS Custom mirato ed esplicito per evitare conflitti con Streamlit
+    # CSS Custom per card e icone
     st.markdown("""
     <style>
-        /* Contenitore Principale della Card */
         .custom-card-header {
             display: flex;
             align-items: center;
@@ -1984,7 +1984,6 @@ def mostra_home():
             margin-bottom: 8px;
             width: 100%;
         }
-
         .custom-card-title-group {
             display: flex;
             align-items: center;
@@ -1992,8 +1991,6 @@ def mostra_home():
             flex: 1;
             min-width: 0;
         }
-
-        /* Testo Titolo: visibilità garantita su qualsiasi tema */
         .custom-card-title {
             font-size: 1.1rem !important;
             font-weight: 700 !important;
@@ -2001,8 +1998,6 @@ def mostra_home():
             margin: 0 !important;
             padding: 0 !important;
         }
-
-        /* Box Icona Vivida e Colorata */
         .custom-icon-box {
             display: inline-flex;
             align-items: center;
@@ -2014,8 +2009,6 @@ def mostra_home():
             font-size: 1.3rem;
             flex-shrink: 0;
         }
-
-        /* Gradienti Sfumati per le Icone */
         .bg-orange { background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.4); }
         .bg-blue   { background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); }
         .bg-green  { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); }
@@ -2024,7 +2017,6 @@ def mostra_home():
         .bg-amber  { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); }
         .bg-slate  { background: rgba(100, 116, 139, 0.15); border: 1px solid rgba(100, 116, 139, 0.4); }
 
-        /* Badge Stato (Contatori) */
         .hud-badge {
             padding: 4px 10px;
             border-radius: 12px;
@@ -2086,8 +2078,8 @@ def mostra_home():
                     cls_badge = "hud-green" if completo else "hud-red"
                     badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
 
-                # ── 2. BADGE ANAGRAFICHE ──
-                colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Data Battesimo", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
+                # ── 2. BADGE ANAGRAFICHE (Senza Data Battesimo) ──
+                colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
                     df_attivi_ana = df_anagrafica_home[
                         df_anagrafica_home["Attivi / Inattivi"].astype(str).str.strip().str.upper().str.startswith("A")
@@ -2110,9 +2102,9 @@ def mostra_home():
                         
                         b_list = []
                         if tot_comp > 0:
-                            b_list.append(f'<span class="hud-badge hud-green"> Completi: {tot_comp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
                         if tot_incomp > 0:
-                            b_list.append(f'<span class="hud-badge hud-yellow"> Incompleti: {tot_incomp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
                         
                         badge_anagrafica = " ".join(b_list)
 
