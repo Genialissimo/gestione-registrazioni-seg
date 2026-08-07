@@ -3638,10 +3638,10 @@ def _form_modifica_presenza(dati_selezione: dict):
 
     if annulla:
         st.session_state.presenze_modifica = None
-        # Deseleziona la riga nella griglia sottostante: altrimenti, tornando
-        # alla vista normale, la riga resterebbe ancora selezionata e i
-        # pulsanti Modifica/Elimina rimarrebbero visibili "a vuoto".
-        st.session_state.pop("presenze_tabella_dettaglio", None)
+        # Forza il "remount" della griglia di dettaglio incrementando il
+        # contatore usato nella sua key dinamica (vedi mostra_presenze_adunanze):
+        # così la riga risulta deselezionata al ritorno.
+        st.session_state.presenze_tabella_versione = st.session_state.get("presenze_tabella_versione", 0) + 1
         st.rerun()
 
     if invia:
@@ -3659,8 +3659,7 @@ def _form_modifica_presenza(dati_selezione: dict):
         if ok:
             st.cache_data.clear()
             st.session_state.presenze_modifica = None
-            # Stessa deselezione anche dopo un salvataggio riuscito.
-            st.session_state.pop("presenze_tabella_dettaglio", None)
+            st.session_state.presenze_tabella_versione = st.session_state.get("presenze_tabella_versione", 0) + 1
             st.success("✔ Modificato correttamente.")
             st.rerun()
         else:
@@ -4398,6 +4397,7 @@ def mostra_impostazioni():
         st.info("Seleziona almeno un giorno per almeno un tipo di adunanza.")
 
 
+
 def mostra_presenze_adunanze():
     st.title("🙌 Presenti alle adunanze")
     if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
@@ -4470,13 +4470,18 @@ def mostra_presenze_adunanze():
         key="select_anno_mese"
     )
 
-    # Se il mese cambia rispetto all'ultima volta, la selezione di riga della
-    # griglia sotto (legata a "presenze_tabella_dettaglio") va azzerata:
-    # altrimenti resterebbe un indice riferito al mese precedente, che nel
-    # nuovo mese può non esistere o puntare a una riga sbagliata.
+    # Contatore usato per forzare un "remount" pulito della griglia sotto,
+    # ogni volta che serve azzerarne la selezione (cambio mese, dopo
+    # modifica/elimina/annulla): includerlo nella key del widget è più
+    # affidabile del solo pop da session_state, perché il componente
+    # tabella di Streamlit a volte mantiene la riga evidenziata a schermo
+    # anche se lo stato interno è già stato cancellato.
+    if "presenze_tabella_versione" not in st.session_state:
+        st.session_state.presenze_tabella_versione = 0
+
     if st.session_state.get("presenze_ultimo_mese_visto") != mese_selezionato:
         st.session_state.presenze_ultimo_mese_visto = mese_selezionato
-        st.session_state.pop("presenze_tabella_dettaglio", None)
+        st.session_state.presenze_tabella_versione += 1
 
     # Filtriamo i dati per il mese selezionato
     df_mese = df_prep[df_prep["_anno_mese"] == mese_selezionato].copy()
@@ -4539,22 +4544,20 @@ def mostra_presenze_adunanze():
     }
 
     df_mese_reset = df_mese.reset_index(drop=True)
+    chiave_tabella_dettaglio = f"presenze_tabella_dettaglio_{st.session_state.presenze_tabella_versione}"
     evento_dettaglio = st.dataframe(
         df_mese_reset[colonne_visibili],
         hide_index=True,
         use_container_width=True,
         on_select="rerun",
         selection_mode="single-row",
-        key="presenze_tabella_dettaglio",
+        key=chiave_tabella_dettaglio,
         column_config=config_colonne,
     )
 
     righe_sel_dett = evento_dettaglio.selection.rows if evento_dettaglio and evento_dettaglio.selection else []
-    # Protezione: tiene solo indici ancora esistenti nel dataframe attuale.
-    # Dopo un'eliminazione (o un cambio di mese) il dataframe può essere più
-    # corto di prima, e un indice "vecchio" rimasto nello stato della griglia
-    # causerebbe un KeyError su .loc[] — invece di far crashare l'app, in quel
-    # caso la selezione viene semplicemente considerata vuota.
+    # Protezione: tiene solo indici ancora esistenti nel dataframe attuale
+    # (utile anche in casi limite non coperti dal contatore qui sopra).
     righe_sel_dett = [i for i in righe_sel_dett if i < len(df_mese_reset)]
 
     if righe_sel_dett:
@@ -4584,10 +4587,7 @@ def mostra_presenze_adunanze():
                     if ok:
                         st.cache_data.clear()
                         st.session_state.presenze_conferma_elimina = None
-                        # Azzera la selezione della griglia: la riga eliminata
-                        # non esiste più, quindi l'indice salvato non è più
-                        # valido nel prossimo giro di esecuzione.
-                        st.session_state.pop("presenze_tabella_dettaglio", None)
+                        st.session_state.presenze_tabella_versione += 1
                         st.success("✔ Riga eliminata.")
                         st.rerun()
                     else:
@@ -4598,7 +4598,6 @@ def mostra_presenze_adunanze():
                     st.rerun()
     else:
         st.session_state.presenze_conferma_elimina = None
-
 
 
 # ─────────────────────────────────────────────────────────────────
