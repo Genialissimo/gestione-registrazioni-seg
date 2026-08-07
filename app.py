@@ -2655,7 +2655,8 @@ def mostra_anagrafiche():
         df_mostrato = df_mostrato[maschera]
 
     # ── Calcolo completezza schede per i proclamatori Attivi ────────────
-    colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Data Battesimo", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
+    # Nota: "Data Battesimo" è stata rimossa perché il proclamatore potrebbe non essere battezzato.
+    colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
     
     def riga_e_completa(riga):
         for col in colonne_obbligatorie:
