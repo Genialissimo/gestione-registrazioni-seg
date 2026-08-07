@@ -1972,6 +1972,53 @@ def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
+    # Style CSS Custom per Card e Badge Responsive
+    st.markdown("""
+    <style>
+        .card-title-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .badge-pill {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .badge-green {
+            background-color: #e6f4ea;
+            color: #137333;
+            border: 1px solid #ceead6;
+        }
+        .badge-yellow {
+            background-color: #fef7e0;
+            color: #b06000;
+            border: 1px solid #feefc3;
+        }
+        .badge-red {
+            background-color: #fce8e6;
+            color: #c5221f;
+            border: 1px solid #fad2cf;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     badge_rapporti = ""
     badge_anagrafica = ""
 
@@ -2004,9 +2051,8 @@ def mostra_home():
 
                     conteggio_consegnati_home = len(nomi_consegnati_home)
                     completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
-                    colore_badge = "#2E8B57" if completo else "#C0392B"
-                    badge_rapporti = (f" <span style='color:{colore_badge};font-weight:700;'>"
-                                       f"({conteggio_consegnati_home} di {conteggio_attivi_home})</span>")
+                    cls_badge = "badge-green" if completo else "badge-red"
+                    badge_rapporti = f'<span class="badge-pill {cls_badge}">{conteggio_consegnati_home} di {conteggio_attivi_home}</span>'
 
                 # ── 2. BADGE ANAGRAFICHE (Completi 🟢 / Incompleti 🟡) ──
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Data Battesimo", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
@@ -2030,14 +2076,13 @@ def mostra_home():
                         tot_comp = esiti.sum()
                         tot_incomp = len(df_attivi_ana) - tot_comp
                         
-                        parti_badge = []
+                        b_list = []
                         if tot_comp > 0:
-                            parti_badge.append(f"<span style='color:#2E8B57;font-weight:600;'>🟢 Completi: {tot_comp}</span>")
+                            b_list.append(f'<span class="badge-pill badge-green">🟢 Completi: {tot_comp}</span>')
                         if tot_incomp > 0:
-                            parti_badge.append(f"<span style='color:#D4AC0D;font-weight:600;'>🟡 Incompleti: {tot_incomp}</span>")
+                            b_list.append(f'<span class="badge-pill badge-yellow">🟡 Incompleti: {tot_incomp}</span>')
                         
-                        if parti_badge:
-                            badge_anagrafica = f" <span style='font-size:0.85rem;'>({' '.join(parti_badge)})</span>"
+                        badge_anagrafica = " ".join(b_list)
 
         except Exception:
             badge_rapporti = ""
@@ -2056,6 +2101,7 @@ def mostra_home():
         ("📥", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
         ("⚙️", "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
     ]
+
     riga1 = st.columns(2)
     riga2 = st.columns(2)
     riga3 = st.columns(2)
@@ -2066,7 +2112,15 @@ def mostra_home():
     for col, (icon, titolo, desc, pagina, badge) in zip(colonne, card_data):
         with col:
             with st.container(border=True):
-                st.markdown(f"#### {icon}  {titolo}{badge}", unsafe_allow_html=True)
+                st.markdown(
+                    f"""
+                    <div class="card-title-container">
+                        <span class="card-title">{icon} {titolo}</span>
+                        <div>{badge}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
                 st.caption(desc)
                 st.button("Apri →", key=f"card_{titolo}", disabled=not collegato,
                            use_container_width=True, on_click=vai_a, args=(pagina,))
@@ -2075,7 +2129,6 @@ def mostra_home():
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
         st.cache_data.clear()
         st.rerun()
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
