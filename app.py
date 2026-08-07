@@ -4843,6 +4843,9 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 # ─────────────────────────────────────────────────────────────────
 # Pagina: Storico rapporti consegnati
 # ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+# Pagina: Storico rapporti consegnati
+# ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
     if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
@@ -4876,7 +4879,6 @@ def mostra_storico_proclamatori():
     # ── Elenco anni teocratici disponibili ──
     anni_presenti = anni_teocratici_per_menu(df_tutti)
 
-    # Funzione di formattazione sicura per evitare ValueError con float/stringhe/vuoti
     def formatta_anno_teocratico(valore):
         try:
             val = int(float(valore))
@@ -4898,17 +4900,31 @@ def mostra_storico_proclamatori():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
+    def stato_valido_anagrafica(valore: str) -> bool:
+        """Mantiene solo Attivi ('A'/'Attivi') e Inattivi ('I'/'Inattivi');
+        Esclude Trasferiti ('TR'/'Trasferito'), rimossi o vuoti."""
+        v = (valore or "").strip().lower()
+        return v.startswith("a") or v.startswith("i")
+
+    colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
     colonna_gruppo = "Gruppo" if "Gruppo" in df_anagrafica.columns else None
 
+    stato_anagrafica_per_nome = {}
     gruppo_per_nome = {}
     for _, riga in df_anagrafica.iterrows():
         n = str(riga.get("Cognome e Nome", "")).strip()
         if not n:
             continue
+        if colonna_stato:
+            stato_anagrafica_per_nome[n] = str(riga.get(colonna_stato, "")).strip()
         if colonna_gruppo:
             gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+
+    # ── CONTROLLO ANAGRAFICA: Esclude i Trasferiti ──
+    if colonna_stato:
+        nomi = [n for n in nomi if stato_valido_anagrafica(stato_anagrafica_per_nome.get(n, ""))]
     
     testo_ricerca = ricerca.strip().lower()
     if testo_ricerca:
@@ -4920,19 +4936,16 @@ def mostra_storico_proclamatori():
         righe_p = df_tutti[df_tutti["Nome"].astype(str).str.strip().str.lower() == nome.lower()]
         
         if not righe_p.empty and col_partecipazione in righe_p.columns:
-            # Filtriamo per la colonna C (Mese/Anno) limitatamente all'anno teocratico selezionato
             righe_anno_corrente = righe_p[
                 righe_p["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
             ].sort_values("Mese/Anno")
             
             if not righe_anno_corrente.empty:
-                # Convertiamo la colonna E in booleano (True se "No", "False" o "0")
                 valori_no = [
                     str(v).strip().lower() in ["no", "false", "0"]
                     for v in righe_anno_corrente[col_partecipazione]
                 ]
                 
-                # Calcolo "No" consecutivi a partire dall'ultimo mese registrato dell'anno
                 consecutivi_no = 0
                 for e_no in reversed(valori_no):
                     if e_no:
@@ -4940,10 +4953,8 @@ def mostra_storico_proclamatori():
                     else:
                         break
 
-                # 6 "No" consecutivi nell'anno -> Inattivo
                 if consecutivi_no >= 6:
                     return "inattivo"
-                # Almeno un "No" registrato nei mesi dell'anno corrente -> Irregolare
                 elif any(valori_no):
                     return "irregolare"
 
