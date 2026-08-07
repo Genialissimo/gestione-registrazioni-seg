@@ -5071,10 +5071,47 @@ def mostra_storico_proclamatori():
     # ── RENDERING FILTRATO PER GRUPPO ──────────────────────────────────
     for gruppo in sorted(gruppi.keys()):
         if gruppi[gruppo]:
-            st.markdown(f"#### 👤 {gruppo}")
+            if gruppo == "(Senza gruppo)":
+                st.markdown(
+                    """
+                    <div style="display: flex; align-items: center; gap: 10px; margin: 15px 0 10px 0;">
+                        <span style="background-color: #f0f2f6; padding: 6px 12px; border-radius: 8px; font-size: 1.2rem;">📂</span>
+                        <h4 style="margin: 0; color: #555;">Senza gruppo</h4>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            else:
+                # Banner moderno per il gruppo con doppio badge e conteggio
+                st.markdown(
+                    f"""
+                    <div style="
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: space-between;
+                        background: linear-gradient(135deg, #1e293b 0%, #334155 100%); 
+                        color: white; 
+                        padding: 10px 18px; 
+                        border-radius: 10px; 
+                        margin: 20px 0 12px 0;
+                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                    ">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="background: rgba(255, 255, 255, 0.15); padding: 6px 10px; border-radius: 8px; font-size: 1.1rem;">👨‍💼</span>
+                            <span style="font-size: 1.15rem; font-weight: 600; letter-spacing: 0.3px;">Gruppo: {gruppo}</span>
+                        </div>
+                        <span style="background: rgba(255, 255, 255, 0.2); padding: 3px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 500;">
+                            {len(gruppi[gruppo])} proclamatori
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
             for nome in gruppi[gruppo]:
                 _riga_proclamatore(nome)
             st.divider()
+   
 # ─────────────────────────────────────────────────────────────────
 # ROUTING — navigazione solo tramite le card della Home
 # ─────────────────────────────────────────────────────────────────
