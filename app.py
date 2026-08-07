@@ -2165,8 +2165,8 @@ def mostra_registrazioni():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
-    # Campo di ricerca dinamico
-    ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+    # Ricerca dinamica con st_keyup per risposta istantanea a ogni tasto premuto
+    ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_dinamica")
 
     def e_attivo(valore: str) -> bool:
         """Vero se lo stato è 'A' oppure 'Attivi'/'Attivo' per esteso."""
@@ -2186,27 +2186,33 @@ def mostra_registrazioni():
             if colonna_gruppo:
                 gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
+    # 1. Estrazione e pulizia nomi
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+    
+    # 2. Filtro per proclamatori attivi
     if colonna_stato:
         nomi = [n for n in nomi if e_attivo(stato_per_nome.get(n, ""))]
-    
-    # ── FILTRAGGIO DINAMICO PER NOME ─────────────────────────────────
-    if ricerca.strip():
-        nomi = [n for n in nomi if ricerca.lower().strip() in n.lower()]
+
+    # 3. Filtro dinamico sulla ricerca digitata
+    testo_ricerca = ricerca.strip().lower()
+    if testo_ricerca:
+        nomi = [n for n in nomi if testo_ricerca in n.lower()]
 
     if not nomi:
         st.info("Nessun Proclamatore corrisponde alla ricerca.")
         return
 
+    # 4. Conteggio risposte per i soli nomi filtrati
     conteggi = {}
     if "Cognome e Nome" in df.columns:
+        serie_nomi_df = df["Cognome e Nome"].astype(str).str.strip().str.lower()
         for nome in nomi:
-            conteggi[nome] = (df["Cognome e Nome"].astype(str).str.strip().str.lower() == nome.lower()).sum()
+            conteggi[nome] = (serie_nomi_df == nome.lower()).sum()
     else:
         for nome in nomi:
             conteggi[nome] = 0
 
-    # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
+    # 5. Raggruppamento alfabetico dei soli nomi filtrati
     gruppi = {}
     for n in nomi:
         g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
@@ -2288,15 +2294,13 @@ def mostra_registrazioni():
             if len(righe_persona) > 1:
                 st.divider()
 
-    # ── RENDERING FILTRATO PER GRUPPO ─────────────────────────────────
+    # 6. Rendering dei soli gruppi che contengono elementi
     for gruppo in sorted(gruppi.keys()):
-        # Mostra il gruppo solo se contiene almeno un nome dopo il filtro
         if gruppi[gruppo]:
             st.markdown(f"#### 👤 {gruppo}")
             for nome in gruppi[gruppo]:
                 _riga_proclamatore_rapporto(nome)
             st.divider()
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
