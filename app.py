@@ -4840,7 +4840,9 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
         else:
             st.error(err)
 
-
+# ─────────────────────────────────────────────────────────────────
+# Pagina: Storico rapporti consegnati
+# ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
     if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
@@ -4871,7 +4873,7 @@ def mostra_storico_proclamatori():
         st.error(err_tutti)
         return
 
-    # ── Elenco anni teocratici disponibili (dati presenti + anno corrente/successivo) ──
+    # ── Elenco anni teocratici disponibili ──
     anni_presenti = anni_teocratici_per_menu(df_tutti)
 
     col_anno, col_ricerca = st.columns([1, 3])
@@ -4882,7 +4884,8 @@ def mostra_storico_proclamatori():
             format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
         )
     with col_ricerca:
-        ricerca = st.text_input("🔍 Cerca per nome", placeholder="Digita per filtrare…")
+        # Ricerca dinamica ad ogni tasto premuto con st_keyup
+        ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_storico_proclamatori")
 
     if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
         st.info("Nessun Proclamatore trovato in Anagrafica.")
@@ -4913,17 +4916,27 @@ def mostra_storico_proclamatori():
         if colonna_gruppo:
             gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
+    # 1. Estrazione e pulizia nomi
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
+    
+    # 2. Filtro per stati validi (Attivi / Inattivi)
     if colonna_stato:
         nomi = [n for n in nomi if stato_valido(stato_per_nome.get(n, ""))]
-    if ricerca:
-        nomi = [n for n in nomi if ricerca.lower() in n.lower()]
+    
+    # 3. Filtro dinamico per nome digitato
+    testo_ricerca = ricerca.strip().lower()
+    if testo_ricerca:
+        nomi = [n for n in nomi if testo_ricerca in n.lower()]
+
+    if not nomi:
+        st.info("Nessun Proclamatore corrisponde alla ricerca.")
+        return
 
     conteggio_attivi = sum(1 for n in nomi if not e_inattivo(stato_per_nome.get(n, "")))
     conteggio_inattivi = sum(1 for n in nomi if e_inattivo(stato_per_nome.get(n, "")))
     st.caption(f"🟢 {conteggio_attivi} Proclamatori Attivi. 🔺 {conteggio_inattivi} Proclamatori Inattivi.")
 
-    # ── Raggruppamento alfabetico per Gruppo (sorvegliante) ──────────────
+    # 4. Raggruppamento alfabetico per Gruppo dei soli nomi filtrati
     gruppi = {}
     for n in nomi:
         g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
@@ -4998,11 +5011,13 @@ def mostra_storico_proclamatori():
                             }
                             st.rerun()
 
+    # 5. Rendering dei soli gruppi che contengono elementi filtrati
     for gruppo in sorted(gruppi.keys()):
-        st.markdown(f"#### 👤 {gruppo}")
-        for nome in gruppi[gruppo]:
-            _riga_proclamatore(nome)
-        st.divider()
+        if gruppi[gruppo]:
+            st.markdown(f"#### 👤 {gruppo}")
+            for nome in gruppi[gruppo]:
+                _riga_proclamatore(nome)
+            st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────
