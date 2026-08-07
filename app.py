@@ -3659,6 +3659,49 @@ def _form_modifica_presenza(dati_selezione: dict):
         else:
             st.error(err_salva)
 
+def _form_nuova_presenza():
+    """Form di inserimento di una nuova riga nel foglio 'Presenze Adunanze'."""
+    st.markdown("#### ➕ Nuova presenza")
+
+    giorni_per_tipo = leggi_giorni_adunanze_per_tipo(workbook)
+    chiave_prefix = "presenze_nuovo"
+    data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
+        chiave_prefix, datetime.now().date(), TIPI_ADUNANZA[0], 0, 0, giorni_per_tipo,
+    )
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        invia = st.button("✔ Salva", type="primary", use_container_width=True,
+                          disabled=not data_valida, key=f"{chiave_prefix}_salva")
+    with col_btn2:
+        annulla = st.button("✖ Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
+
+    if annulla:
+        st.session_state.presenze_form_nuovo_aperto = False
+        for suffisso in ("_data", "_tipo", "_presenza", "_zoom", "_ultima_data_vista"):
+            st.session_state.pop(f"{chiave_prefix}{suffisso}", None)
+        st.rerun()
+
+    if invia:
+        valori = {
+            "Data": data_scelta.strftime("%d/%m/%Y"),
+            "Tipo Adunanza": tipo_adunanza,
+            "In Presenza": str(int(in_presenza)),
+            "Su Zoom": str(int(su_zoom)),
+            "Totale": str(int(totale)),
+        }
+        ok, err_salva = salva_riga_foglio(
+            workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, valori
+        )
+        if ok:
+            st.cache_data.clear()
+            st.session_state.presenze_form_nuovo_aperto = False
+            for suffisso in ("_data", "_tipo", "_presenza", "_zoom", "_ultima_data_vista"):
+                st.session_state.pop(f"{chiave_prefix}{suffisso}", None)
+            st.success("✔ Presenza inserita correttamente.")
+            st.rerun()
+        else:
+            st.error(err_salva)
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
