@@ -1966,18 +1966,18 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Design Futuristico con Icone Vividissime e Colorate)
+# PAGINA: HOME (Design Futuristico con Titoli e Icone Vividi)
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # CSS Custom con icone colorate, nitide e distinte
+    # CSS Custom ottimizzato per titoli sempre visibili e icone nitide
     st.markdown("""
     <style>
-        /* Card Glassmorphism */
+        /* Card Container */
         [data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
-            background: rgba(15, 23, 42, 0.75) !important;
+            background: rgba(15, 23, 42, 0.8) !important;
             border: 1px solid rgba(56, 189, 248, 0.25) !important;
             border-radius: 16px !important;
             backdrop-filter: blur(12px) !important;
@@ -1985,54 +1985,66 @@ def mostra_home():
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }
         
-        /* Hover Neon Effect */
+        /* Hover Effect */
         [data-testid="stVerticalBlock"] > div[data-testid="stBlock"]:hover {
             border-color: rgba(56, 189, 248, 0.8) !important;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4), inset 0 0 15px rgba(56, 189, 248, 0.1) !important;
-            transform: translateY(-4px);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4) !important;
+            transform: translateY(-3px);
         }
 
-        .card-title-container {
+        /* Layout Intestazione Card */
+        .card-header-flex {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 8px;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+            width: 100%;
         }
 
-        .card-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #ffffff !important;
+        .card-title-left {
             display: flex;
             align-items: center;
             gap: 12px;
+            flex: 1;
+            min-width: 0; /* Previene overflow del testo */
         }
 
-        /* Box dell'Icona: Preserva i colori reali dell'emoji/icona */
+        /* Testo Titolo: Bianco Puro Garantito */
+        .card-title-text {
+            color: #FFFFFF !important;
+            font-size: 1.05rem !important;
+            font-weight: 700 !important;
+            line-height: 1.25 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+        }
+
+        /* Box dell'Icona a Colori Reali */
         .icon-box {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 42px;
-            height: 42px;
+            width: 40px;
+            height: 40px;
+            min-width: 40px;
             border-radius: 12px;
-            font-size: 1.4rem;
+            font-size: 1.35rem;
             flex-shrink: 0;
-            /* Forza la resa a colori nitidi */
             filter: none !important;
             -webkit-text-fill-color: initial !important;
         }
 
-        /* Gradienti specifici per ciascun tipo di icona */
-        .bg-orange { background: rgba(249, 115, 22, 0.2); border: 1px solid rgba(249, 115, 22, 0.5); box-shadow: 0 0 10px rgba(249, 115, 22, 0.3); }
-        .bg-blue   { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); }
-        .bg-green  { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); box-shadow: 0 0 10px rgba(16, 185, 129, 0.3); }
-        .bg-purple { background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); box-shadow: 0 0 10px rgba(168, 85, 247, 0.3); }
-        .bg-cyan   { background: rgba(6, 182, 212, 0.2); border: 1px solid rgba(6, 182, 212, 0.5); box-shadow: 0 0 10px rgba(6, 182, 212, 0.3); }
-        .bg-amber  { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); box-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
-        .bg-slate  { background: rgba(100, 116, 139, 0.2); border: 1px solid rgba(100, 116, 139, 0.5); box-shadow: 0 0 10px rgba(100, 116, 139, 0.3); }
+        /* Gradienti e Bordi Sfumati */
+        .bg-orange { background: rgba(249, 115, 22, 0.2); border: 1px solid rgba(249, 115, 22, 0.5); }
+        .bg-blue   { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); }
+        .bg-green  { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); }
+        .bg-purple { background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); }
+        .bg-cyan   { background: rgba(6, 182, 212, 0.2); border: 1px solid rgba(6, 182, 212, 0.5); }
+        .bg-amber  { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); }
+        .bg-slate  { background: rgba(100, 116, 139, 0.2); border: 1px solid rgba(100, 116, 139, 0.5); }
 
         /* Badge HUD Stato */
         .hud-badge {
@@ -2040,25 +2052,22 @@ def mostra_home():
             border-radius: 20px;
             font-size: 0.78rem;
             font-weight: 700;
-            letter-spacing: 0.5px;
+            white-space: nowrap;
         }
         .hud-green {
             background: rgba(16, 185, 129, 0.15);
             color: #34d399;
             border: 1px solid rgba(52, 211, 153, 0.4);
-            box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
         }
         .hud-yellow {
             background: rgba(245, 158, 11, 0.15);
             color: #fbbf24;
             border: 1px solid rgba(251, 191, 36, 0.4);
-            box-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
         }
         .hud-red {
             background: rgba(239, 68, 68, 0.15);
             color: #f87171;
             border: 1px solid rgba(248, 113, 113, 0.4);
-            box-shadow: 0 0 10px rgba(248, 113, 113, 0.3);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2134,7 +2143,6 @@ def mostra_home():
 
     st.subheader("Sezioni")
     
-    # Insieme di card con icone, colori dedicati per la sfumatura e pagine
     card_data = [
         ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
         ("📚", "bg-blue",   "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
@@ -2160,11 +2168,11 @@ def mostra_home():
             with st.container(border=True):
                 st.markdown(
                     f"""
-                    <div class="card-title-container">
-                        <span class="card-title">
-                            <span class="icon-box {bg_cls}">{icon}</span>
-                            <span>{titolo}</span>
-                        </span>
+                    <div class="card-header-flex">
+                        <div class="card-title-left">
+                            <div class="icon-box {bg_cls}">{icon}</div>
+                            <div class="card-title-text">{titolo}</div>
+                        </div>
                         <div>{badge}</div>
                     </div>
                     """,
