@@ -343,6 +343,7 @@ def apri_foglio_dati():
         return None, f"Errore durante il collegamento: {e}"
 
 def leggi_giorni_adunanze_per_tipo(_workbook) -> dict:
+    
 @st.cache_data(ttl=60, show_spinner=False)
 def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1):
     """Legge un foglio (tab) del workbook e lo ritorna come DataFrame.
