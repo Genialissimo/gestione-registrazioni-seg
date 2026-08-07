@@ -1966,108 +1966,87 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Design Futuristico con Titoli e Icone Vividi)
+# PAGINA: HOME (Design Pulito, Titoli e Icone Vividi e Visibili)
 # ─────────────────────────────────────────────────────────────────
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # CSS Custom ottimizzato per titoli sempre visibili e icone nitide
+    # CSS Custom mirato ed esplicito per evitare conflitti con Streamlit
     st.markdown("""
     <style>
-        /* Card Container */
-        [data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
-            background: rgba(15, 23, 42, 0.8) !important;
-            border: 1px solid rgba(56, 189, 248, 0.25) !important;
-            border-radius: 16px !important;
-            backdrop-filter: blur(12px) !important;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37) !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        }
-        
-        /* Hover Effect */
-        [data-testid="stVerticalBlock"] > div[data-testid="stBlock"]:hover {
-            border-color: rgba(56, 189, 248, 0.8) !important;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4) !important;
-            transform: translateY(-3px);
-        }
-
-        /* Layout Intestazione Card */
-        .card-header-flex {
+        /* Contenitore Principale della Card */
+        .custom-card-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             width: 100%;
         }
 
-        .card-title-left {
+        .custom-card-title-group {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex: 1;
-            min-width: 0; /* Previene overflow del testo */
+            min-width: 0;
         }
 
-        /* Testo Titolo: Bianco Puro Garantito */
-        .card-title-text {
-            color: #FFFFFF !important;
-            font-size: 1.05rem !important;
+        /* Testo Titolo: visibilità garantita su qualsiasi tema */
+        .custom-card-title {
+            font-size: 1.1rem !important;
             font-weight: 700 !important;
-            line-height: 1.25 !important;
+            line-height: 1.3 !important;
             margin: 0 !important;
             padding: 0 !important;
-            white-space: normal !important;
-            word-wrap: break-word !important;
         }
 
-        /* Box dell'Icona a Colori Reali */
-        .icon-box {
+        /* Box Icona Vivida e Colorata */
+        .custom-icon-box {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 40px;
-            height: 40px;
-            min-width: 40px;
-            border-radius: 12px;
-            font-size: 1.35rem;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 10px;
+            font-size: 1.3rem;
             flex-shrink: 0;
-            filter: none !important;
-            -webkit-text-fill-color: initial !important;
         }
 
-        /* Gradienti e Bordi Sfumati */
-        .bg-orange { background: rgba(249, 115, 22, 0.2); border: 1px solid rgba(249, 115, 22, 0.5); }
-        .bg-blue   { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); }
-        .bg-green  { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); }
-        .bg-purple { background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); }
-        .bg-cyan   { background: rgba(6, 182, 212, 0.2); border: 1px solid rgba(6, 182, 212, 0.5); }
-        .bg-amber  { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); }
-        .bg-slate  { background: rgba(100, 116, 139, 0.2); border: 1px solid rgba(100, 116, 139, 0.5); }
+        /* Gradienti Sfumati per le Icone */
+        .bg-orange { background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.4); }
+        .bg-blue   { background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); }
+        .bg-green  { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); }
+        .bg-purple { background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); }
+        .bg-cyan   { background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); }
+        .bg-amber  { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); }
+        .bg-slate  { background: rgba(100, 116, 139, 0.15); border: 1px solid rgba(100, 116, 139, 0.4); }
 
-        /* Badge HUD Stato */
+        /* Badge Stato (Contatori) */
         .hud-badge {
             padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 0.78rem;
-            font-weight: 700;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
             white-space: nowrap;
+            display: inline-block;
         }
         .hud-green {
             background: rgba(16, 185, 129, 0.15);
-            color: #34d399;
-            border: 1px solid rgba(52, 211, 153, 0.4);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
         }
         .hud-yellow {
             background: rgba(245, 158, 11, 0.15);
-            color: #fbbf24;
-            border: 1px solid rgba(251, 191, 36, 0.4);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3);
         }
         .hud-red {
             background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
-            border: 1px solid rgba(248, 113, 113, 0.4);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2168,10 +2147,10 @@ def mostra_home():
             with st.container(border=True):
                 st.markdown(
                     f"""
-                    <div class="card-header-flex">
-                        <div class="card-title-left">
-                            <div class="icon-box {bg_cls}">{icon}</div>
-                            <div class="card-title-text">{titolo}</div>
+                    <div class="custom-card-header">
+                        <div class="custom-card-title-group">
+                            <span class="custom-icon-box {bg_cls}">{icon}</span>
+                            <span class="custom-card-title">{titolo}</span>
                         </div>
                         <div>{badge}</div>
                     </div>
