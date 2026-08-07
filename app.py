@@ -4897,10 +4897,8 @@ def mostra_storico_proclamatori():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
-    # Controlla la colonna O dell'Anagrafica ("Attivi / Inattivi")
     def stato_valido_anagrafica(valore: str) -> bool:
         v = (valore or "").strip().upper()
-        # Mantiene solo A (Attivi) e I (Inattivi), esclude TR (Trasferiti) e altro
         return v.startswith("A") or v.startswith("I")
 
     colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
@@ -4919,7 +4917,7 @@ def mostra_storico_proclamatori():
 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
 
-    # ── CONTROLLO COLONNA O ANAGRAFICA: Esclude i Trasferiti ("TR") ──
+    # Esclude i Trasferiti ("TR") ed eventuali vuoti
     if colonna_stato:
         nomi = [n for n in nomi if stato_valido_anagrafica(stato_anagrafica_per_nome.get(n, ""))]
     
@@ -4927,8 +4925,14 @@ def mostra_storico_proclamatori():
     if testo_ricerca:
         nomi = [n for n in nomi if testo_ricerca in n.lower()]
 
-    # ── LOGICA CALCOLO STATO LIMITATA ALL'ANNO TEOCRATICO SELEZIONATO (COLONNA C/E) ──
+    # ── LOGICA CALCOLO STATO ──
     def calcola_stato_proclamatore(nome: str) -> str:
+        st_anag = stato_anagrafica_per_nome.get(nome, "").strip().upper()
+        
+        # 1. Se in Anagrafica è segnato come Inattivo ("I" / "INATTIVO") -> Inattivo immediato
+        if st_anag.startswith("I"):
+            return "inattivo"
+
         col_partecipazione = "Ha partecipato al ministero"
         righe_p = df_tutti[df_tutti["Nome"].astype(str).str.strip().str.lower() == nome.lower()]
         
@@ -4950,8 +4954,10 @@ def mostra_storico_proclamatori():
                     else:
                         break
 
+                # 6 "No" consecutivi -> Inattivo
                 if consecutivi_no >= 6:
                     return "inattivo"
+                # Almeno un "No" registrato -> Irregolare
                 elif any(valori_no):
                     return "irregolare"
 
