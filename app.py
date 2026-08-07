@@ -4876,13 +4876,20 @@ def mostra_storico_proclamatori():
     # ── Elenco anni teocratici disponibili ──
     anni_presenti = anni_teocratici_per_menu(df_tutti)
 
+    # Funzione di formattazione sicura per evitare ValueError con float/stringhe/vuoti
+    def formatta_anno_teocratico(valore):
+        try:
+            val = int(float(valore))
+            return f"{val} – {val + 1} (set {val} → ago {val + 1})"
+        except (ValueError, TypeError):
+            return str(valore)
+
     col_anno, col_ricerca = st.columns([1, 3])
     with col_anno:
-        # Formattazione corretta senza decimali (.0)
         anno_scelto = st.selectbox(
             "Anno teocratico",
             anni_presenti,
-            format_func=lambda a: f"{int(a)} – {int(a) + 1} (set {int(a)} → ago {int(a) + 1})",
+            format_func=formatta_anno_teocratico,
         )
     with col_ricerca:
         ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_storico_proclamatori")
@@ -4913,7 +4920,7 @@ def mostra_storico_proclamatori():
         righe_p = df_tutti[df_tutti["Nome"].astype(str).str.strip().str.lower() == nome.lower()]
         
         if not righe_p.empty and col_partecipazione in righe_p.columns:
-            # 1. Filtriamo per la colonna C (Mese/Anno) limitatamente all'anno teocratico corrente/selezionato
+            # Filtriamo per la colonna C (Mese/Anno) limitatamente all'anno teocratico selezionato
             righe_anno_corrente = righe_p[
                 righe_p["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
             ].sort_values("Mese/Anno")
