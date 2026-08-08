@@ -1977,13 +1977,27 @@ from datetime import datetime, date, timedelta
 import streamlit as st
 from datetime import datetime, date, timedelta
 
+import streamlit as st
+from datetime import datetime, date, timedelta
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
-    # Intestazione pulita e compatta
-    st.markdown("### 📒 Gestione Registrazioni SEG")
+    # Intestazione compatta con data e ora piccolina sotto il titolo
+    ora_ora = datetime.now().strftime('%d/%m/%Y %H:%M')
+    st.markdown(
+        f"""
+        <div style="margin-bottom: 12px;">
+            <h3 style="font-size: 1.25rem; font-weight: 700; margin: 0; padding: 0;">📒 Gestione Registrazioni SEG</h3>
+            <p style="font-size: 0.8rem; color: #6b7280; margin: 2px 0 0 0; padding: 0;">
+                🔄 Ultimo aggiornamento: {ora_ora}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # CSS Custom per card, icone, tab e post-it
     st.markdown("""
@@ -2433,11 +2447,6 @@ def mostra_home():
     for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
         with tab:
             mostra_griglia_card(lista_card)
-
-    if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-                 key="refresh_home", help="Aggiorna i dati dal foglio Google"):
-        st.cache_data.clear()
-        st.rerun()
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
