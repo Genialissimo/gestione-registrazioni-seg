@@ -1966,17 +1966,17 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Stile lista pulita con Tab, ispirata a JW Library)
+# PAGINA: HOME (Stile lista pulita con Tab, dark-mode friendly)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # ── CSS: tab verdi + righe menu stile lista pulita ──
+    # ── CSS: tab verdi + righe menu, con colori theme-aware ──
     st.markdown("""
     <style>
-        /* Badge (invariati) */
+        /* Badge (invariati, già dark-mode friendly perché semi-trasparenti) */
         .hud-badge {
             padding: 4px 10px;
             border-radius: 12px;
@@ -2001,19 +2001,21 @@ def mostra_home():
             border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
-        /* Tab in cima - accento verde tema app */
+        /* Tab in cima - accento verde tema app, testo theme-aware */
         .stTabs [data-baseweb="tab-list"] {
             gap: 6px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid rgba(128,128,128,0.3);
         }
         .stTabs [data-baseweb="tab"] {
             font-weight: 600;
             font-size: 0.95rem;
-            color: #666;
+            color: var(--text-color);
+            opacity: 0.65;
             padding: 10px 6px;
         }
         .stTabs [aria-selected="true"] {
             color: #2E7D32 !important;
+            opacity: 1 !important;
             font-weight: 700 !important;
         }
         .stTabs [data-baseweb="tab-highlight"] {
@@ -2022,26 +2024,36 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* Righe del menu (dentro i container "lista_tab_*") */
+        /* Titoli delle righe menu - grandi, allineati a destra, theme-aware */
         div[class*="st-key-lista_tab_"] div[data-testid="stButton"] button {
             background-color: transparent !important;
             border: none !important;
             box-shadow: none !important;
-            text-align: left !important;
-            justify-content: flex-start !important;
-            font-size: 1.02rem !important;
-            font-weight: 500 !important;
-            color: #222 !important;
-            padding: 14px 10px !important;
+            text-align: right !important;
+            justify-content: flex-end !important;
+            font-size: 1.15rem !important;
+            font-weight: 600 !important;
+            color: var(--text-color) !important;
+            padding: 14px 10px 4px 10px !important;
             border-radius: 6px !important;
             transition: background-color 0.15s ease;
         }
         div[class*="st-key-lista_tab_"] div[data-testid="stButton"] button:hover {
-            background-color: rgba(46, 125, 50, 0.08) !important;
+            background-color: rgba(46, 125, 50, 0.12) !important;
             color: #2E7D32 !important;
         }
         div[class*="st-key-lista_tab_"] div[data-testid="stButton"] button:disabled {
-            color: #bbb !important;
+            opacity: 0.4 !important;
+        }
+
+        /* Descrizione sotto il titolo */
+        .riga-desc {
+            text-align: right;
+            color: var(--text-color);
+            opacity: 0.6;
+            font-size: 0.85rem;
+            padding: 0 10px 10px 10px;
+            margin-top: -4px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2116,25 +2128,35 @@ def mostra_home():
             badge_rapporti = ""
             badge_anagrafica = ""
 
-    # ── Sezioni raggruppate per tab ──
+    # ── Sezioni raggruppate per tab: (icona, titolo, pagina, descrizione, badge) ──
     sezioni = {
         "📖 Rapporti": [
-            ("📖", "Rapporti consegnati", "registrazioni", badge_rapporti),
-            ("📚", "Storico rapporti", "storico", ""),
-            ("📇", "Cartoline di registrazione", "cartoline", ""),
-            ("🏢", "Rapporto per la Filiale", "filiale", ""),
-            ("📊", "Riepilogo attività e statistiche", "riepilogo_statistiche", ""),
-            ("📥", "Importa da S-21", "importa_s21", ""),
+            ("📖", "Rapporti consegnati", "registrazioni",
+             "Visualizza e modifica i rapporti di servizio consegnati.", badge_rapporti),
+            ("📚", "Storico rapporti", "storico",
+             "Storico dei rapporti di servizio per Proclamatore.", ""),
+            ("📇", "Cartoline di registrazione", "cartoline",
+             "Genera le cartoline S-21 per i Proclamatori scelti.", ""),
+            ("🏢", "Rapporto per la Filiale", "filiale",
+             "Dati statistici mensili (tipo modulo S-10).", ""),
+            ("📊", "Riepilogo attività e statistiche", "riepilogo_statistiche",
+             "Report su ore, studi e crediti per Proclamatore o per categoria.", ""),
+            ("📥", "Importa da S-21", "importa_s21",
+             "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", ""),
         ],
         "🗂️ Anagrafiche": [
-            ("🗂️", "Anagrafiche", "anagrafiche", badge_anagrafica),
-            ("👥", "Gruppi di servizio", "gruppi", ""),
+            ("🗂️", "Anagrafiche", "anagrafiche",
+             "Gestisci i dati dei Proclamatori.", badge_anagrafica),
+            ("👥", "Gruppi di servizio", "gruppi",
+             "Abbina i Proclamatori a un sorvegliante di gruppo.", ""),
         ],
         "🙌 Adunanze": [
-            ("🙌", "Presenti alle adunanze", "presenze", ""),
+            ("🙌", "Presenti alle adunanze", "presenze",
+             "Registra e monitora le presenze alle due adunanze.", ""),
         ],
         "⚙️ Impostazioni": [
-            ("⚙️", "Impostazioni", "impostazioni", ""),
+            ("⚙️", "Impostazioni", "impostazioni",
+             "Configura i giorni delle adunanze e altre opzioni.", ""),
         ],
     }
 
@@ -2143,7 +2165,7 @@ def mostra_home():
     for i, (tab, (nome_tab, voci)) in enumerate(zip(tabs, sezioni.items())):
         with tab:
             with st.container(key=f"lista_tab_{i}"):
-                for icon, titolo, pagina, badge in voci:
+                for icon, titolo, pagina, desc, badge in voci:
                     c1, c2 = st.columns([6, 1.4])
                     with c1:
                         st.button(
@@ -2154,11 +2176,13 @@ def mostra_home():
                             use_container_width=True,
                             disabled=not collegato,
                         )
+                        if desc:
+                            st.markdown(f"<div class='riga-desc'>{desc}</div>", unsafe_allow_html=True)
                     with c2:
                         if badge:
-                            st.markdown(f"<div style='padding-top:12px'>{badge}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='padding-top:14px'>{badge}</div>", unsafe_allow_html=True)
                     st.markdown(
-                        "<hr style='margin:0; border:none; border-top:1px solid #ececec;'>",
+                        "<hr style='margin:0; border:none; border-top:1px solid rgba(128,128,128,0.25);'>",
                         unsafe_allow_html=True
                     )
 
