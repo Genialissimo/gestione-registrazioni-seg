@@ -1971,8 +1971,11 @@ from datetime import datetime
 import streamlit as st
 from datetime import datetime
 
+import streamlit as st
+from datetime import datetime, date, timedelta
+
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali con ombreggiatura)
+# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
@@ -2083,13 +2086,11 @@ def mostra_home():
             transform: translateY(-2px);
         }
 
-        /* Disabilita il mouse sul testo interno così il click lo intercetta il bottone sottostante */
         div[class*="st-key-card_"] .custom-card-header,
         div[class*="st-key-card_"] [data-testid="stCaptionContainer"] {
             pointer-events: none !important;
         }
 
-        /* Il wrapper del bottone copre esattamente al 100% l'intero container della card */
         div[class*="st-key-card_"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]) {
             position: absolute !important;
             inset: 0 !important;
@@ -2122,7 +2123,7 @@ def mostra_home():
             cursor: not-allowed !important;
         }
 
-        /* ── Card Post-it Promemoria (RESPONSIVE) ── */
+        /* ── Card Post-it Promemoria ── */
         .postit-card {
             width: 92%;
             max-width: 900px;
@@ -2172,7 +2173,6 @@ def mostra_home():
             line-height: 1.35;
         }
 
-        /* Da tablet/desktop in su: 2 colonne per usare meglio lo spazio */
         @media (min-width: 900px) {
             .postit-lista {
                 display: grid;
@@ -2189,11 +2189,14 @@ def mostra_home():
     badge_rapporti = ""
     badge_anagrafica = ""
 
-    # Contatori grezzi per la card promemoria (post-it)
+    # Contatori per la card promemoria
     n_attivi_rapporti = None
     n_consegnati_rapporti = None
     n_completi_anagrafica = None
     n_incompleti_anagrafica = None
+    
+    # Variabili per controllo presenze adunanza
+    esito_presenze_adunanza = None  # None = non connesso / errore, True = ok, (False, data_str, giorno_str) = mancante
 
     if collegato:
         try:
@@ -2230,7 +2233,7 @@ def mostra_home():
                     n_attivi_rapporti = conteggio_attivi_home
                     n_consegnati_rapporti = conteggio_consegnati_home
 
-                # ── 2. BADGE ANAGRAFICHE (Senza Data Battesimo) ──
+                # ── 2. BADGE ANAGRAFICHE ──
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
                     df_attivi_ana = df_anagrafica_home[
@@ -2254,14 +2257,70 @@ def mostra_home():
 
                         b_list = []
                         if tot_comp > 0:
-                            b_list.append(f'<span class="hud-badge hud-green"> Completi: {tot_comp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
                         if tot_incomp > 0:
-                            b_list.append(f'<span class="hud-badge hud-yellow"> Incompleti: {tot_incomp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
 
                         badge_anagrafica = " ".join(b_list)
 
                         n_completi_anagrafica = int(tot_comp)
                         n_incompleti_anagrafica = int(tot_incomp)
+
+            # ── 3. VERIFICA PRESENZE ADUNANZA MANCANTI ──
+            try:
+                df_config, err_cfg = leggi_foglio_come_df(workbook, "Configurazioni", 1)
+                df_presenze, err_pres = leggi_foglio_come_df(workbook, "Presenze Adunanze", 1)
+
+                # Mappatura dei giorni della settimana
+                giorni_map = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
+
+                giorni_adunanza = []
+                if not err_cfg and not df_config.empty:
+                    # Legge i giorni impostati nel foglio Configurazioni
+                    for col in df_config.columns:
+                        vals = df_config[col].dropna().astype(str).str.strip().tolist()
+                        for v in vals:
+                            if v in giorni_map.values():
+                                giorni_adunanza.append(v)
+
+                # Se non trova impostazioni, assegna i giorni di default (Giovedì e Domenica)
+                if not giorni_adunanza:
+                    giorni_adunanza = ["Giovedì", "Domenica"]
+
+                # Raccoglie le date già registrate nel foglio Presenze Adunanze (colonna A)
+                date_registrate = set()
+                if not err_pres and not df_presenze.empty:
+                    col_data = df_presenze.columns[0]  # Prima colonna (Colonna A)
+                    for d in df_presenze[col_data].dropna():
+                        d_str = str(d).strip()
+                        try:
+                            dt_parsed = pd.to_datetime(d_str, dayfirst=True).date()
+                            date_registrate.add(dt_parsed)
+                        except Exception:
+                            pass
+
+                # Trova l'ultima adunanza passata partire da ieri (il giorno dell'adunanza si compila la sera)
+                oggi = date.today()
+                check_date = oggi - timedelta(days=1)
+                ultima_adunanza_data = None
+                giorno_nome = ""
+
+                for _ in range(7):
+                    g_nome = giorni_map[check_date.weekday()]
+                    if g_nome in giorni_adunanza:
+                        ultima_adunanza_data = check_date
+                        giorno_nome = g_nome
+                        break
+                    check_date -= timedelta(days=1)
+
+                if ultima_adunanza_data:
+                    if ultima_adunanza_data in date_registrate:
+                        esito_presenze_adunanza = True
+                    else:
+                        d_fmt = ultima_adunanza_data.strftime("%d/%m/%Y")
+                        esito_presenze_adunanza = (False, d_fmt, giorno_nome)
+            except Exception:
+                esito_presenze_adunanza = None
 
         except Exception:
             badge_rapporti = ""
@@ -2270,6 +2329,7 @@ def mostra_home():
     # ── Costruzione righe promemoria per il post-it ──
     promemoria = []
 
+    # Segnalazione 1: Rapporti
     if n_attivi_rapporti is None:
         promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
     elif n_attivi_rapporti == 0:
@@ -2282,6 +2342,7 @@ def mostra_home():
         mancanti = n_attivi_rapporti - n_consegnati_rapporti
         promemoria.append(("dot-yellow", f"Mancano {mancanti} rapporti ({n_consegnati_rapporti}/{n_attivi_rapporti} consegnati)."))
 
+    # Segnalazione 2: Anagrafiche
     if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
         promemoria.append(("dot-grey", "Nessuna anagrafica attiva da verificare al momento."))
     elif n_incompleti_anagrafica == 0:
@@ -2290,6 +2351,13 @@ def mostra_home():
         promemoria.append(("dot-yellow", f"{n_incompleti_anagrafica} anagrafiche incomplete da controllare."))
     else:
         promemoria.append(("dot-red", f"{n_incompleti_anagrafica} anagrafiche incomplete su {n_completi_anagrafica + n_incompleti_anagrafica}: da sistemare con priorità."))
+
+    # Segnalazione 3: Presenze Adunanze
+    if esito_presenze_adunanza is True:
+        promemoria.append(("dot-green", "Presenze dell'ultima adunanza registrate correttamente."))
+    elif isinstance(esito_presenze_adunanza, tuple) and esito_presenze_adunanza[0] is False:
+        _, data_mancante, giorno_mancante = esito_presenze_adunanza
+        promemoria.append(("dot-red", f"Presenze adunanza non inserite per {giorno_mancante} {data_mancante}."))
 
     righe_html = "".join(
         f'<div class="promemoria-riga"><span class="dot {dot_cls}"></span>'
@@ -2350,7 +2418,6 @@ def mostra_home():
                         )
                         st.caption(desc)
                         
-                        # Bottone trasparente che si aggancia all'intero spazio del container
                         cliccato = st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
                                              on_click=vai_a, args=(pagina,), use_container_width=True)
                         
