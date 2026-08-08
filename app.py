@@ -4825,6 +4825,9 @@ def mostra_importa_s21():
         for k in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
             st.session_state.pop(k, None)
         st.rerun()
+import streamlit as st
+import streamlit.components.v1 as components
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPOSTAZIONI
 # ─────────────────────────────────────────────────────────────────
@@ -4865,20 +4868,69 @@ def mostra_impostazioni():
 
     st.markdown("---")
 
-    # ── LINK ACCESSO RAPIDO PRESENZE ──
+    # ── LINK ACCESSO RAPIDO PRESENZE CON TASTO COPIA ──
     st.subheader("🔗 Link di Accesso Rapido Presenze")
     st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
 
     # Sostituisci l'URL qui sotto con il link reale della tua app Streamlit Cloud
     url_app = "https://tua-app.streamlit.app/?page=presenze"
-    st.code(url_app, language="text")
+
+    html_copia_link = f"""
+    <div style="font-family: sans-serif; font-size: 14px;">
+        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 8px; border: 1px solid #d6d8db; margin-bottom: 10px; word-break: break-all;">
+            <code style="color: #31333F; font-size: 13px;">{url_app}</code>
+        </div>
+        <button id="btnCopia" onclick="copiaLink()" style="
+            background-color: #ff4b4b;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        ">
+            📋 Copia link
+        </button>
+        <div id="messaggioCopiato" style="display: none; color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-weight: 600;">
+            ✅ Il link è stato copiato negli appunti!
+        </div>
+    </div>
+
+    <script>
+    function copiaLink() {{
+        navigator.clipboard.writeText("{url_app}").then(function() {{
+            var msg = document.getElementById("messaggioCopiato");
+            msg.style.display = "block";
+            setTimeout(function() {{
+                msg.style.display = "none";
+            }}, 3500);
+        }}).catch(function(err) {{
+            alert("Errore nella copia: " + err);
+        }});
+    }}
+    </script>
+    """
+
+    components.html(html_copia_link, height=140)
 
 
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: PRESENTI ALLE ADUNANZE
+# ─────────────────────────────────────────────────────────────────
 def mostra_presenze_adunanze():
     st.title("🙌 Presenti alle adunanze")
-    if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    
+    # Se si accede in modalità ristretta (link ?page=presenze), il tasto "Torna alla Home" non viene mostrato
+    is_modalita_ristretta = (st.query_params.get("page") == "presenze" or st.query_params.get("modalita") == "presenze")
+    
+    if not is_modalita_ristretta:
+        if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
+            vai_a("home")
+            st.rerun()
 
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
@@ -4946,12 +4998,6 @@ def mostra_presenze_adunanze():
         key="select_anno_mese"
     )
 
-    # Contatore usato per forzare un "remount" pulito della griglia sotto,
-    # ogni volta che serve azzerarne la selezione (cambio mese, dopo
-    # modifica/elimina/annulla): includerlo nella key del widget è più
-    # affidabile del solo pop da session_state, perché il componente
-    # tabella di Streamlit a volte mantiene la riga evidenziata a schermo
-    # anche se lo stato interno è già stato cancellato.
     if "presenze_tabella_versione" not in st.session_state:
         st.session_state.presenze_tabella_versione = 0
 
@@ -4971,16 +5017,13 @@ def mostra_presenze_adunanze():
     else:
         df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
 
-        # ── 3. TABELLA RIEPILOGO MESE ──
+    # ── 3. TABELLA RIEPILOGO MESE ──
     st.markdown("#### 📊 Riepilogo")
     
     dati_riepilogo = []
-    
-    # Valori esatti come nel foglio dati
     tipi_list = ["Infrasettimanale", "Fine settimana"]
 
     for tipo in tipi_list:
-        # Confronto diretto ed esatto con la colonna del foglio
         sotto = df_mese[df_mese["Tipo Adunanza"] == tipo]
 
         settimane = len(sotto)
@@ -5007,13 +5050,11 @@ def mostra_presenze_adunanze():
         use_container_width=True
     )
 
-
-        # ── 4. GRIGLIA DETTAGLIO MESE (Con testo/numeri centrati) ──
+    # ── 4. GRIGLIA DETTAGLIO MESE (Con testo/numeri centrati) ──
     st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
     
     colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
     
-    # Configurazione per centrare l'allineamento di ciascuna colonna
     config_colonne = {
         col: st.column_config.Column(alignment="center") 
         for col in colonne_visibili
@@ -5032,8 +5073,6 @@ def mostra_presenze_adunanze():
     )
 
     righe_sel_dett = evento_dettaglio.selection.rows if evento_dettaglio and evento_dettaglio.selection else []
-    # Protezione: tiene solo indici ancora esistenti nel dataframe attuale
-    # (utile anche in casi limite non coperti dal contatore qui sopra).
     righe_sel_dett = [i for i in righe_sel_dett if i < len(df_mese_reset)]
 
     if righe_sel_dett:
@@ -5074,7 +5113,6 @@ def mostra_presenze_adunanze():
                     st.rerun()
     else:
         st.session_state.presenze_conferma_elimina = None
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
