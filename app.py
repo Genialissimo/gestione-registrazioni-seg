@@ -5762,6 +5762,20 @@ def mostra_storico_proclamatori():
             st.divider()
    
 # ─────────────────────────────────────────────────────────────────
+# CONTROLLO ACCESSO DIRETTO DA URL (?page=presenze)
+# ─────────────────────────────────────────────────────────────────
+query_params = st.query_params
+modalita_solo_presenze = (
+    query_params.get("page") == "presenze" or 
+    query_params.get("modalita") == "presenze"
+)
+
+if modalita_solo_presenze:
+    mostra_presenze_adunanze()
+    st.stop()
+
+
+# ─────────────────────────────────────────────────────────────────
 # ROUTING — navigazione solo tramite le card della Home
 # ─────────────────────────────────────────────────────────────────
 if st.session_state.pagina == "registrazioni":
