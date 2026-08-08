@@ -3743,12 +3743,6 @@ def mostra_gruppi_servizio():
 # ─────────────────────────────────────────────────────────────────
 # MODULO S-88 (Registrazione dei presenti alle adunanze)
 # ─────────────────────────────────────────────────────────────────
-# Coordinate esatte (x0, y0, x1, y1) di ciascuna casella del modulo,
-# misurate sui campi del PDF originale. Sistema di coordinate nativo
-# PDF (origine in basso a sinistra), compatibile diretto con reportlab.
-# Blocchi 1/2 = sezione "Adunanza infrasettimanale" (1=anno precedente,
-# affiancato a sinistra; 2=anno corrente, a destra). Blocchi 3/4 = sezione
-# "Adunanza del fine settimana" (stessa logica). Mesi_1..12 = Settembre..Agosto.
 S88_CAMPI_RECT = {
     "1-Attendance_1": (161.84, 694.2, 221.65, 713.04),
     "1-Attendance_10": (161.84, 515.52, 221.65, 534.36),
@@ -3890,7 +3884,7 @@ S88_CAMPI_RECT = {
     "4-Meeting_10": (380.04, 166.56, 440.1, 185.4),
     "4-Meeting_11": (380.04, 146.76, 440.1, 165.6),
     "4-Meeting_12": (380.04, 126.96, 440.1, 145.8),
-    "4-Meeting_2": (380.04, 325.32, 440.1, 344.16),
+    "4-Meeting_2": (380.04, 325.32, 440.1, 693.12),
     "4-Meeting_3": (380.04, 305.52, 440.1, 324.36),
     "4-Meeting_4": (380.04, 285.6, 440.1, 304.44),
     "4-Meeting_5": (380.04, 265.68, 440.1, 284.52),
@@ -3908,27 +3902,17 @@ S88_MESI_ORDINE_SERVIZIO = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]  # Settembre.
 
 
 def _s88_testo_centrato(c: rl_canvas.Canvas, testo: str, rect: tuple,
-                         font_name: str = "Helvetica", font_size: float = 9.0):
-    """Scrive 'testo' perfettamente centrato (orizzontale e verticale)
-    dentro una casella le cui coordinate (x0, y0, x1, y1) sono in sistema
-    PDF nativo (origine in basso), come i campi del modulo S-88. Stessa
-    tecnica di centratura usata per le cartoline S-21."""
+                          font_name: str = "Helvetica", font_size: float = 9.0):
     x0, y0, x1, y1 = rect
     largo_testo = c.stringWidth(testo, font_name, font_size)
     x = (x0 + x1) / 2 - largo_testo / 2
-    fattore_altezza = 0.32  # approssimazione per centrare verticalmente la baseline
+    fattore_altezza = 0.32
     y = (y0 + y1) / 2 - (font_size * fattore_altezza)
     c.setFont(font_name, font_size)
     c.drawString(x, y, testo)
 
 
 def _s88_calcola_dati(df_presenze: pd.DataFrame, tipo_adunanza: str, anno_teocratico: int) -> dict:
-    """Calcola, per ciascuno dei 12 mesi dell'anno di servizio indicato
-    (Settembre anno_teocratico -> Agosto anno_teocratico+1), il numero di
-    adunanze, il totale dei presenti e la media settimanale, per il tipo
-    di adunanza scelto ('Infrasettimanale' o 'Fine settimana'). Ritorna
-    anche la media mensile finale (media aritmetica delle medie settimanali
-    dei soli mesi con almeno un'adunanza registrata)."""
     df = df_presenze.copy()
     df["_dt"] = pd.to_datetime(df["Data"], format="%d/%m/%Y", errors="coerce")
     df = df.dropna(subset=["_dt"])
@@ -3956,20 +3940,12 @@ def _s88_calcola_dati(df_presenze: pd.DataFrame, tipo_adunanza: str, anno_teocra
 
 
 def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
-    """Genera il modulo S-88 compilato con i dati dell'anno di servizio
-    corrente e di quello precedente (rilevati automaticamente dalla data
-    odierna), sia per le adunanze infrasettimanali che per quelle del fine
-    settimana. I numeri sono disegnati centrati in ogni casella (stessa
-    tecnica delle cartoline S-21), non inseriti come valori di campo
-    modulo (il PDF originale ha un riferimento a un font mancante che
-    manda in errore il riempimento automatico dei campi)."""
     oggi = datetime.now()
     anno_corrente = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
     anno_precedente = anno_corrente - 1
     etichetta_corrente = f"{anno_corrente}-{anno_corrente + 1}"
     etichetta_precedente = f"{anno_precedente}-{anno_precedente + 1}"
 
-    # 1/3 = anno precedente (colonna sinistra), 2/4 = anno corrente (colonna destra)
     mappa_blocchi = {
         1: ("Infrasettimanale", anno_precedente, etichetta_precedente),
         2: ("Infrasettimanale", anno_corrente, etichetta_corrente),
@@ -4003,7 +3979,7 @@ def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
     pagina = template_reader.pages[0]
     pagina.merge_page(overlay_reader.pages[0])
     if "/Annots" in pagina:
-        del pagina["/Annots"]  # rimuove le caselle modulo originali (vuote sotto il testo disegnato)
+        del pagina["/Annots"]
     writer.add_page(pagina)
 
     out = io.BytesIO()
@@ -4013,16 +3989,7 @@ def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
 
 # ─────────────────────────────────────────────────────────────────
 def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
-                          presenza_default: int, zoom_default: int, giorni_per_tipo: dict):
-    """Disegna i campi Data / Tipo adunanza / In presenza / Su Zoom (FUORI
-    da un st.form, apposta: serve per validare la data, ricalcolare il
-    Totale e proporre il tipo di adunanza giusto in tempo reale, cosa che
-    un st.form non permette perché aggiorna solo al submit). Se la data
-    scelta non cade in un giorno di adunanza configurato, la corregge da
-    sola alla data valida più vicina; quando la data (corretta o già
-    valida) corrisponde a un giorno associato a un tipo di adunanza
-    specifico, propone anche quel tipo. Ritorna (data_scelta,
-    tipo_adunanza, in_presenza, su_zoom, totale, data_valida: bool)."""
+                         presenza_default: int, zoom_default: int, giorni_per_tipo: dict):
     giorni_validi = giorni_adunanze_tutti(giorni_per_tipo)
     chiave_data = f"{chiave_prefix}_data"
     chiave_tipo = f"{chiave_prefix}_tipo"
@@ -4032,20 +3999,12 @@ def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
     if chiave_tipo not in st.session_state:
         st.session_state[chiave_tipo] = tipo_default if tipo_default in TIPI_ADUNANZA else TIPI_ADUNANZA[0]
 
-    # Corregge il valore in session_state PRIMA di disegnare il widget:
-    # Streamlit non permette di modificare session_state di una chiave
-    # dopo che il widget con quella chiave è già stato istanziato in
-    # questo stesso giro di esecuzione.
     data_valida, data_proposta = _prossima_data_valida_precedente(
         st.session_state[chiave_data], giorni_validi)
     if not data_valida and data_proposta is not None:
         st.session_state[chiave_data] = data_proposta
         data_valida = True
 
-    # Ogni volta che la data (eventualmente appena corretta) risulta
-    # diversa dall'ultima vista, propone il tipo di adunanza giusto per
-    # quel giorno — sia che la data sia stata corretta in automatico, sia
-    # che l'utente abbia scelto direttamente un altro giorno già valido.
     chiave_ultima_data = f"{chiave_prefix}_ultima_data_vista"
     if st.session_state.get(chiave_ultima_data) != st.session_state[chiave_data]:
         st.session_state[chiave_ultima_data] = st.session_state[chiave_data]
@@ -4077,7 +4036,6 @@ def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
 
 
 def _form_modifica_presenza(dati_selezione: dict):
-    """Form di modifica di una riga del foglio 'Presenze Adunanze'."""
     riga = dati_selezione["riga"]
     numero_riga_foglio = dati_selezione["numero_riga_foglio"]
 
@@ -4105,9 +4063,6 @@ def _form_modifica_presenza(dati_selezione: dict):
 
     if annulla:
         st.session_state.presenze_modifica = None
-        # Forza il "remount" della griglia di dettaglio incrementando il
-        # contatore usato nella sua key dinamica (vedi mostra_presenze_adunanze):
-        # così la riga risulta deselezionata al ritorno.
         st.session_state.presenze_tabella_versione = st.session_state.get("presenze_tabella_versione", 0) + 1
         st.rerun()
 
@@ -4131,8 +4086,9 @@ def _form_modifica_presenza(dati_selezione: dict):
             st.rerun()
         else:
             st.error(err_salva)
+
+
 def _form_nuova_presenza():
-    """Form di inserimento di una nuova riga nel foglio 'Presenze Adunanze'."""
     st.markdown("#### ➕ Nuova presenza")
 
     giorni_per_tipo = leggi_giorni_adunanze_per_tipo(workbook)
@@ -4175,6 +4131,199 @@ def _form_nuova_presenza():
         else:
             st.error(err_salva)
 
+
+# ─────────────────────────────────────────────────────────────────
+# FUNZIONE PRINCIPALE PAGINA PRESENZE
+# ─────────────────────────────────────────────────────────────────
+def mostra_presenze_adunanze():
+    st.title("🙌 Presenti alle adunanze")
+    
+    # Nasconde il tasto Home se si accede dal link rapido ?page=presenze
+    is_modalita_ristretta = (st.query_params.get("page") == "presenze" or st.query_params.get("modalita") == "presenze")
+    
+    if not is_modalita_ristretta:
+        if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
+            vai_a("home")
+            st.rerun()
+
+    if not collegato:
+        st.warning("⚠️ Nessun foglio dati collegato.")
+        return
+
+    if st.button("➕ Inserisci presenti alle adunanze", key="apri_nuova_presenza", use_container_width=True):
+        st.session_state.presenze_form_nuovo_aperto = not st.session_state.get(
+            "presenze_form_nuovo_aperto", False)
+        st.session_state.presenze_modifica = None
+    if st.session_state.get("presenze_form_nuovo_aperto"):
+        _form_nuova_presenza()
+
+    if st.session_state.get("presenze_modifica"):
+        _form_modifica_presenza(st.session_state.presenze_modifica)
+
+    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE)
+    if err:
+        st.error(err)
+        return
+
+    if df.empty:
+        st.info("Nessuna presenza registrata ancora.")
+        return
+
+    # ── Genera modulo S-88 ────────────────────────────────────────────
+    if not os.path.exists(PERCORSO_MODULO_S88):
+        st.warning("Modulo S-88 non trovato: metti il file «S-88_I.pdf» nella stessa cartella di app.py "
+                   "per poterlo generare.")
+    else:
+        if st.button("📄 Genera modulo S-88", key="genera_s88", use_container_width=True):
+            with st.spinner("Genero il modulo S-88…"):
+                st.session_state.s88_pdf_pronto = genera_pdf_s88(df)
+
+        if st.session_state.get("s88_pdf_pronto"):
+            st.download_button(
+                "⬇️ Scarica modulo S-88 (PDF)",
+                data=st.session_state.s88_pdf_pronto,
+                file_name="Modulo_S-88.pdf",
+                mime="application/pdf",
+                key="download_s88",
+                use_container_width=True,
+                on_click=lambda: st.session_state.pop("s88_pdf_pronto", None),
+            )
+
+    # ── 1. PREPARAZIONE DATI E CREAZIONE MENU MESI ──
+    df_prep = df.copy()
+    df_prep["_dt"] = pd.to_datetime(df_prep["Data"], format="%d/%m/%Y", errors="coerce")
+    df_prep = df_prep.dropna(subset=["_dt"])
+    df_prep["_anno_mese"] = df_prep["_dt"].dt.strftime("%Y-%m")
+    df_prep["_riga_foglio"] = RIGA_INTESTAZIONE_PRESENZE + 1 + df_prep.index
+
+    mesi_disponibili = sorted(df_prep["_anno_mese"].unique(), reverse=True)
+
+    if not mesi_disponibili:
+        st.warning("Nessuna data valida trovata nel foglio.")
+        return
+
+    # ── 2. SELECTBOX IN ALTO ──
+    st.markdown("### 📅 Seleziona Mese/Anno")
+    mese_selezionato = st.selectbox(
+        "Mese/Anno",
+        options=mesi_disponibili,
+        label_visibility="collapsed",
+        key="select_anno_mese"
+    )
+
+    if "presenze_tabella_versione" not in st.session_state:
+        st.session_state.presenze_tabella_versione = 0
+
+    if st.session_state.get("presenze_ultimo_mese_visto") != mese_selezionato:
+        st.session_state.presenze_ultimo_mese_visto = mese_selezionato
+        st.session_state.presenze_tabella_versione += 1
+
+    df_mese = df_prep[df_prep["_anno_mese"] == mese_selezionato].copy()
+
+    df_mese["_presenza_num"] = df_mese["In Presenza"].apply(a_float_it)
+    df_mese["_zoom_num"] = df_mese["Su Zoom"].apply(a_float_it)
+    
+    if "Totale" in df_mese.columns:
+        df_mese["_totale_num"] = df_mese["Totale"].apply(a_float_it)
+    else:
+        df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
+
+    # ── 3. TABELLA RIEPILOGO MESE ──
+    st.markdown("#### 📊 Riepilogo")
+    
+    dati_riepilogo = []
+    tipi_list = ["Infrasettimanale", "Fine settimana"]
+
+    for tipo in tipi_list:
+        sotto = df_mese[df_mese["Tipo Adunanza"] == tipo]
+
+        settimane = len(sotto)
+        totale = sotto["_totale_num"].sum()
+        tot_presenza = sotto["_presenza_num"].sum()
+        tot_zoom = sotto["_zoom_num"].sum()
+        
+        media = (totale / settimane) if settimane > 0 else 0
+        perc_zoom = (tot_zoom / totale * 100) if totale > 0 else 0
+        perc_presenza = (tot_presenza / totale * 100) if totale > 0 else 0
+
+        dati_riepilogo.append({
+            "Tipo Adunanza": tipo,
+            "Sett.": settimane,
+            "Media": f"{media:,.2f}".replace(".", ","),
+            "Totale": int(totale),
+            "% Zoom": f"{perc_zoom:.2f}%".replace(".", ","),
+            "% Pres.": f"{perc_presenza:.2f}%".replace(".", ","),
+        })
+
+    st.dataframe(
+        pd.DataFrame(dati_riepilogo), 
+        hide_index=True, 
+        use_container_width=True
+    )
+
+    # ── 4. GRIGLIA DETTAGLIO MESE ──
+    st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
+    
+    colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
+    
+    config_colonne = {
+        col: st.column_config.Column(alignment="center") 
+        for col in colonne_visibili
+    }
+
+    df_mese_reset = df_mese.reset_index(drop=True)
+    chiave_tabella_dettaglio = f"presenze_tabella_dettaglio_{st.session_state.presenze_tabella_versione}"
+    evento_dettaglio = st.dataframe(
+        df_mese_reset[colonne_visibili],
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=chiave_tabella_dettaglio,
+        column_config=config_colonne,
+    )
+
+    righe_sel_dett = evento_dettaglio.selection.rows if evento_dettaglio and evento_dettaglio.selection else []
+    righe_sel_dett = [i for i in righe_sel_dett if i < len(df_mese_reset)]
+
+    if righe_sel_dett:
+        riga_scelta = df_mese_reset.loc[righe_sel_dett[0]]
+        numero_riga_foglio = int(riga_scelta["_riga_foglio"])
+
+        col_mod, col_elim = st.columns(2)
+        with col_mod:
+            if st.button("✏️ Modifica riga selezionata", key="presenze_btn_mod", use_container_width=True):
+                st.session_state.presenze_form_nuovo_aperto = False
+                st.session_state.presenze_modifica = {
+                    "riga": riga_scelta.to_dict(),
+                    "numero_riga_foglio": numero_riga_foglio,
+                }
+                st.rerun()
+        with col_elim:
+            if st.button("🗑️ Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True):
+                st.session_state.presenze_conferma_elimina = numero_riga_foglio
+                st.rerun()
+
+        if st.session_state.get("presenze_conferma_elimina") == numero_riga_foglio:
+            st.warning("Sei sicuro di voler eliminare questa riga? L'operazione non è reversibile.")
+            col_si, col_no = st.columns(2)
+            with col_si:
+                if st.button("✔ Sì, elimina", key="presenze_conf_si", type="primary", use_container_width=True):
+                    ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
+                    if ok:
+                        st.cache_data.clear()
+                        st.session_state.presenze_conferma_elimina = None
+                        st.session_state.presenze_tabella_versione += 1
+                        st.success("✔ Riga eliminata.")
+                        st.rerun()
+                    else:
+                        st.error(err_elim)
+            with col_no:
+                if st.button("No, annulla", key="presenze_conf_no", use_container_width=True):
+                    st.session_state.presenze_conferma_elimina = None
+                    st.rerun()
+    else:
+        st.session_state.presenze_conferma_elimina = None
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
 # ─────────────────────────────────────────────────────────────────
