@@ -2024,35 +2024,52 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* Titoli delle righe menu - grandi, allineati a destra, theme-aware */
-        div[class*="st-key-lista_tab_"] div[data-testid="stButton"] button {
+        /* Riga completa: l'hover evidenzia TUTTA la sezione (bottone + desc + badge) */
+        div[class*="st-key-riga_"] {
+            border-radius: 8px;
+            padding: 4px 6px;
+            transition: background-color 0.15s ease;
+        }
+        div[class*="st-key-riga_"]:hover {
+            background-color: rgba(46, 125, 50, 0.12) !important;
+            cursor: pointer;
+        }
+
+        /* Bottone: trasparente, testo allineato a SINISTRA */
+        div[class*="st-key-riga_"] div[data-testid="stButton"] button {
+            display: block !important;
+            width: 100% !important;
             background-color: transparent !important;
             border: none !important;
             box-shadow: none !important;
-            text-align: right !important;
-            justify-content: flex-end !important;
+            padding: 10px 10px 2px 10px !important;
+        }
+        div[class*="st-key-riga_"] div[data-testid="stButton"] button div[data-testid="stMarkdownContainer"] {
+            width: 100% !important;
+            text-align: left !important;
+        }
+        div[class*="st-key-riga_"] div[data-testid="stButton"] button p {
+            width: 100% !important;
+            text-align: left !important;
             font-size: 1.15rem !important;
             font-weight: 600 !important;
             color: var(--text-color) !important;
-            padding: 14px 10px 4px 10px !important;
-            border-radius: 6px !important;
-            transition: background-color 0.15s ease;
+            margin: 0 !important;
         }
-        div[class*="st-key-lista_tab_"] div[data-testid="stButton"] button:hover {
-            background-color: rgba(46, 125, 50, 0.12) !important;
+        div[class*="st-key-riga_"]:hover div[data-testid="stButton"] button p {
             color: #2E7D32 !important;
         }
-        div[class*="st-key-lista_tab_"] div[data-testid="stButton"] button:disabled {
+        div[class*="st-key-riga_"] div[data-testid="stButton"] button:disabled p {
             opacity: 0.4 !important;
         }
 
-        /* Descrizione sotto il titolo */
+        /* Descrizione sotto il titolo - allineata a SINISTRA */
         .riga-desc {
-            text-align: right;
+            text-align: left;
             color: var(--text-color);
             opacity: 0.6;
             font-size: 0.85rem;
-            padding: 0 10px 10px 10px;
+            padding: 0 10px 8px 10px;
             margin-top: -4px;
         }
     </style>
@@ -2099,97 +2116,6 @@ def mostra_home():
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
                     df_attivi_ana = df_anagrafica_home[
                         df_anagrafica_home["Attivi / Inattivi"].astype(str).str.strip().str.upper().str.startswith("A")
-                    ].copy()
-
-                    def riga_completa_home(riga):
-                        for col in colonne_obbligatorie:
-                            if col in riga:
-                                val = str(riga[col]).strip()
-                                if not val or val.lower() in ["none", "nan", "null"]:
-                                    return False
-                            else:
-                                return False
-                        return True
-
-                    if not df_attivi_ana.empty:
-                        esiti = df_attivi_ana.apply(riga_completa_home, axis=1)
-                        tot_comp = esiti.sum()
-                        tot_incomp = len(df_attivi_ana) - tot_comp
-
-                        b_list = []
-                        if tot_comp > 0:
-                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
-                        if tot_incomp > 0:
-                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
-
-                        badge_anagrafica = " ".join(b_list)
-
-        except Exception:
-            badge_rapporti = ""
-            badge_anagrafica = ""
-
-    # ── Sezioni raggruppate per tab: (icona, titolo, pagina, descrizione, badge) ──
-    sezioni = {
-        "📖 Rapporti": [
-            ("📖", "Rapporti consegnati", "registrazioni",
-             "Visualizza e modifica i rapporti di servizio consegnati.", badge_rapporti),
-            ("📚", "Storico rapporti", "storico",
-             "Storico dei rapporti di servizio per Proclamatore.", ""),
-            ("📇", "Cartoline di registrazione", "cartoline",
-             "Genera le cartoline S-21 per i Proclamatori scelti.", ""),
-            ("🏢", "Rapporto per la Filiale", "filiale",
-             "Dati statistici mensili (tipo modulo S-10).", ""),
-            ("📊", "Riepilogo attività e statistiche", "riepilogo_statistiche",
-             "Report su ore, studi e crediti per Proclamatore o per categoria.", ""),
-            ("📥", "Importa da S-21", "importa_s21",
-             "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", ""),
-        ],
-        "🗂️ Anagrafiche": [
-            ("🗂️", "Anagrafiche", "anagrafiche",
-             "Gestisci i dati dei Proclamatori.", badge_anagrafica),
-            ("👥", "Gruppi di servizio", "gruppi",
-             "Abbina i Proclamatori a un sorvegliante di gruppo.", ""),
-        ],
-        "🙌 Adunanze": [
-            ("🙌", "Presenti alle adunanze", "presenze",
-             "Registra e monitora le presenze alle due adunanze.", ""),
-        ],
-        "⚙️ Impostazioni": [
-            ("⚙️", "Impostazioni", "impostazioni",
-             "Configura i giorni delle adunanze e altre opzioni.", ""),
-        ],
-    }
-
-    tabs = st.tabs(list(sezioni.keys()))
-
-    for i, (tab, (nome_tab, voci)) in enumerate(zip(tabs, sezioni.items())):
-        with tab:
-            with st.container(key=f"lista_tab_{i}"):
-                for icon, titolo, pagina, desc, badge in voci:
-                    c1, c2 = st.columns([6, 1.4])
-                    with c1:
-                        st.button(
-                            f"{icon}  {titolo}",
-                            key=f"nav_{pagina}",
-                            on_click=vai_a,
-                            args=(pagina,),
-                            use_container_width=True,
-                            disabled=not collegato,
-                        )
-                        if desc:
-                            st.markdown(f"<div class='riga-desc'>{desc}</div>", unsafe_allow_html=True)
-                    with c2:
-                        if badge:
-                            st.markdown(f"<div style='padding-top:14px'>{badge}</div>", unsafe_allow_html=True)
-                    st.markdown(
-                        "<hr style='margin:0; border:none; border-top:1px solid rgba(128,128,128,0.25);'>",
-                        unsafe_allow_html=True
-                    )
-
-    if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-                 key="refresh_home", help="Aggiorna i dati dal foglio Google"):
-        st.cache_data.clear()
-        st.rerun()
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
