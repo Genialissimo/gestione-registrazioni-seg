@@ -5759,10 +5759,11 @@ def mostra_storico_proclamatori():
             st.divider()
    
 # ─────────────────────────────────────────────────────────────────
-# CONTROLLO ACCESSO DIRETTO DA URL (?page=presenze)
+# CONTROLLO ACCESSO RISTRETTO (DA RUOLO O LINK DIRETTO)
 # ─────────────────────────────────────────────────────────────────
 query_params = st.query_params
 modalita_solo_presenze = (
+    st.session_state.get("ruolo") == "presenze" or
     query_params.get("page") == "presenze" or 
     query_params.get("modalita") == "presenze"
 )
@@ -5773,7 +5774,7 @@ if modalita_solo_presenze:
 
 
 # ─────────────────────────────────────────────────────────────────
-# ROUTING — navigazione solo tramite le card della Home
+# ROUTING COMPLETO — Accessibile solo per Amministratori
 # ─────────────────────────────────────────────────────────────────
 if st.session_state.pagina == "registrazioni":
     mostra_registrazioni()
