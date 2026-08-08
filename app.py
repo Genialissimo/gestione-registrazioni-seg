@@ -1966,17 +1966,57 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Stile lista pulita con Tab, dark-mode friendly)
+# PAGINA: HOME (Card originali + Tab, card intera cliccabile)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # ── CSS: tab verdi + righe menu, con colori theme-aware ──
+    # CSS Custom per card, icone e tab
     st.markdown("""
     <style>
-        /* Badge (invariati, già dark-mode friendly perché semi-trasparenti) */
+        .custom-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+            width: 100%;
+        }
+        .custom-card-title-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+        }
+        .custom-card-title {
+            font-size: 1.1rem !important;
+            font-weight: 700 !important;
+            line-height: 1.3 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .custom-icon-box {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 10px;
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
+        .bg-orange { background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.4); }
+        .bg-blue   { background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); }
+        .bg-green  { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); }
+        .bg-purple { background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); }
+        .bg-cyan   { background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); }
+        .bg-amber  { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); }
+        .bg-slate  { background: rgba(100, 116, 139, 0.15); border: 1px solid rgba(100, 116, 139, 0.4); }
+
         .hud-badge {
             padding: 4px 10px;
             border-radius: 12px;
@@ -2001,7 +2041,7 @@ def mostra_home():
             border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
-        /* Tab in cima - accento verde tema app, testo theme-aware */
+        /* Tab in cima - accento verde */
         .stTabs [data-baseweb="tab-list"] {
             gap: 6px;
             border-bottom: 1px solid rgba(128,128,128,0.3);
@@ -2024,58 +2064,32 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* Riga completa: l'hover evidenzia TUTTA la sezione (bottone + desc + badge) */
-        div[class*="st-key-riga_"] {
-            border-radius: 8px;
-            padding: 4px 6px;
-            transition: background-color 0.15s ease;
+        /* Card intera cliccabile: bottone invisibile sovrapposto a tutta la card */
+        div[class*="st-key-card_"] {
+            position: relative;
+            transition: border-color 0.15s ease;
         }
-        div[class*="st-key-riga_"]:hover {
-            background-color: rgba(46, 125, 50, 0.12) !important;
+        div[class*="st-key-card_"]:hover {
+            border-color: #2E7D32 !important;
+        }
+        div[class*="st-key-card_"] div[data-testid="stButton"] {
+            position: absolute;
+            inset: 0;
+        }
+        div[class*="st-key-card_"] div[data-testid="stButton"] button {
+            width: 100% !important;
+            height: 100% !important;
+            opacity: 0 !important;
             cursor: pointer;
-        }
-
-        /* Bottone: trasparente, testo allineato a SINISTRA */
-        div[class*="st-key-riga_"] div[data-testid="stButton"] button {
-            display: block !important;
-            width: 100% !important;
-            background-color: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 10px 10px 2px 10px !important;
-        }
-        div[class*="st-key-riga_"] div[data-testid="stButton"] button div[data-testid="stMarkdownContainer"] {
-            width: 100% !important;
-            text-align: left !important;
-        }
-        div[class*="st-key-riga_"] div[data-testid="stButton"] button p {
-            width: 100% !important;
-            text-align: left !important;
-            font-size: 1.15rem !important;
-            font-weight: 600 !important;
-            color: var(--text-color) !important;
             margin: 0 !important;
+            padding: 0 !important;
         }
-        div[class*="st-key-riga_"]:hover div[data-testid="stButton"] button p {
-            color: #2E7D32 !important;
-        }
-        div[class*="st-key-riga_"] div[data-testid="stButton"] button:disabled p {
-            opacity: 0.4 !important;
-        }
-
-        /* Descrizione sotto il titolo - allineata a SINISTRA */
-        .riga-desc {
-            text-align: left;
-            color: var(--text-color);
-            opacity: 0.6;
-            font-size: 0.85rem;
-            padding: 0 10px 8px 10px;
-            margin-top: -4px;
+        div[class*="st-key-card_"] div[data-testid="stButton"] button:disabled {
+            cursor: not-allowed;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Calcolo badge (invariato) ──
     badge_rapporti = ""
     badge_anagrafica = ""
 
@@ -2116,6 +2130,92 @@ def mostra_home():
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
                     df_attivi_ana = df_anagrafica_home[
                         df_anagrafica_home["Attivi / Inattivi"].astype(str).str.strip().str.upper().str.startswith("A")
+                    ].copy()
+
+                    def riga_completa_home(riga):
+                        for col in colonne_obbligatorie:
+                            if col in riga:
+                                val = str(riga[col]).strip()
+                                if not val or val.lower() in ["none", "nan", "null"]:
+                                    return False
+                            else:
+                                return False
+                        return True
+
+                    if not df_attivi_ana.empty:
+                        esiti = df_attivi_ana.apply(riga_completa_home, axis=1)
+                        tot_comp = esiti.sum()
+                        tot_incomp = len(df_attivi_ana) - tot_comp
+
+                        b_list = []
+                        if tot_comp > 0:
+                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
+                        if tot_incomp > 0:
+                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
+
+                        badge_anagrafica = " ".join(b_list)
+
+        except Exception:
+            badge_rapporti = ""
+            badge_anagrafica = ""
+
+    # ── Card raggruppate per tab (stesso contenuto/stile di prima) ──
+    sezioni = {
+        "📖 Rapporti": [
+            ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
+            ("📚", "bg-blue",   "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
+            ("📇", "bg-cyan",   "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
+            ("🏢", "bg-amber",  "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
+            ("📊", "bg-blue",   "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
+            ("📥", "bg-orange", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
+        ],
+        "🗂️ Anagrafiche": [
+            ("🗂️", "bg-green",  "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
+            ("👥", "bg-purple", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
+        ],
+        "🙌 Adunanze": [
+            ("🙌", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        ],
+        "⚙️ Impostazioni": [
+            ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
+        ],
+    }
+
+    def mostra_griglia_card(lista_card):
+        """Mostra le card di una tab in una griglia a 2 colonne."""
+        for i in range(0, len(lista_card), 2):
+            coppia = lista_card[i:i + 2]
+            cols = st.columns(2)
+            for col, (icon, bg_cls, titolo, desc, pagina, badge) in zip(cols, coppia):
+                with col:
+                    with st.container(key=f"card_{pagina}", border=True):
+                        st.markdown(
+                            f"""
+                            <div class="custom-card-header">
+                                <div class="custom-card-title-group">
+                                    <span class="custom-icon-box {bg_cls}">{icon}</span>
+                                    <span class="custom-card-title">{titolo}</span>
+                                </div>
+                                <div>{badge}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        st.caption(desc)
+                        # Bottone invisibile che copre tutta la card (vedi CSS sopra)
+                        st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
+                                   on_click=vai_a, args=(pagina,))
+
+    tabs = st.tabs(list(sezioni.keys()))
+    for tab, (nome_tab, lista_card) in zip(tabs, sezioni.items()):
+        with tab:
+            mostra_griglia_card(lista_card)
+
+    if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+                 key="refresh_home", help="Aggiorna i dati dal foglio Google"):
+        st.cache_data.clear()
+        st.rerun()
+                     
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
