@@ -1983,7 +1983,7 @@ from datetime import datetime, date, timedelta
 
 def mostra_home():
     # Intestazione pulita e compatta
-    st.markdown("## 📒 Gestione Registrazioni SEG")
+    st.markdown("### 📒 Gestione Registrazioni SEG")
 
     # CSS Custom per card, icone, tab e post-it
     st.markdown("""
