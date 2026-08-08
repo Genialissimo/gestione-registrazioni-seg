@@ -76,21 +76,7 @@ if not st.session_state.utente_autenticato:
                     
     st.stop()  # Blocca l'esecuzione per chi non ha inserito il codice corretto
 
-# ─────────────────────────────────────────────────────────────────
-# CONTROLLO ACCESSO RISTRETTO DA LINK (Query Parameters)
-# ─────────────────────────────────────────────────────────────────
-query_params = st.query_params
 
-# Controlla se nell'URL è presente ?page=presenze oppure ?modalita=presenze
-modalita_solo_presenze = (
-    query_params.get("page") == "presenze" or 
-    query_params.get("modalita") == "presenze"
-)
-
-if modalita_solo_presenze:
-    # Mostra solo la pagina delle presenze adunanze ed interrompe l'esecuzione del resto dell'app
-    mostra_presenze_adunanze()
-    st.stop()
 
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
