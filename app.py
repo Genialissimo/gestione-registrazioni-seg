@@ -1966,14 +1966,14 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Card originali + Tab, card intera cliccabile)
+# PAGINA: HOME (Tab "🏠 Home" con card promemoria stile post-it + card originali)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
     st.markdown("## 📒 Gestione Registrazioni SEG")
     st.title("Pannello di controllo")
 
-    # CSS Custom per card, icone e tab
+    # CSS Custom per card, icone, tab e post-it
     st.markdown("""
     <style>
         .custom-card-header {
@@ -2087,11 +2087,63 @@ def mostra_home():
         div[class*="st-key-card_"] div[data-testid="stButton"] button:disabled {
             cursor: not-allowed;
         }
+
+        /* ── Card Post-it Promemoria ── */
+        .postit-card {
+            max-width: 480px;
+            margin: 8px auto 24px auto;
+            background: linear-gradient(135deg, #fff9c4, #fff3a0);
+            border-radius: 4px 14px 4px 14px;
+            padding: 22px 24px;
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
+            transform: rotate(-0.8deg);
+        }
+        .postit-titolo {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #5c4a00;
+            margin: 0 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .promemoria-riga {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 7px 0;
+            border-bottom: 1px dashed rgba(0,0,0,0.15);
+        }
+        .promemoria-riga:last-child {
+            border-bottom: none;
+        }
+        .dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+        .dot-green  { background: #16a34a; }
+        .dot-yellow { background: #eab308; }
+        .dot-red    { background: #dc2626; }
+        .dot-grey   { background: #9ca3af; }
+        .promemoria-testo {
+            font-size: 0.92rem;
+            color: #4a3f00;
+            line-height: 1.35;
+        }
     </style>
     """, unsafe_allow_html=True)
 
     badge_rapporti = ""
     badge_anagrafica = ""
+
+    # Contatori grezzi per la card promemoria (post-it)
+    n_attivi_rapporti = None
+    n_consegnati_rapporti = None
+    n_completi_anagrafica = None
+    n_incompleti_anagrafica = None
 
     if collegato:
         try:
@@ -2125,6 +2177,9 @@ def mostra_home():
                     cls_badge = "hud-green" if completo else "hud-red"
                     badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
 
+                    n_attivi_rapporti = conteggio_attivi_home
+                    n_consegnati_rapporti = conteggio_consegnati_home
+
                 # ── 2. BADGE ANAGRAFICHE (Senza Data Battesimo) ──
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
@@ -2155,9 +2210,49 @@ def mostra_home():
 
                         badge_anagrafica = " ".join(b_list)
 
+                        n_completi_anagrafica = int(tot_comp)
+                        n_incompleti_anagrafica = int(tot_incomp)
+
         except Exception:
             badge_rapporti = ""
             badge_anagrafica = ""
+
+    # ── Costruzione righe promemoria per il post-it ──
+    promemoria = []
+
+    if n_attivi_rapporti is None:
+        promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
+    elif n_attivi_rapporti == 0:
+        promemoria.append(("dot-grey", "Nessun proclamatore attivo da controllare per i rapporti."))
+    elif n_consegnati_rapporti >= n_attivi_rapporti:
+        promemoria.append(("dot-green", f"Tutti i rapporti consegnati ({n_consegnati_rapporti}/{n_attivi_rapporti})."))
+    elif n_consegnati_rapporti == 0:
+        promemoria.append(("dot-red", f"Nessun rapporto consegnato finora (0/{n_attivi_rapporti})."))
+    else:
+        mancanti = n_attivi_rapporti - n_consegnati_rapporti
+        promemoria.append(("dot-yellow", f"Mancano {mancanti} rapporti ({n_consegnati_rapporti}/{n_attivi_rapporti} consegnati)."))
+
+    if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
+        promemoria.append(("dot-grey", "Nessuna anagrafica attiva da verificare al momento."))
+    elif n_incompleti_anagrafica == 0:
+        promemoria.append(("dot-green", "Tutte le anagrafiche sono complete."))
+    elif n_incompleti_anagrafica < n_completi_anagrafica:
+        promemoria.append(("dot-yellow", f"{n_incompleti_anagrafica} anagrafiche incomplete da controllare."))
+    else:
+        promemoria.append(("dot-red", f"{n_incompleti_anagrafica} anagrafiche incomplete su {n_completi_anagrafica + n_incompleti_anagrafica}: da sistemare con priorità."))
+
+    righe_html = "".join(
+        f'<div class="promemoria-riga"><span class="dot {dot_cls}"></span>'
+        f'<span class="promemoria-testo">{testo}</span></div>'
+        for dot_cls, testo in promemoria
+    )
+
+    postit_html = f"""
+    <div class="postit-card">
+        <div class="postit-titolo">📌 Promemoria e Segnalazioni</div>
+        {righe_html}
+    </div>
+    """
 
     # ── Card raggruppate per tab (stesso contenuto/stile di prima) ──
     sezioni = {
@@ -2206,16 +2301,21 @@ def mostra_home():
                         st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
                                    on_click=vai_a, args=(pagina,))
 
-    tabs = st.tabs(list(sezioni.keys()))
-    for tab, (nome_tab, lista_card) in zip(tabs, sezioni.items()):
+    # ── Tab: Home (post-it) + le 4 tab di navigazione ──
+    nomi_tab = ["🏠 Home"] + list(sezioni.keys())
+    tabs = st.tabs(nomi_tab)
+
+    with tabs[0]:
+        st.markdown(postit_html, unsafe_allow_html=True)
+
+    for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
         with tab:
             mostra_griglia_card(lista_card)
 
     if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
         st.cache_data.clear()
-        st.rerun()
-                     
+        st.rerun()  
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
