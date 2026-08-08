@@ -76,6 +76,22 @@ if not st.session_state.utente_autenticato:
                     
     st.stop()  # Blocca l'esecuzione per chi non ha inserito il codice corretto
 
+# ─────────────────────────────────────────────────────────────────
+# CONTROLLO ACCESSO RISTRETTO DA LINK (Query Parameters)
+# ─────────────────────────────────────────────────────────────────
+query_params = st.query_params
+
+# Controlla se nell'URL è presente ?page=presenze oppure ?modalita=presenze
+modalita_solo_presenze = (
+    query_params.get("page") == "presenze" or 
+    query_params.get("modalita") == "presenze"
+)
+
+if modalita_solo_presenze:
+    # Mostra solo la pagina delle presenze adunanze ed interrompe l'esecuzione del resto dell'app
+    mostra_presenze_adunanze()
+    st.stop()
+
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
@@ -4831,12 +4847,12 @@ def mostra_impostazioni():
     giorni_scelti = {}
     for tipo in TIPI_ADUNANZA:
         giorni_scelti[tipo] = st.multiselect(f"Giorni — {tipo}", GIORNI_SETTIMANA_IT,
-                                              default=giorni_attuali.get(tipo, []),
-                                              key=f"impostazioni_giorni_{tipo}")
+                                             default=giorni_attuali.get(tipo, []),
+                                             key=f"impostazioni_giorni_{tipo}")
 
     tutti_vuoti = not any(giorni_scelti.values())
     if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
-                disabled=tutti_vuoti):
+                 disabled=tutti_vuoti):
         ok, err_salva = salva_giorni_adunanze_per_tipo(workbook, giorni_scelti)
         if ok:
             st.cache_data.clear()
@@ -4847,6 +4863,15 @@ def mostra_impostazioni():
     if tutti_vuoti:
         st.info("Seleziona almeno un giorno per almeno un tipo di adunanza.")
 
+    st.markdown("---")
+
+    # ── LINK ACCESSO RAPIDO PRESENZE ──
+    st.subheader("🔗 Link di Accesso Rapido Presenze")
+    st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
+
+    # Sostituisci l'URL qui sotto con il link reale della tua app Streamlit Cloud
+    url_app = "https://tua-app.streamlit.app/?page=presenze"
+    st.code(url_app, language="text")
 
 
 def mostra_presenze_adunanze():
