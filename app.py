@@ -4873,7 +4873,7 @@ def mostra_impostazioni():
     st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
 
     # Sostituisci l'URL qui sotto con il link reale della tua app Streamlit Cloud
-    url_app = "https://tua-app.streamlit.app/?page=presenze"
+    url_app = "https://gestioneseg.streamlit.app/?page=presenze"
 
     html_copia_link = f"""
     <div style="font-family: sans-serif; font-size: 14px;">
