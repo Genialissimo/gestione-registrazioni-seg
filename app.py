@@ -1966,7 +1966,7 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Tab "🏠 Home" con card promemoria stile post-it + card originali)
+# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
@@ -2088,24 +2088,28 @@ def mostra_home():
             cursor: not-allowed;
         }
 
-        /* ── Card Post-it Promemoria ── */
+        /* ── Card Post-it Promemoria (RESPONSIVE) ── */
         .postit-card {
-            max-width: 480px;
+            width: 92%;
+            max-width: 900px;
             margin: 8px auto 24px auto;
             background: linear-gradient(135deg, #fff9c4, #fff3a0);
             border-radius: 4px 14px 4px 14px;
-            padding: 22px 24px;
+            padding: 22px clamp(20px, 4vw, 40px);
             box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
             transform: rotate(-0.8deg);
         }
         .postit-titolo {
-            font-size: 1.05rem;
+            font-size: clamp(1.05rem, 1.6vw, 1.3rem);
             font-weight: 700;
             color: #5c4a00;
             margin: 0 0 12px 0;
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+        .postit-lista {
+            display: block;
         }
         .promemoria-riga {
             display: flex;
@@ -2132,6 +2136,18 @@ def mostra_home():
             font-size: 0.92rem;
             color: #4a3f00;
             line-height: 1.35;
+        }
+
+        /* Da tablet/desktop in su: 2 colonne per usare meglio lo spazio */
+        @media (min-width: 900px) {
+            .postit-lista {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 2px 32px;
+            }
+            .promemoria-testo {
+                font-size: 0.98rem;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2250,7 +2266,9 @@ def mostra_home():
     postit_html = f"""
     <div class="postit-card">
         <div class="postit-titolo">📌 Promemoria e Segnalazioni</div>
-        {righe_html}
+        <div class="postit-lista">
+            {righe_html}
+        </div>
     </div>
     """
 
