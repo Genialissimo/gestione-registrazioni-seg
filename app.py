@@ -1966,7 +1966,7 @@ collegato = workbook is not None
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
+# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali con ombreggiatura)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
@@ -2064,13 +2064,16 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* Card intera cliccabile: bottone invisibile sovrapposto a tutta la card */
+        /* Card intera cliccabile: bottone invisibile sovrapposto a tutta la card + ombreggiatura */
         div[class*="st-key-card_"] {
             position: relative;
-            transition: border-color 0.15s ease;
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
         }
         div[class*="st-key-card_"]:hover {
             border-color: #2E7D32 !important;
+            box-shadow: 4px 7px 18px rgba(0,0,0,0.24);
+            transform: translateY(-2px);
         }
         div[class*="st-key-card_"] div[data-testid="stButton"] {
             position: absolute;
@@ -2333,7 +2336,7 @@ def mostra_home():
     if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                  key="refresh_home", help="Aggiorna i dati dal foglio Google"):
         st.cache_data.clear()
-        st.rerun()  
+        st.rerun()
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
