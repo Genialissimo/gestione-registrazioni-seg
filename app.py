@@ -39,22 +39,24 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 2. CONFIGURAZIONE CODICE DI ACCESSO
+# 2. CONFIGURAZIONE CODICI DI ACCESSO E RUOLI
 # ==============================================================================
-# Imposta qui il tuo codice di accesso segreto (puoi cambiarlo come preferisci)
-CODICE_SEGRETO = "123456"  # <--- Sostituisci con il codice che desideri
+CODICE_ADMIN = "123456"       # Codice per accesso completo (Amministratore)
+CODICE_PRESENZE = "654321"    # Codice per solo inserimento presenze
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE CON SOLO CODICE
+# 3. PANNELLO DI AUTENTICAZIONE
 # ==============================================================================
 
-# Inizializza lo stato di sessione per l'utente loggato
+# Inizializza le variabili di sessione per l'autenticazione
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
+if "ruolo" not in st.session_state:
+    st.session_state.ruolo = None
 if "email_logged" not in st.session_state:
-    st.session_state.email_logged = "Utente Autorizzato"
+    st.session_state.email_logged = ""
 
-# Se l'utente non è ancora autenticato, mostra il pannello di login
+# Se l'utente non è ancora autenticato, mostra la schermata di login
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -67,15 +69,23 @@ if not st.session_state.utente_autenticato:
         if st.button("Accedi al Sistema", type="primary", use_container_width=True):
             if not codice_input:
                 st.warning("Per favore, inserisci il codice di accesso.")
-            elif codice_input == CODICE_SEGRETO:
+            elif codice_input == CODICE_ADMIN:
                 st.session_state.utente_autenticato = True
-                st.success("Accesso eseguito con successo!")
+                st.session_state.ruolo = "admin"
+                st.session_state.email_logged = "Amministratore"
+                st.success("Accesso Amministratore eseguito!")
+                st.rerun()
+            elif codice_input == CODICE_PRESENZE:
+                st.session_state.utente_autenticato = True
+                st.session_state.ruolo = "presenze"
+                st.session_state.email_logged = "Operatore Presenze"
+                st.session_state.pagina = "presenze"
+                st.success("Accesso Presenze eseguito!")
                 st.rerun()
             else:
                 st.error("⚠️ Codice di Accesso errato.")
                     
-    st.stop()  # Blocca l'esecuzione per chi non ha inserito il codice corretto
-
+    st.stop()  # Blocca l'esecuzione finché non si inserisce un codice valido
 
 
 # ==============================================================================
@@ -84,10 +94,11 @@ if not st.session_state.utente_autenticato:
 
 # Barra laterale con dati utente e Logout
 with st.sidebar:
-    st.write(f"👤 Utente connesso:")
+    st.write("👤 Utente connesso:")
     st.write(f"📧 `{st.session_state.email_logged}`")
-    if st.button("🚪 Logout", type="secondary"):
+    if st.button("🚪 Logout", type="secondary", use_container_width=True):
         st.session_state.utente_autenticato = False
+        st.session_state.ruolo = None
         st.session_state.email_logged = ""
         st.rerun()
 
