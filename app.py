@@ -2274,9 +2274,9 @@ def mostra_home():
 
                         b_list = []
                         if tot_comp > 0:
-                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-green"> Completi: {tot_comp}</span>')
                         if tot_incomp > 0:
-                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
+                            b_list.append(f'<span class="hud-badge hud-yellow"> Incompleti: {tot_incomp}</span>')
 
                         badge_anagrafica = " ".join(b_list)
 
