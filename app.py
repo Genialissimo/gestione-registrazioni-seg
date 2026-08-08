@@ -1968,6 +1968,9 @@ collegato = workbook is not None
 import streamlit as st
 from datetime import datetime
 
+import streamlit as st
+from datetime import datetime
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali con ombreggiatura)
 # ─────────────────────────────────────────────────────────────────
@@ -2067,31 +2070,43 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* ── Card intera cliccabile: FIX OVERLAY & POINTER EVENTS ── */
+        /* ── CARD INTERA CLICCABILE SU TUTTA LA SUPERFICIE ── */
         div[class*="st-key-card_"] {
             position: relative !important;
             box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
             transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+            cursor: pointer;
         }
         div[class*="st-key-card_"]:hover {
             border-color: #2E7D32 !important;
             box-shadow: 4px 7px 18px rgba(0,0,0,0.24);
             transform: translateY(-2px);
         }
-        /* Disabilita interazione del mouse sugli elementi interni per far passare il click al bottone */
+
+        /* Disabilita il mouse sul testo interno così il click lo intercetta il bottone sottostante */
         div[class*="st-key-card_"] .custom-card-header,
         div[class*="st-key-card_"] [data-testid="stCaptionContainer"] {
             pointer-events: none !important;
         }
-        /* Posiziona il bottone invisibile al di sopra di tutto il contenuto della card */
-        div[class*="st-key-card_"] div[data-testid="stButton"] {
+
+        /* Il wrapper del bottone copre esattamente al 100% l'intero container della card */
+        div[class*="st-key-card_"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]) {
             position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
+            inset: 0 !important;
             width: 100% !important;
             height: 100% !important;
-            z-index: 10 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            z-index: 5 !important;
         }
+
+        div[class*="st-key-card_"] div[data-testid="stButton"] {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
         div[class*="st-key-card_"] div[data-testid="stButton"] button {
             width: 100% !important;
             height: 100% !important;
@@ -2102,6 +2117,7 @@ def mostra_home():
             margin: 0 !important;
             padding: 0 !important;
         }
+
         div[class*="st-key-card_"] div[data-testid="stButton"] button:disabled {
             cursor: not-allowed !important;
         }
@@ -2290,7 +2306,7 @@ def mostra_home():
     </div>
     """
 
-    # ── Card raggruppate per tab (stesso contenuto/stile di prima) ──
+    # ── Card raggruppate per tab ──
     sezioni = {
         "📖 Rapporti": [
             ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
@@ -2333,11 +2349,11 @@ def mostra_home():
                             unsafe_allow_html=True
                         )
                         st.caption(desc)
-                        # Bottone invisibile ad alto z-index che copre tutta la card
+                        
+                        # Bottone trasparente che si aggancia all'intero spazio del container
                         cliccato = st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
                                              on_click=vai_a, args=(pagina,), use_container_width=True)
                         
-                        # Trigger di sicurezza per cambio pagina istantaneo
                         if cliccato:
                             vai_a(pagina)
                             st.rerun()
