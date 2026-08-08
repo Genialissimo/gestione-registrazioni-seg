@@ -1965,6 +1965,9 @@ workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
 
 
+import streamlit as st
+from datetime import datetime
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali con ombreggiatura)
 # ─────────────────────────────────────────────────────────────────
@@ -2064,9 +2067,9 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* Card intera cliccabile: bottone invisibile sovrapposto a tutta la card + ombreggiatura */
+        /* ── Card intera cliccabile: FIX OVERLAY & POINTER EVENTS ── */
         div[class*="st-key-card_"] {
-            position: relative;
+            position: relative !important;
             box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
             transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
         }
@@ -2075,20 +2078,32 @@ def mostra_home():
             box-shadow: 4px 7px 18px rgba(0,0,0,0.24);
             transform: translateY(-2px);
         }
+        /* Disabilita interazione del mouse sugli elementi interni per far passare il click al bottone */
+        div[class*="st-key-card_"] .custom-card-header,
+        div[class*="st-key-card_"] [data-testid="stCaptionContainer"] {
+            pointer-events: none !important;
+        }
+        /* Posiziona il bottone invisibile al di sopra di tutto il contenuto della card */
         div[class*="st-key-card_"] div[data-testid="stButton"] {
-            position: absolute;
-            inset: 0;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            z-index: 10 !important;
         }
         div[class*="st-key-card_"] div[data-testid="stButton"] button {
             width: 100% !important;
             height: 100% !important;
             opacity: 0 !important;
-            cursor: pointer;
+            background: transparent !important;
+            border: none !important;
+            cursor: pointer !important;
             margin: 0 !important;
             padding: 0 !important;
         }
         div[class*="st-key-card_"] div[data-testid="stButton"] button:disabled {
-            cursor: not-allowed;
+            cursor: not-allowed !important;
         }
 
         /* ── Card Post-it Promemoria (RESPONSIVE) ── */
@@ -2318,9 +2333,14 @@ def mostra_home():
                             unsafe_allow_html=True
                         )
                         st.caption(desc)
-                        # Bottone invisibile che copre tutta la card (vedi CSS sopra)
-                        st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
-                                   on_click=vai_a, args=(pagina,))
+                        # Bottone invisibile ad alto z-index che copre tutta la card
+                        cliccato = st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
+                                             on_click=vai_a, args=(pagina,), use_container_width=True)
+                        
+                        # Trigger di sicurezza per cambio pagina istantaneo
+                        if cliccato:
+                            vai_a(pagina)
+                            st.rerun()
 
     # ── Tab: Home (post-it) + le 4 tab di navigazione ──
     nomi_tab = ["🏠 Home"] + list(sezioni.keys())
