@@ -1992,7 +1992,7 @@ def mostra_home():
         <div style="margin-bottom: 12px;">
             <h3 style="font-size: 1.25rem; font-weight: 700; margin: 0; padding: 0;">📒 Gestione Registrazioni SEG</h3>
             <p style="font-size: 0.8rem; color: #6b7280; margin: 2px 0 0 0; padding: 0;">
-                🔄 Ultimo aggiornamento: {ora_ora}
+                Ultimo aggiornamento: {ora_ora}
             </p>
         </div>
         """,
