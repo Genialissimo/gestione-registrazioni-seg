@@ -1974,19 +1974,470 @@ from datetime import datetime
 import streamlit as st
 from datetime import datetime, date, timedelta
 
+import streamlit as st
+from datetime import datetime, date, timedelta
+
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
+# ─────────────────────────────────────────────────────────────────
+
 def mostra_home():
-    # Intestazione compatta senza margini eccessivi
-    st.markdown(
-        """
-        <div style="margin-bottom: 15px;">
-            <h2 style="margin: 0; padding: 0;">📒 Gestione Registrazioni SEG</h2>
-            <p style="margin: 2px 0 0 0; color: gray; font-size: 1.05rem; font-weight: 500;">
-                Pannello di controllo
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
+    # Intestazione pulita e compatta
+    st.markdown("## 📒 Gestione Registrazioni SEG")
+
+    # CSS Custom per card, icone, tab e post-it
+    st.markdown("""
+    <style>
+        .custom-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+            width: 100%;
+        }
+        .custom-card-title-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+        }
+        .custom-card-title {
+            font-size: 1.1rem !important;
+            font-weight: 700 !important;
+            line-height: 1.3 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .custom-icon-box {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 10px;
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
+        .bg-orange { background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.4); }
+        .bg-blue   { background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); }
+        .bg-green  { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); }
+        .bg-purple { background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); }
+        .bg-cyan   { background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); }
+        .bg-amber  { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); }
+        .bg-slate  { background: rgba(100, 116, 139, 0.15); border: 1px solid rgba(100, 116, 139, 0.4); }
+
+        .hud-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+            display: inline-block;
+        }
+        .hud-green {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .hud-yellow {
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        .hud-red {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* Tab in cima - accento verde */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 6px;
+            border-bottom: 1px solid rgba(128,128,128,0.3);
+        }
+        .stTabs [data-baseweb="tab"] {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-color);
+            opacity: 0.65;
+            padding: 10px 6px;
+        }
+        .stTabs [aria-selected="true"] {
+            color: #2E7D32 !important;
+            opacity: 1 !important;
+            font-weight: 700 !important;
+        }
+        .stTabs [data-baseweb="tab-highlight"] {
+            background-color: #2E7D32 !important;
+            height: 3px !important;
+            border-radius: 2px;
+        }
+
+        /* ── CARD INTERA CLICCABILE SU TUTTA LA SUPERFICIE ── */
+        div[class*="st-key-card_"] {
+            position: relative !important;
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+            cursor: pointer;
+        }
+        div[class*="st-key-card_"]:hover {
+            border-color: #2E7D32 !important;
+            box-shadow: 4px 7px 18px rgba(0,0,0,0.24);
+            transform: translateY(-2px);
+        }
+
+        div[class*="st-key-card_"] .custom-card-header,
+        div[class*="st-key-card_"] [data-testid="stCaptionContainer"] {
+            pointer-events: none !important;
+        }
+
+        div[class*="st-key-card_"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]) {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            z-index: 5 !important;
+        }
+
+        div[class*="st-key-card_"] div[data-testid="stButton"] {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        div[class*="st-key-card_"] div[data-testid="stButton"] button {
+            width: 100% !important;
+            height: 100% !important;
+            opacity: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        div[class*="st-key-card_"] div[data-testid="stButton"] button:disabled {
+            cursor: not-allowed !important;
+        }
+
+        /* ── Card Post-it Promemoria ── */
+        .postit-card {
+            width: 92%;
+            max-width: 900px;
+            margin: 8px auto 24px auto;
+            background: linear-gradient(135deg, #fff9c4, #fff3a0);
+            border-radius: 4px 14px 4px 14px;
+            padding: 22px clamp(20px, 4vw, 40px);
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
+            transform: rotate(-0.8deg);
+        }
+        .postit-titolo {
+            font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+            font-weight: 700;
+            color: #5c4a00;
+            margin: 0 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .postit-lista {
+            display: block;
+        }
+        .promemoria-riga {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 7px 0;
+            border-bottom: 1px dashed rgba(0,0,0,0.15);
+        }
+        .promemoria-riga:last-child {
+            border-bottom: none;
+        }
+        .dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+        .dot-green  { background: #16a34a; }
+        .dot-yellow { background: #eab308; }
+        .dot-red    { background: #dc2626; }
+        .dot-grey   { background: #9ca3af; }
+        .promemoria-testo {
+            font-size: 0.92rem;
+            color: #4a3f00;
+            line-height: 1.35;
+        }
+
+        @media (min-width: 900px) {
+            .postit-lista {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 2px 32px;
+            }
+            .promemoria-testo {
+                font-size: 0.98rem;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    badge_rapporti = ""
+    badge_anagrafica = ""
+
+    # Contatori per la card promemoria
+    n_attivi_rapporti = None
+    n_consegnati_rapporti = None
+    n_completi_anagrafica = None
+    n_incompleti_anagrafica = None
+    
+    # Variabili per controllo presenze adunanza
+    esito_presenze_adunanza = None  # None = non connesso / errore, True = ok, (False, data_str, giorno_str) = mancante
+
+    if collegato:
+        try:
+            df_anagrafica_home, err_ana_home = leggi_foglio_come_df(
+                workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+            df_risposte_home, err_risp_home = leggi_foglio_come_df(
+                workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
+
+            if not err_ana_home and not df_anagrafica_home.empty:
+                # ── 1. BADGE RAPPORTI CONSEGNATI ──
+                if not err_risp_home:
+                    if "Attivi / Inattivi" in df_anagrafica_home.columns:
+                        categorie_home = df_anagrafica_home["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
+                    else:
+                        categorie_home = pd.Series(["A"] * len(df_anagrafica_home), index=df_anagrafica_home.index)
+
+                    nomi_attivi_home = set(
+                        df_anagrafica_home.loc[categorie_home == "A", "Cognome e Nome"].astype(str).str.strip()
+                    )
+                    conteggio_attivi_home = len(nomi_attivi_home)
+
+                    if "Cognome e Nome" in df_risposte_home.columns:
+                        nomi_consegnati_home = set(
+                            df_risposte_home["Cognome e Nome"].astype(str).str.strip()
+                        ) & nomi_attivi_home
+                    else:
+                        nomi_consegnati_home = set()
+
+                    conteggio_consegnati_home = len(nomi_consegnati_home)
+                    completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
+                    cls_badge = "hud-green" if completo else "hud-red"
+                    badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
+
+                    n_attivi_rapporti = conteggio_attivi_home
+                    n_consegnati_rapporti = conteggio_consegnati_home
+
+                # ── 2. BADGE ANAGRAFICHE ──
+                colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
+                if "Attivi / Inattivi" in df_anagrafica_home.columns:
+                    df_attivi_ana = df_anagrafica_home[
+                        df_anagrafica_home["Attivi / Inattivi"].astype(str).str.strip().str.upper().str.startswith("A")
+                    ].copy()
+
+                    def riga_completa_home(riga):
+                        for col in colonne_obbligatorie:
+                            if col in riga:
+                                val = str(riga[col]).strip()
+                                if not val or val.lower() in ["none", "nan", "null"]:
+                                    return False
+                            else:
+                                return False
+                        return True
+
+                    if not df_attivi_ana.empty:
+                        esiti = df_attivi_ana.apply(riga_completa_home, axis=1)
+                        tot_comp = esiti.sum()
+                        tot_incomp = len(df_attivi_ana) - tot_comp
+
+                        b_list = []
+                        if tot_comp > 0:
+                            b_list.append(f'<span class="hud-badge hud-green">🟢 Completi: {tot_comp}</span>')
+                        if tot_incomp > 0:
+                            b_list.append(f'<span class="hud-badge hud-yellow">🟡 Incompleti: {tot_incomp}</span>')
+
+                        badge_anagrafica = " ".join(b_list)
+
+                        n_completi_anagrafica = int(tot_comp)
+                        n_incompleti_anagrafica = int(tot_incomp)
+
+            # ── 3. VERIFICA PRESENZE ADUNANZA MANCANTI ──
+            try:
+                df_config, err_cfg = leggi_foglio_come_df(workbook, "Configurazioni", 1)
+                df_presenze, err_pres = leggi_foglio_come_df(workbook, "Presenze Adunanze", 1)
+
+                giorni_map = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
+
+                giorni_adunanza = []
+                if not err_cfg and not df_config.empty:
+                    for col in df_config.columns:
+                        vals = df_config[col].dropna().astype(str).str.strip().tolist()
+                        for v in vals:
+                            if v in giorni_map.values():
+                                giorni_adunanza.append(v)
+
+                if not giorni_adunanza:
+                    giorni_adunanza = ["Giovedì", "Domenica"]
+
+                date_registrate = set()
+                if not err_pres and not df_presenze.empty:
+                    col_data = df_presenze.columns[0]
+                    for d in df_presenze[col_data].dropna():
+                        d_str = str(d).strip()
+                        try:
+                            dt_parsed = pd.to_datetime(d_str, dayfirst=True).date()
+                            date_registrate.add(dt_parsed)
+                        except Exception:
+                            pass
+
+                oggi = date.today()
+                check_date = oggi - timedelta(days=1)
+                ultima_adunanza_data = None
+                giorno_nome = ""
+
+                for _ in range(7):
+                    g_nome = giorni_map[check_date.weekday()]
+                    if g_nome in giorni_adunanza:
+                        ultima_adunanza_data = check_date
+                        giorno_nome = g_nome
+                        break
+                    check_date -= timedelta(days=1)
+
+                if ultima_adunanza_data:
+                    if ultima_adunanza_data in date_registrate:
+                        esito_presenze_adunanza = True
+                    else:
+                        d_fmt = ultima_adunanza_data.strftime("%d/%m/%Y")
+                        esito_presenze_adunanza = (False, d_fmt, giorno_nome)
+            except Exception:
+                esito_presenze_adunanza = None
+
+        except Exception:
+            badge_rapporti = ""
+            badge_anagrafica = ""
+
+    # ── Costruzione righe promemoria per il post-it ──
+    promemoria = []
+
+    # Segnalazione 1: Rapporti
+    if n_attivi_rapporti is None:
+        promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
+    elif n_attivi_rapporti == 0:
+        promemoria.append(("dot-grey", "Nessun proclamatore attivo da controllare per i rapporti."))
+    elif n_consegnati_rapporti >= n_attivi_rapporti:
+        promemoria.append(("dot-green", f"Tutti i rapporti consegnati ({n_consegnati_rapporti}/{n_attivi_rapporti})."))
+    elif n_consegnati_rapporti == 0:
+        promemoria.append(("dot-red", f"Nessun rapporto consegnato finora (0/{n_attivi_rapporti})."))
+    else:
+        mancanti = n_attivi_rapporti - n_consegnati_rapporti
+        promemoria.append(("dot-yellow", f"Mancano {mancanti} rapporti ({n_consegnati_rapporti}/{n_attivi_rapporti} consegnati)."))
+
+    # Segnalazione 2: Anagrafiche
+    if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
+        promemoria.append(("dot-grey", "Nessuna anagrafica attiva da verificare al momento."))
+    elif n_incompleti_anagrafica == 0:
+        promemoria.append(("dot-green", "Tutte le anagrafiche sono complete."))
+    elif n_incompleti_anagrafica < n_completi_anagrafica:
+        promemoria.append(("dot-yellow", f"{n_incompleti_anagrafica} anagrafiche incomplete da controllare."))
+    else:
+        promemoria.append(("dot-red", f"{n_incompleti_anagrafica} anagrafiche incomplete su {n_completi_anagrafica + n_incompleti_anagrafica}: da sistemare con priorità."))
+
+    # Segnalazione 3: Presenze Adunanze
+    if esito_presenze_adunanza is True:
+        promemoria.append(("dot-green", "Presenze dell'ultima adunanza registrate correttamente."))
+    elif isinstance(esito_presenze_adunanza, tuple) and esito_presenze_adunanza[0] is False:
+        _, data_mancante, giorno_mancante = esito_presenze_adunanza
+        promemoria.append(("dot-red", f"Presenze adunanza non inserite per {giorno_mancante} {data_mancante}."))
+
+    righe_html = "".join(
+        f'<div class="promemoria-riga"><span class="dot {dot_cls}"></span>'
+        f'<span class="promemoria-testo">{testo}</span></div>'
+        for dot_cls, testo in promemoria
     )
+
+    postit_html = f"""
+    <div class="postit-card">
+        <div class="postit-titolo">📌 Promemoria e Segnalazioni</div>
+        <div class="postit-lista">
+            {righe_html}
+        </div>
+    </div>
+    """
+
+    # ── Card raggruppate per tab ──
+    sezioni = {
+        "📖 Rapporti": [
+            ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
+            ("📚", "bg-blue",   "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
+            ("📇", "bg-cyan",   "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
+            ("🏢", "bg-amber",  "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
+            ("📊", "bg-blue",   "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
+            ("📥", "bg-orange", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
+        ],
+        "🗂️ Anagrafiche": [
+            ("🗂️", "bg-green",  "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
+            ("👥", "bg-purple", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
+        ],
+        "🙌 Adunanze": [
+            ("🙌", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        ],
+        "⚙️ Impostazioni": [
+            ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
+        ],
+    }
+
+    def mostra_griglia_card(lista_card):
+        """Mostra le card di una tab in una griglia a 2 colonne."""
+        for i in range(0, len(lista_card), 2):
+            coppia = lista_card[i:i + 2]
+            cols = st.columns(2)
+            for col, (icon, bg_cls, titolo, desc, pagina, badge) in zip(cols, coppia):
+                with col:
+                    with st.container(key=f"card_{pagina}", border=True):
+                        st.markdown(
+                            f"""
+                            <div class="custom-card-header">
+                                <div class="custom-card-title-group">
+                                    <span class="custom-icon-box {bg_cls}">{icon}</span>
+                                    <span class="custom-card-title">{titolo}</span>
+                                </div>
+                                <div>{badge}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        st.caption(desc)
+                        
+                        cliccato = st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
+                                             on_click=vai_a, args=(pagina,), use_container_width=True)
+                        
+                        if cliccato:
+                            vai_a(pagina)
+                            st.rerun()
+
+    # ── Tab: Home (post-it) + le 4 tab di navigazione ──
+    nomi_tab = ["🏠 Home"] + list(sezioni.keys())
+    tabs = st.tabs(nomi_tab)
+
+    with tabs[0]:
+        st.markdown(postit_html, unsafe_allow_html=True)
+
+    for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
+        with tab:
+            mostra_griglia_card(lista_card)
+
+    if st.button(f"🔄 Ultimo aggiornamento pagina: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+                 key="refresh_home", help="Aggiorna i dati dal foglio Google"):
+        st.cache_data.clear()
+        st.rerun()
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
