@@ -1992,6 +1992,18 @@ def vai_a(pagina: str):
     st.session_state.pagina = pagina
 
 
+def vai_a_home_reset_riepilogo():
+    st.session_state["riepilogo_expander_aperto"] = False
+    vai_a("home")
+
+
+def vai_a_home_reset_importa_s21():
+    for chiave in ("importa_s21_dati", "importa_s21_chiave_file",
+                   "importa_s21_persona_scelta", "s21_form_manuale_aperto"):
+        st.session_state.pop(chiave, None)
+    vai_a("home")
+
+
 workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
 
