@@ -2618,7 +2618,7 @@ def mostra_home():
         ],
     }
 
-    def mostra_griglia_card(lista_card):
+def mostra_griglia_card(lista_card):
         """Mostra le card di una tab in una griglia a 2 colonne."""
         for i in range(0, len(lista_card), 2):
             coppia = lista_card[i:i + 2]
@@ -2639,9 +2639,9 @@ def mostra_home():
                             unsafe_allow_html=True
                         )
                         st.caption(desc)
-                        
-                        cliccato = st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
-                                             on_click=vai_a, args=(pagina,), use_container_width=True)
+
+                        st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
+                                 on_click=vai_a, args=(pagina,), use_container_width=True)
                         
                         if cliccato:
                             vai_a(pagina)
