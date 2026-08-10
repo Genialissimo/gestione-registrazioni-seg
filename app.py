@@ -2012,6 +2012,85 @@ import streamlit as st
 from datetime import datetime, date, timedelta
 
 # ─────────────────────────────────────────────────────────────────
+# Pagina: per il controllo dell'Anno Teocratico nei Promemoria
+# ─────────────────────────────────────────────────────────────────
+
+def genera_mesi_anno_teocratico_fino_ad_oggi() -> list:
+    """
+    Ritorna la lista dei mesi ('AAAA-MM') dall'inizio dell'anno teocratico corrente
+    (1° settembre) fino al mese precedente a quello attuale.
+    """
+    oggi = datetime.now()
+    anno_inizio_teo = oggi.year if oggi.month >= 9 else oggi.year - 1
+    
+    mesi_dovuti = []
+    
+    # Mesi dell'anno di partenza da Settembre (09) a Dicembre (12)
+    for m in range(9, 13):
+        data_m = datetime(anno_inizio_teo, m, 1)
+        if data_m < datetime(oggi.year, oggi.month, 1):
+            mesi_dovuti.append(f"{anno_inizio_teo}-{m:02d}")
+            
+    # Mesi dell'anno successivo da Gennaio (01) fino al mese precedente a oggi
+    anno_fine_teo = anno_inizio_teo + 1
+    for m in range(1, 13):
+        data_m = datetime(anno_fine_teo, m, 1)
+        if data_m < datetime(oggi.year, oggi.month, 1) and m < 9:
+            mesi_dovuti.append(f"{anno_fine_teo}-{m:02d}")
+            
+    return mesi_dovuti
+
+
+def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame):
+    """
+    Verifica che ogni proclamatore attivo in Anagrafica abbia una riga nel foglio Tutti 
+    per CIASCUN mese dell'anno teocratico in corso fino al mese scorso.
+    """
+    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
+        return None, None, []
+
+    proclamatori_attivi = set(
+        df_anagrafica.loc[
+            df_anagrafica.get("Stato", pd.Series()).astype(str).str.lower() != "trasferito", 
+            "Cognome e Nome"
+        ].dropna().str.strip().unique()
+    )
+    
+    n_attivi = len(proclamatori_attivi)
+    if n_attivi == 0:
+        return 0, 0, []
+
+    mesi_attesi = genera_mesi_anno_teocratico_fino_ad_oggi()
+    if not mesi_attesi:
+        return n_attivi, n_attivi, []
+
+    rapporti_presenti = {}
+    if not df_tutti.empty and "Nome" in df_tutti.columns and "Mese/Anno" in df_tutti.columns:
+        for _, riga in df_tutti.iterrows():
+            nome = str(riga.get("Nome", "")).strip()
+            mese = str(riga.get("Mese/Anno", "")).strip()
+            if nome and mese:
+                rapporti_presenti.setdefault(nome, set()).add(mese)
+
+    proclamatori_incompleti = []
+    totale_rapporti_dovuti = n_attivi * len(mesi_attesi)
+    totale_rapporti_presenti = 0
+
+    for nome in proclamatori_attivi:
+        mesi_inseriti = rapporti_presenti.get(nome, set())
+        mesi_mancanti = [m for m in mesi_attesi if m not in mesi_inseriti]
+        
+        totale_rapporti_presenti += (len(mesi_attesi) - len(mesi_mancanti))
+        
+        if mesi_mancanti:
+            proclamatori_incompleti.append({
+                "nome": nome,
+                "mesi_mancanti": mesi_mancanti
+            })
+
+    return totale_rapporti_presenti, totale_rapporti_dovuti, proclamatori_incompleti
+
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
 
@@ -2238,11 +2317,13 @@ def mostra_home():
     badge_anagrafica = ""
 
     # Contatori per la card promemoria
-    n_attivi_rapporti = None
-    n_consegnati_rapporti = None
     n_completi_anagrafica = None
     n_incompleti_anagrafica = None
     
+    # Dataframe necessari per il controllo dell'anno teocratico
+    df_anagrafica_home = pd.DataFrame()
+    df_tutti_home = pd.DataFrame()
+
     # Variabili per controllo presenze adunanza
     esito_presenze_adunanza = None  # None = non connesso / errore, True = ok, (False, data_str, giorno_str) = mancante
 
@@ -2252,9 +2333,11 @@ def mostra_home():
                 workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
             df_risposte_home, err_risp_home = leggi_foglio_come_df(
                 workbook, NOME_FOGLIO_RISPOSTE, RIGA_INTESTAZIONE_RISPOSTE)
+            df_tutti_home, err_tutti_home = leggi_foglio_come_df(
+                workbook, "Tutti", 1)
 
             if not err_ana_home and not df_anagrafica_home.empty:
-                # ── 1. BADGE RAPPORTI CONSEGNATI ──
+                # ── 1. BADGE RAPPORTI CONSEGNATI (Mese corrente per badge card) ──
                 if not err_risp_home:
                     if "Attivi / Inattivi" in df_anagrafica_home.columns:
                         categorie_home = df_anagrafica_home["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
@@ -2277,9 +2360,6 @@ def mostra_home():
                     completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
                     cls_badge = "hud-green" if completo else "hud-red"
                     badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
-
-                    n_attivi_rapporti = conteggio_attivi_home
-                    n_consegnati_rapporti = conteggio_consegnati_home
 
                 # ── 2. BADGE ANAGRAFICHE ──
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
@@ -2372,18 +2452,21 @@ def mostra_home():
     # ── Costruzione righe promemoria per il post-it ──
     promemoria = []
 
-    # Segnalazione 1: Rapporti
-    if n_attivi_rapporti is None:
+    # ─────────────────────────────────────────────────────────────────
+    # Segnalazione 1: Rapporti dell'Anno Teocratico
+    # ─────────────────────────────────────────────────────────────────
+    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio = calcola_stato_rapporti_completo(df_tutti_home, df_anagrafica_home)
+
+    if n_dovuti_rapporti is None:
         promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
-    elif n_attivi_rapporti == 0:
+    elif n_dovuti_rapporti == 0:
         promemoria.append(("dot-grey", "Nessun proclamatore attivo da controllare per i rapporti."))
-    elif n_consegnati_rapporti >= n_attivi_rapporti:
-        promemoria.append(("dot-green", f"Tutti i rapporti consegnati ({n_consegnati_rapporti}/{n_attivi_rapporti})."))
-    elif n_consegnati_rapporti == 0:
-        promemoria.append(("dot-red", f"Nessun rapporto consegnato finora (0/{n_attivi_rapporti})."))
+    elif len(mancanti_dettaglio) == 0:
+        promemoria.append(("dot-green", f"Tutti i rapporti dell'anno teocratico sono presenti ({n_consegnati_rapporti}/{n_dovuti_rapporti})."))
     else:
-        mancanti = n_attivi_rapporti - n_consegnati_rapporti
-        promemoria.append(("dot-yellow", f"Mancano {mancanti} rapporti ({n_consegnati_rapporti}/{n_attivi_rapporti} consegnati)."))
+        n_persone_mancanti = len(mancanti_dettaglio)
+        promemoria.append(("dot-yellow" if n_persone_mancanti < 5 else "dot-red", 
+                           f"Mancano rapporti nell'anno teocratico per {n_persone_mancanti} proclamatori."))
 
     # Segnalazione 2: Anagrafiche
     if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
