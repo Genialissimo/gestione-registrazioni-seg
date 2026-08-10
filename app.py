@@ -2049,29 +2049,41 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
         return None, None, []
 
+    # 1. Recupera la colonna 'Stato' in sicurezza o crea una serie piena se manca
+    if "Stato" in df_anagrafica.columns:
+        serie_stato = df_anagrafica["Stato"].astype(str).str.lower()
+    else:
+        serie_stato = pd.Series("", index=df_anagrafica.index)
+
+    # 2. Filtra i proclamatori non trasferiti
     proclamatori_attivi = set(
         df_anagrafica.loc[
-            df_anagrafica.get("Stato", pd.Series()).astype(str).str.lower() != "trasferito", 
+            serie_stato != "trasferito", 
             "Cognome e Nome"
-        ].dropna().str.strip().unique()
+        ].dropna().astype(str).str.strip().unique()
     )
     
     n_attivi = len(proclamatori_attivi)
     if n_attivi == 0:
         return 0, 0, []
 
+    # 3. Ottieni la lista dei mesi attesi dall'inizio dell'anno teocratico
     mesi_attesi = genera_mesi_anno_teocratico_fino_ad_oggi()
     if not mesi_attesi:
         return n_attivi, n_attivi, []
 
+    # 4. Mappa i mesi già presenti nel foglio Tutti
     rapporti_presenti = {}
-    if not df_tutti.empty and "Nome" in df_tutti.columns and "Mese/Anno" in df_tutti.columns:
+    col_nome = "Nome" if "Nome" in df_tutti.columns else ("Cognome e Nome" if "Cognome e Nome" in df_tutti.columns else None)
+    
+    if not df_tutti.empty and col_nome and "Mese/Anno" in df_tutti.columns:
         for _, riga in df_tutti.iterrows():
-            nome = str(riga.get("Nome", "")).strip()
+            nome = str(riga.get(col_nome, "")).strip()
             mese = str(riga.get("Mese/Anno", "")).strip()
             if nome and mese:
                 rapporti_presenti.setdefault(nome, set()).add(mese)
 
+    # 5. Calcola le mancanze
     proclamatori_incompleti = []
     totale_rapporti_dovuti = n_attivi * len(mesi_attesi)
     totale_rapporti_presenti = 0
@@ -2089,7 +2101,6 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
             })
 
     return totale_rapporti_presenti, totale_rapporti_dovuti, proclamatori_incompleti
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
