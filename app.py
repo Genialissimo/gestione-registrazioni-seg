@@ -2071,10 +2071,7 @@ def genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese_str: str) -> list:
 def trova_colonna_stato_robusta(df_anagrafica: pd.DataFrame):
     """
     Individua la colonna di stato (Attivi/Inattivi) tra i candidati che
-    contengono 'attiv'/'stato'/'a/i' nel nome, scegliendo quella che si
-    comporta realmente come una colonna di stato: pochi valori distinti
-    e brevi (es. 'A', 'I', 'ATTIVO'), NON una colonna di date o testo libero
-    (es. 'Data attività') che conterrebbe comunque la sottostringa 'attiv'.
+    contengono 'attiv'/'stato'/'a/i' nel nome.
     """
     candidati = []
     for col in df_anagrafica.columns:
@@ -2106,13 +2103,10 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     """
     Verifica che ogni proclamatore attivo in Anagrafica abbia un rapporto nel foglio Tutti
     per CIASCUN mese da Settembre dell'anno teocratico corrente fino all'ultimo mese registrato.
-    Restituisce anche un dizionario di debug per diagnosticare rapidamente eventuali anomalie.
+    Restituisce esattamente 3 elementi: (totale_presenti, totale_dovuti, dettaglio_mancanti)
     """
-    debug = {}
-
     if df_anagrafica.empty or df_tutti.empty:
-        debug["errore"] = "df_anagrafica o df_tutti vuoto"
-        return None, None, [], debug
+        return None, None, []
 
     # 1. Colonna Nome in Anagrafica
     col_nome_ana = None
@@ -2123,22 +2117,16 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
             break
 
     if not col_nome_ana:
-        debug["errore"] = "Colonna Nome non trovata in Anagrafica"
-        debug["colonne_anagrafica"] = list(df_anagrafica.columns)
-        return None, None, [], debug
+        return None, None, []
 
     # 2. Colonna Stato (versione robusta)
     col_stato = trova_colonna_stato_robusta(df_anagrafica)
-    debug["colonna_nome_usata"] = col_nome_ana
-    debug["colonna_stato_usata"] = col_stato
 
     if col_stato:
         vals_stato = df_anagrafica[col_stato].astype(str).str.strip().str.upper()
         maschera_attivi = vals_stato.str.startswith("A") | (vals_stato == "SI") | (vals_stato == "TRUE")
-        debug["valori_stato_distinti"] = vals_stato.value_counts().to_dict()
     else:
         maschera_attivi = pd.Series(True, index=df_anagrafica.index)
-        debug["nota_stato"] = "Nessuna colonna stato affidabile trovata: considerati tutti attivi"
 
     proclamatori_attivi = set(
         df_anagrafica.loc[maschera_attivi, col_nome_ana].dropna().astype(str).str.strip().unique()
@@ -2146,21 +2134,15 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     proclamatori_attivi = {p for p in proclamatori_attivi if p and p.lower() not in ["cognome e nome", "nome", "none", "nan"]}
 
     n_attivi = len(proclamatori_attivi)
-    debug["n_attivi"] = n_attivi
-    debug["elenco_attivi"] = sorted(proclamatori_attivi)
-
     if n_attivi == 0:
-        return 0, 0, [], debug
+        return 0, 0, []
 
     # 3. Ultimo mese e mesi attesi
     ultimo_mese = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti)
     mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese)
-    debug["ultimo_mese_rilevato"] = ultimo_mese
-    debug["mesi_attesi"] = mesi_attesi
 
     if not mesi_attesi:
-        debug["errore"] = "mesi_attesi vuoto: controlla il formato di Mese/Anno nel foglio Tutti"
-        return 0, 0, [], debug
+        return 0, 0, []
 
     # 4. Mappa rapporti presenti
     col_nome_tutti = None
@@ -2169,8 +2151,6 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
         if "cognome" in c_str or "nome" in c_str or "proclamatore" in c_str:
             col_nome_tutti = col
             break
-
-    debug["colonna_nome_tutti_usata"] = col_nome_tutti
 
     rapporti_presenti = {}
     if col_nome_tutti and "Mese/Anno" in df_tutti.columns:
@@ -2192,8 +2172,8 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
             else:
                 dettaglio_mancanti.append(f"{m} {nome}")
 
-    return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti, debug
-
+    return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti
+    
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
