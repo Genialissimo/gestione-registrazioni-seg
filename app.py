@@ -2014,9 +2014,7 @@ from datetime import datetime, date, timedelta
 # ─────────────────────────────────────────────────────────────────
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
 # ─────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────
-# Pagina: per il controllo dell'Anno Teocratico nei Promemoria
-# ─────────────────────────────────────────────────────────────────
+
 
 def trova_ultimo_mese_consegnato_foglio_tutti(df_tutti: pd.DataFrame) -> str:
     """
@@ -2558,27 +2556,33 @@ def mostra_home():
     ## ── Costruzione righe promemoria per il post-it ──
     promemoria = []
 
-    # ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
     # ─────────────────────────────────────────────────────────────────
-    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio, debug_rapporti = calcola_stato_rapporti_completo(df_tutti_home, df_anagrafica_home)
+    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio = calcola_stato_rapporti_completo(df_tutti_home, df_anagrafica_home)
+
+    # Recupera l'intervallo di mesi analizzato dall'archivio
+    ultimo_m = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti_home)
+    mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_m)
+
+    if mesi_attesi:
+        mese_inizio = mesi_attesi[0]
+        mese_fine = mesi_attesi[-1]
+    else:
+        mese_inizio, mese_fine = "", ""
 
     if n_dovuti_rapporti is None:
         promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
-    elif n_dovuti_rapporti == 0:
-        promemoria.append(("dot-grey", "Nessun proclamatore attivo da controllare per i rapporti."))
     elif len(mancanti_dettaglio) == 0:
-        promemoria.append(("dot-green", f"Tutti i rapporti dell'anno teocratico sono presenti ({n_consegnati_rapporti}/{n_dovuti_rapporti})."))
+        if mese_inizio and mese_fine:
+            testo_ok = f"In archivio sono presenti tutti i rapporti dal {mese_inizio} al {mese_fine}."
+        else:
+            testo_ok = "In archivio sono presenti tutti i rapporti dell'anno teocratico."
+        promemoria.append(("dot-green", testo_ok))
     else:
-        n_persone_mancanti = len(mancanti_dettaglio)
-        promemoria.append(("dot-yellow" if n_persone_mancanti < 5 else "dot-red", 
-                           f"Mancano rapporti nell'anno teocratico per {n_persone_mancanti} proclamatori."))
-
-    # Pannello di debug temporaneo (puoi toglierlo una volta verificato che funziona)
-    with st.expander("🔍 Debug controllo rapporti"):
-        st.json(debug_rapporti)
-        if mancanti_dettaglio:
-            st.write("Dettaglio mancanti:", mancanti_dettaglio)
+        elenco_str = "<br>".join(mancanti_dettaglio)
+        testo_segnalazione = f"Non risulta in archivio rapporto:<br><b>{elenco_str}</b>"
+        promemoria.append(("dot-yellow" if len(mancanti_dettaglio) < 5 else "dot-red", testo_segnalazione))
 
     # Segnalazione 2: Anagrafiche
     if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
@@ -2673,6 +2677,7 @@ def mostra_home():
     for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
         with tab:
             mostra_griglia_card(lista_card)
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
