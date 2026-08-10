@@ -2630,7 +2630,7 @@ def mostra_home():
         ],
     }
 
-def mostra_griglia_card(lista_card):
+    def mostra_griglia_card(lista_card):
         """Mostra le card di una tab in una griglia a 2 colonne."""
         for i in range(0, len(lista_card), 2):
             coppia = lista_card[i:i + 2]
