@@ -2769,9 +2769,8 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 def mostra_registrazioni():
     st.title("Rapporti consegnati")
-    if st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True,
+          on_click=vai_a, args=("home",))
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -3118,9 +3117,8 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 def mostra_anagrafiche():
     st.title("Anagrafiche")
-    if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True,
+          on_click=vai_a, args=("home",))
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_ANAGRAFICA}».")
 
     if not collegato:
@@ -3253,10 +3251,8 @@ def mostra_anagrafiche():
 def mostra_riepilogo_attivita():
     st.title("📊 Riepilogo attività e statistiche")
 
-    if st.button("🏠", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True):
-        st.session_state["riepilogo_expander_aperto"] = False
-        vai_a("home")
-        st.rerun()
+    st.button("🏠", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True,
+          on_click=vai_a_home_reset_riepilogo)
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -3446,10 +3442,8 @@ def mostra_cartoline_registrazione():
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
-            if st.button("🏠", key="home_da_cartoline", use_container_width=True,
-                         help="Torna alla Home"):
-                vai_a("home")
-                st.rerun()
+            st.button("🏠", key="home_da_cartoline", use_container_width=True, help="Torna alla Home",
+          on_click=vai_a, args=("home",))
         with col_menu:
             if st.button("⋯", key="toggle_menu_cartoline", use_container_width=True):
                 st.session_state.cartoline_menu_aperto = not st.session_state.get(
@@ -4349,9 +4343,8 @@ def mostra_presenze_adunanze():
     is_modalita_ristretta = (st.query_params.get("page") == "presenze" or st.query_params.get("modalita") == "presenze")
     
     if not is_modalita_ristretta:
-        if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
-            vai_a("home")
-            st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True,
+              on_click=vai_a, args=("home",))
 
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
@@ -4578,10 +4571,8 @@ def mostra_importa_s21():
     # ── Tastiera Navigazione ──────────────────────────────────────
     col_home, col_manuale = st.columns([1, 1])
     with col_home:
-        if st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True):
-            for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta", "s21_form_manuale_aperto"):
-                st.session_state.pop(chiave, None)
-            vai_a("home")
+        st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True,
+          on_click=vai_a_home_reset_importa_s21
             st.rerun()
             
     with col_manuale:
@@ -5189,9 +5180,8 @@ import streamlit.components.v1 as components
 # ─────────────────────────────────────────────────────────────────
 def mostra_impostazioni():
     st.title("⚙️ Impostazioni")
-    if st.button("🏠 Torna alla Home", key="home_da_impostazioni", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_impostazioni", use_container_width=True,
+          on_click=vai_a, args=("home",))
 
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
@@ -5542,9 +5532,8 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
 
 def mostra_rapporto_filiale():
     st.title("🏢 Rapporto per la Filiale")
-    if st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True,
+          on_click=vai_a, args=("home",))
     st.caption("Dati statistici mensili (tipo modulo S-10), calcolati dal foglio Tutti.")
 
     if not collegato:
@@ -5701,9 +5690,8 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 # ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
-    if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True,
+          on_click=vai_a, args=("home",))
     st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
                f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
 
