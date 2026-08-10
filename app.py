@@ -2081,39 +2081,53 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     if df_anagrafica.empty or df_tutti.empty:
         return None, None, []
 
-    # Individua la colonna del nome in Anagrafica
-    col_nome_ana = "Cognome e Nome" if "Cognome e Nome" in df_anagrafica.columns else ("Nome" if "Nome" in df_anagrafica.columns else None)
+    # 1. Individua la colonna del nome in Anagrafica
+    col_nome_ana = None
+    for c in df_anagrafica.columns:
+        if str(c).strip().lower() in ["cognome e nome", "nome", "proclamatore"]:
+            col_nome_ana = c
+            break
+
     if not col_nome_ana:
         return None, None, []
 
-    # Gestione colonna Stato
-    if "Stato" in df_anagrafica.columns:
-        serie_stato = df_anagrafica["Stato"].astype(str).str.lower()
-    else:
-        serie_stato = pd.Series("", index=df_anagrafica.index)
+    # 2. Individua la colonna 'Attivi / Inattivi' (anche se in posizione O / 15ª colonna)
+    col_stato = None
+    for c in df_anagrafica.columns:
+        c_clean = str(c).strip().lower()
+        if "attiv" in c_clean or c_clean == "a/i":
+            col_stato = c
+            break
 
-    # Filtra proclamatori attivi (non trasferiti)
+    # Filtra i proclamatori che hanno 'A' o 'Attivo' nella colonna dello stato
+    if col_stato:
+        maschera_attivi = df_anagrafica[col_stato].astype(str).str.strip().str.upper().str.startswith("A")
+    else:
+        # Fallback: se non trova la colonna dello stato considera tutti i presenti in anagrafica
+        maschera_attivi = pd.Series(True, index=df_anagrafica.index)
+
     proclamatori_attivi = set(
-        df_anagrafica.loc[
-            serie_stato != "trasferito", 
-            col_nome_ana
-        ].dropna().astype(str).str.strip().unique()
+        df_anagrafica.loc[maschera_attivi, col_nome_ana].dropna().astype(str).str.strip().unique()
     )
     
     n_attivi = len(proclamatori_attivi)
     if n_attivi == 0:
         return 0, 0, []
 
-    # Trova l'ultimo mese registrato nel foglio Tutti e genera i mesi dovuti
+    # 3. Trova l'ultimo mese registrato nel foglio Tutti e genera i mesi dovuti dall'anno teocratico
     ultimo_mese = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti)
     mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese)
 
     if not mesi_attesi:
         return 0, 0, []
 
-    # Individua la colonna del nome nel foglio Tutti
-    col_nome_tutti = "Cognome e Nome" if "Cognome e Nome" in df_tutti.columns else ("Nome" if "Nome" in df_tutti.columns else None)
-    
+    # 4. Mappa i rapporti già presenti nel foglio Tutti
+    col_nome_tutti = None
+    for c in df_tutti.columns:
+        if str(c).strip().lower() in ["cognome e nome", "nome", "proclamatore"]:
+            col_nome_tutti = c
+            break
+
     rapporti_presenti = {}
     if col_nome_tutti and "Mese/Anno" in df_tutti.columns:
         for _, riga in df_tutti.iterrows():
