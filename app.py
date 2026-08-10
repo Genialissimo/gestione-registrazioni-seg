@@ -2014,6 +2014,61 @@ from datetime import datetime, date, timedelta
 # ─────────────────────────────────────────────────────────────────
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
 # ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+# Pagina: per il controllo dell'Anno Teocratico nei Promemoria
+# ─────────────────────────────────────────────────────────────────
+
+def trova_ultimo_mese_consegnato_foglio_tutti(df_tutti: pd.DataFrame) -> str:
+    """
+    Individua l'ultimo mese ('AAAA-MM') effettivamente presente nel foglio Tutti.
+    """
+    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
+        return None
+
+    validi = []
+    for m in df_tutti["Mese/Anno"].dropna().unique():
+        m_str = str(m).strip()
+        try:
+            a, mm = m_str.split("-")
+            validi.append((int(a), int(mm), m_str))
+        except Exception:
+            continue
+
+    if not validi:
+        return None
+
+    validi.sort(key=lambda x: (x[0], x[1]))
+    return validi[-1][2]
+
+
+def genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese_str: str) -> list:
+    """
+    Genera la lista dei mesi ('AAAA-MM') da Settembre dell'anno teocratico corrente
+    fino all'ultimo mese presente in archivio (es. da 2025-09 a 2026-06).
+    """
+    if not ultimo_mese_str:
+        return []
+
+    try:
+        a_lim, m_lim = map(int, ultimo_mese_str.split("-"))
+    except Exception:
+        return []
+
+    anno_inizio_teo = a_lim if m_lim >= 9 else a_lim - 1
+
+    mesi_dovuti = []
+
+    for m in range(9, 13):
+        if (anno_inizio_teo < a_lim) or (anno_inizio_teo == a_lim and m <= m_lim):
+            mesi_dovuti.append(f"{anno_inizio_teo}-{m:02d}")
+
+    anno_fine_teo = anno_inizio_teo + 1
+    for m in range(1, 9):
+        if (anno_fine_teo < a_lim) or (anno_fine_teo == a_lim and m <= m_lim):
+            mesi_dovuti.append(f"{anno_fine_teo}-{m:02d}")
+
+    return mesi_dovuti
+
 
 def trova_colonna_stato_robusta(df_anagrafica: pd.DataFrame):
     """
@@ -2140,6 +2195,7 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
                 dettaglio_mancanti.append(f"{m} {nome}")
 
     return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti, debug
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
