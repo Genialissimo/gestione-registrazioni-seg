@@ -2654,10 +2654,6 @@ def mostra_griglia_card(lista_card):
 
                         st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
                                  on_click=vai_a, args=(pagina,), use_container_width=True)
-                        
-                        if cliccato:
-                            vai_a(pagina)
-                            st.rerun()
 
     # ── Tab: Home (post-it) + le 4 tab di navigazione ──
     nomi_tab = ["🏠 Home"] + list(sezioni.keys())
@@ -2669,7 +2665,6 @@ def mostra_griglia_card(lista_card):
     for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
         with tab:
             mostra_griglia_card(lista_card)
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
