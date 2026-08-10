@@ -2081,51 +2081,58 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     if df_anagrafica.empty or df_tutti.empty:
         return None, None, []
 
-    # 1. Individua la colonna del nome in Anagrafica
+    # 1. Trova la colonna Nome in Anagrafica (cerca tra le intestazioni pulite)
     col_nome_ana = None
-    for c in df_anagrafica.columns:
-        if str(c).strip().lower() in ["cognome e nome", "nome", "proclamatore"]:
-            col_nome_ana = c
+    for col in df_anagrafica.columns:
+        c_str = str(col).strip().lower()
+        if "cognome" in c_str or "nome" in c_str or "proclamatore" in c_str:
+            col_nome_ana = col
             break
 
     if not col_nome_ana:
         return None, None, []
 
-    # 2. Individua la colonna 'Attivi / Inattivi' (anche se in posizione O / 15ª colonna)
+    # 2. Trova la colonna dello Stato (Attivi / Inattivi - Colonna O)
     col_stato = None
-    for c in df_anagrafica.columns:
-        c_clean = str(c).strip().lower()
-        if "attiv" in c_clean or c_clean == "a/i":
-            col_stato = c
+    for col in df_anagrafica.columns:
+        c_str = str(col).strip().lower()
+        if "attiv" in c_str or c_str == "a/i" or "stato" in c_str:
+            col_stato = col
             break
 
-    # Filtra i proclamatori che hanno 'A' o 'Attivo' nella colonna dello stato
+    # Filtra i proclamatori attivi
     if col_stato:
-        maschera_attivi = df_anagrafica[col_stato].astype(str).str.strip().str.upper().str.startswith("A")
+        # Considera attivo chiunque abbia 'A', 'ATTIVO', 'SI' o sia diverso da 'INATTIVO'/'TRASFERITO'
+        vals_stato = df_anagrafica[col_stato].astype(str).str.strip().str.upper()
+        maschera_attivi = vals_stato.str.startswith("A") | (vals_stato == "SI") | (vals_stato == "TRUE")
     else:
-        # Fallback: se non trova la colonna dello stato considera tutti i presenti in anagrafica
+        # Fallback: se non individua la colonna dello stato prende tutti i nominativi
         maschera_attivi = pd.Series(True, index=df_anagrafica.index)
 
     proclamatori_attivi = set(
         df_anagrafica.loc[maschera_attivi, col_nome_ana].dropna().astype(str).str.strip().unique()
     )
     
+    # Rimuove eventuali stringhe vuote o intestazioni residue
+    proclamatori_attivi = {p for p in proclamatori_attivi if p and p.lower() not in ["cognome e nome", "nome", "none", "nan"]}
+
     n_attivi = len(proclamatori_attivi)
     if n_attivi == 0:
         return 0, 0, []
 
-    # 3. Trova l'ultimo mese registrato nel foglio Tutti e genera i mesi dovuti dall'anno teocratico
+    # 3. Trova l'ultimo mese registrato nel foglio Tutti e genera i mesi dell'anno teocratico
     ultimo_mese = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti)
     mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese)
 
     if not mesi_attesi:
         return 0, 0, []
 
-    # 4. Mappa i rapporti già presenti nel foglio Tutti
+    # 4. Mappa i rapporti nel foglio Tutti
     col_nome_tutti = None
-    for c in df_tutti.columns:
-        if str(c).strip().lower() in ["cognome e nome", "nome", "proclamatore"]:
-            col_nome_tutti = c
+    for col in df_tutti.columns:
+        c_str = str(col).strip().lower()
+        if "cognome" in c_str or "nome" in c_str or "proclamatore" in c_str:
+            col_nome_tutti = col
             break
 
     rapporti_presenti = {}
