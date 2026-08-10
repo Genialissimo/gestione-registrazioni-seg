@@ -2015,73 +2015,53 @@ from datetime import datetime, date, timedelta
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
 # ─────────────────────────────────────────────────────────────────
 
-def trova_ultimo_mese_consegnato_foglio_tutti(df_tutti: pd.DataFrame) -> str:
+def trova_colonna_stato_robusta(df_anagrafica: pd.DataFrame):
     """
-    Individua l'ultimo mese ('AAAA-MM') effettivamente presente nel foglio Tutti.
+    Individua la colonna di stato (Attivi/Inattivi) tra i candidati che
+    contengono 'attiv'/'stato'/'a/i' nel nome, scegliendo quella che si
+    comporta realmente come una colonna di stato: pochi valori distinti
+    e brevi (es. 'A', 'I', 'ATTIVO'), NON una colonna di date o testo libero
+    (es. 'Data attività') che conterrebbe comunque la sottostringa 'attiv'.
     """
-    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
+    candidati = []
+    for col in df_anagrafica.columns:
+        c_str = str(col).strip().lower()
+        if "attiv" in c_str or c_str == "a/i" or "stato" in c_str:
+            candidati.append(col)
+
+    if not candidati:
         return None
 
-    validi = []
-    for m in df_tutti["Mese/Anno"].dropna().unique():
-        m_str = str(m).strip()
-        try:
-            a, mm = m_str.split("-")
-            validi.append((int(a), int(mm), m_str))
-        except Exception:
+    migliore = None
+    punteggio_migliore = -1
+    for col in candidati:
+        vals = df_anagrafica[col].dropna().astype(str).str.strip()
+        if vals.empty:
             continue
+        n_unici = vals.nunique()
+        lunghezza_media = vals.str.len().mean()
+        if n_unici <= 6 and lunghezza_media <= 12:
+            punteggio = 100 - n_unici - lunghezza_media
+            if punteggio > punteggio_migliore:
+                punteggio_migliore = punteggio
+                migliore = col
 
-    if not validi:
-        return None
-
-    # Ordina per Anno e Mese e restituisce la stringa dell'ultimo mese
-    validi.sort(key=lambda x: (x[0], x[1]))
-    return validi[-1][2]
-
-
-def genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese_str: str) -> list:
-    """
-    Genera la lista dei mesi ('AAAA-MM') da Settembre dell'anno teocratico corrente 
-    fino all'ultimo mese presente in archivio (es. da 2025-09 a 2026-06).
-    """
-    if not ultimo_mese_str:
-        return []
-
-    try:
-        a_lim, m_lim = map(int, ultimo_mese_str.split("-"))
-    except Exception:
-        return []
-
-    # Determina l'anno di inizio teocratico (Settembre)
-    # Se l'ultimo mese è da settembre a dicembre, l'inizio è l'anno stesso.
-    # Se è da gennaio ad agosto, l'anno d'inizio è l'anno precedente.
-    anno_inizio_teo = a_lim if m_lim >= 9 else a_lim - 1
-
-    mesi_dovuti = []
-
-    # 1. Mesi da Settembre (09) a Dicembre (12) dell'anno di partenza
-    for m in range(9, 13):
-        if (anno_inizio_teo < a_lim) or (anno_inizio_teo == a_lim and m <= m_lim):
-            mesi_dovuti.append(f"{anno_inizio_teo}-{m:02d}")
-
-    # 2. Mesi da Gennaio (01) ad Agosto (08) dell'anno successivo
-    anno_fine_teo = anno_inizio_teo + 1
-    for m in range(1, 9):
-        if (anno_fine_teo < a_lim) or (anno_fine_teo == a_lim and m <= m_lim):
-            mesi_dovuti.append(f"{anno_fine_teo}-{m:02d}")
-
-    return mesi_dovuti
+    return migliore
 
 
 def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame):
     """
-    Verifica che ogni proclamatore attivo in Anagrafica abbia un rapporto nel foglio Tutti 
+    Verifica che ogni proclamatore attivo in Anagrafica abbia un rapporto nel foglio Tutti
     per CIASCUN mese da Settembre dell'anno teocratico corrente fino all'ultimo mese registrato.
+    Restituisce anche un dizionario di debug per diagnosticare rapidamente eventuali anomalie.
     """
-    if df_anagrafica.empty or df_tutti.empty:
-        return None, None, []
+    debug = {}
 
-    # 1. Trova la colonna Nome in Anagrafica (cerca tra le intestazioni pulite)
+    if df_anagrafica.empty or df_tutti.empty:
+        debug["errore"] = "df_anagrafica o df_tutti vuoto"
+        return None, None, [], debug
+
+    # 1. Colonna Nome in Anagrafica
     col_nome_ana = None
     for col in df_anagrafica.columns:
         c_str = str(col).strip().lower()
@@ -2090,50 +2070,54 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
             break
 
     if not col_nome_ana:
-        return None, None, []
+        debug["errore"] = "Colonna Nome non trovata in Anagrafica"
+        debug["colonne_anagrafica"] = list(df_anagrafica.columns)
+        return None, None, [], debug
 
-    # 2. Trova la colonna dello Stato (Attivi / Inattivi - Colonna O)
-    col_stato = None
-    for col in df_anagrafica.columns:
-        c_str = str(col).strip().lower()
-        if "attiv" in c_str or c_str == "a/i" or "stato" in c_str:
-            col_stato = col
-            break
+    # 2. Colonna Stato (versione robusta)
+    col_stato = trova_colonna_stato_robusta(df_anagrafica)
+    debug["colonna_nome_usata"] = col_nome_ana
+    debug["colonna_stato_usata"] = col_stato
 
-    # Filtra i proclamatori attivi
     if col_stato:
-        # Considera attivo chiunque abbia 'A', 'ATTIVO', 'SI' o sia diverso da 'INATTIVO'/'TRASFERITO'
         vals_stato = df_anagrafica[col_stato].astype(str).str.strip().str.upper()
         maschera_attivi = vals_stato.str.startswith("A") | (vals_stato == "SI") | (vals_stato == "TRUE")
+        debug["valori_stato_distinti"] = vals_stato.value_counts().to_dict()
     else:
-        # Fallback: se non individua la colonna dello stato prende tutti i nominativi
         maschera_attivi = pd.Series(True, index=df_anagrafica.index)
+        debug["nota_stato"] = "Nessuna colonna stato affidabile trovata: considerati tutti attivi"
 
     proclamatori_attivi = set(
         df_anagrafica.loc[maschera_attivi, col_nome_ana].dropna().astype(str).str.strip().unique()
     )
-    
-    # Rimuove eventuali stringhe vuote o intestazioni residue
     proclamatori_attivi = {p for p in proclamatori_attivi if p and p.lower() not in ["cognome e nome", "nome", "none", "nan"]}
 
     n_attivi = len(proclamatori_attivi)
-    if n_attivi == 0:
-        return 0, 0, []
+    debug["n_attivi"] = n_attivi
+    debug["elenco_attivi"] = sorted(proclamatori_attivi)
 
-    # 3. Trova l'ultimo mese registrato nel foglio Tutti e genera i mesi dell'anno teocratico
+    if n_attivi == 0:
+        return 0, 0, [], debug
+
+    # 3. Ultimo mese e mesi attesi
     ultimo_mese = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti)
     mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese)
+    debug["ultimo_mese_rilevato"] = ultimo_mese
+    debug["mesi_attesi"] = mesi_attesi
 
     if not mesi_attesi:
-        return 0, 0, []
+        debug["errore"] = "mesi_attesi vuoto: controlla il formato di Mese/Anno nel foglio Tutti"
+        return 0, 0, [], debug
 
-    # 4. Mappa i rapporti nel foglio Tutti
+    # 4. Mappa rapporti presenti
     col_nome_tutti = None
     for col in df_tutti.columns:
         c_str = str(col).strip().lower()
         if "cognome" in c_str or "nome" in c_str or "proclamatore" in c_str:
             col_nome_tutti = col
             break
+
+    debug["colonna_nome_tutti_usata"] = col_nome_tutti
 
     rapporti_presenti = {}
     if col_nome_tutti and "Mese/Anno" in df_tutti.columns:
@@ -2155,7 +2139,7 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
             else:
                 dettaglio_mancanti.append(f"{m} {nome}")
 
-    return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti
+    return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti, debug
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
@@ -2515,13 +2499,13 @@ def mostra_home():
             badge_rapporti = ""
             badge_anagrafica = ""
 
-    # ── Costruzione righe promemoria per il post-it ──
+    ## ── Costruzione righe promemoria per il post-it ──
     promemoria = []
 
     # ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
     # ─────────────────────────────────────────────────────────────────
-    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio = calcola_stato_rapporti_completo(df_tutti_home, df_anagrafica_home)
+    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio, debug_rapporti = calcola_stato_rapporti_completo(df_tutti_home, df_anagrafica_home)
 
     if n_dovuti_rapporti is None:
         promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
@@ -2533,6 +2517,12 @@ def mostra_home():
         n_persone_mancanti = len(mancanti_dettaglio)
         promemoria.append(("dot-yellow" if n_persone_mancanti < 5 else "dot-red", 
                            f"Mancano rapporti nell'anno teocratico per {n_persone_mancanti} proclamatori."))
+
+    # Pannello di debug temporaneo (puoi toglierlo una volta verificato che funziona)
+    with st.expander("🔍 Debug controllo rapporti"):
+        st.json(debug_rapporti)
+        if mancanti_dettaglio:
+            st.write("Dettaglio mancanti:", mancanti_dettaglio)
 
     # Segnalazione 2: Anagrafiche
     if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
