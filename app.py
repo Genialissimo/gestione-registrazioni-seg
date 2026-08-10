@@ -2015,51 +2015,88 @@ from datetime import datetime, date, timedelta
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
 # ─────────────────────────────────────────────────────────────────
 
-def genera_mesi_anno_teocratico_fino_ad_oggi() -> list:
+def trova_ultimo_mese_consegnato_foglio_tutti(df_tutti: pd.DataFrame) -> str:
     """
-    Ritorna la lista dei mesi ('AAAA-MM') dall'inizio dell'anno teocratico corrente
-    (1° settembre) fino al mese precedente a quello attuale.
+    Individua l'ultimo mese ('AAAA-MM') effettivamente presente nel foglio Tutti.
     """
-    oggi = datetime.now()
-    anno_inizio_teo = oggi.year if oggi.month >= 9 else oggi.year - 1
-    
+    if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
+        return None
+
+    validi = []
+    for m in df_tutti["Mese/Anno"].dropna().unique():
+        m_str = str(m).strip()
+        try:
+            a, mm = m_str.split("-")
+            validi.append((int(a), int(mm), m_str))
+        except Exception:
+            continue
+
+    if not validi:
+        return None
+
+    # Ordina per Anno e Mese e restituisce la stringa dell'ultimo mese
+    validi.sort(key=lambda x: (x[0], x[1]))
+    return validi[-1][2]
+
+
+def genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese_str: str) -> list:
+    """
+    Genera la lista dei mesi ('AAAA-MM') da Settembre dell'anno teocratico corrente 
+    fino all'ultimo mese presente in archivio (es. da 2025-09 a 2026-06).
+    """
+    if not ultimo_mese_str:
+        return []
+
+    try:
+        a_lim, m_lim = map(int, ultimo_mese_str.split("-"))
+    except Exception:
+        return []
+
+    # Determina l'anno di inizio teocratico (Settembre)
+    # Se l'ultimo mese è da settembre a dicembre, l'inizio è l'anno stesso.
+    # Se è da gennaio ad agosto, l'anno d'inizio è l'anno precedente.
+    anno_inizio_teo = a_lim if m_lim >= 9 else a_lim - 1
+
     mesi_dovuti = []
-    
-    # Mesi dell'anno di partenza da Settembre (09) a Dicembre (12)
+
+    # 1. Mesi da Settembre (09) a Dicembre (12) dell'anno di partenza
     for m in range(9, 13):
-        data_m = datetime(anno_inizio_teo, m, 1)
-        if data_m < datetime(oggi.year, oggi.month, 1):
+        if (anno_inizio_teo < a_lim) or (anno_inizio_teo == a_lim and m <= m_lim):
             mesi_dovuti.append(f"{anno_inizio_teo}-{m:02d}")
-            
-    # Mesi dell'anno successivo da Gennaio (01) fino al mese precedente a oggi
+
+    # 2. Mesi da Gennaio (01) ad Agosto (08) dell'anno successivo
     anno_fine_teo = anno_inizio_teo + 1
-    for m in range(1, 13):
-        data_m = datetime(anno_fine_teo, m, 1)
-        if data_m < datetime(oggi.year, oggi.month, 1) and m < 9:
+    for m in range(1, 9):
+        if (anno_fine_teo < a_lim) or (anno_fine_teo == a_lim and m <= m_lim):
             mesi_dovuti.append(f"{anno_fine_teo}-{m:02d}")
-            
+
     return mesi_dovuti
 
 
 def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame):
     """
-    Verifica che ogni proclamatore attivo in Anagrafica abbia una riga nel foglio Tutti 
-    per CIASCUN mese dell'anno teocratico in corso fino al mese scorso.
+    Verifica che ogni proclamatore attivo in Anagrafica abbia un rapporto nel foglio Tutti 
+    per CIASCUN mese da Settembre dell'anno teocratico corrente fino all'ultimo mese registrato.
     """
-    if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
+    if df_anagrafica.empty or df_tutti.empty:
         return None, None, []
 
-    # 1. Recupera la colonna 'Stato' in sicurezza o crea una serie piena se manca
+    # Individua la colonna del nome in Anagrafica
+    col_nome_ana = "Cognome e Nome" if "Cognome e Nome" in df_anagrafica.columns else ("Nome" if "Nome" in df_anagrafica.columns else None)
+    if not col_nome_ana:
+        return None, None, []
+
+    # Gestione colonna Stato
     if "Stato" in df_anagrafica.columns:
         serie_stato = df_anagrafica["Stato"].astype(str).str.lower()
     else:
         serie_stato = pd.Series("", index=df_anagrafica.index)
 
-    # 2. Filtra i proclamatori non trasferiti
+    # Filtra proclamatori attivi (non trasferiti)
     proclamatori_attivi = set(
         df_anagrafica.loc[
             serie_stato != "trasferito", 
-            "Cognome e Nome"
+            col_nome_ana
         ].dropna().astype(str).str.strip().unique()
     )
     
@@ -2067,40 +2104,37 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     if n_attivi == 0:
         return 0, 0, []
 
-    # 3. Ottieni la lista dei mesi attesi dall'inizio dell'anno teocratico
-    mesi_attesi = genera_mesi_anno_teocratico_fino_ad_oggi()
-    if not mesi_attesi:
-        return n_attivi, n_attivi, []
+    # Trova l'ultimo mese registrato nel foglio Tutti e genera i mesi dovuti
+    ultimo_mese = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti)
+    mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese)
 
-    # 4. Mappa i mesi già presenti nel foglio Tutti
-    rapporti_presenti = {}
-    col_nome = "Nome" if "Nome" in df_tutti.columns else ("Cognome e Nome" if "Cognome e Nome" in df_tutti.columns else None)
+    if not mesi_attesi:
+        return 0, 0, []
+
+    # Individua la colonna del nome nel foglio Tutti
+    col_nome_tutti = "Cognome e Nome" if "Cognome e Nome" in df_tutti.columns else ("Nome" if "Nome" in df_tutti.columns else None)
     
-    if not df_tutti.empty and col_nome and "Mese/Anno" in df_tutti.columns:
+    rapporti_presenti = {}
+    if col_nome_tutti and "Mese/Anno" in df_tutti.columns:
         for _, riga in df_tutti.iterrows():
-            nome = str(riga.get(col_nome, "")).strip()
+            nome = str(riga.get(col_nome_tutti, "")).strip()
             mese = str(riga.get("Mese/Anno", "")).strip()
             if nome and mese:
                 rapporti_presenti.setdefault(nome, set()).add(mese)
 
-    # 5. Calcola le mancanze
-    proclamatori_incompleti = []
+    dettaglio_mancanti = []
     totale_rapporti_dovuti = n_attivi * len(mesi_attesi)
     totale_rapporti_presenti = 0
 
-    for nome in proclamatori_attivi:
+    for nome in sorted(proclamatori_attivi):
         mesi_inseriti = rapporti_presenti.get(nome, set())
-        mesi_mancanti = [m for m in mesi_attesi if m not in mesi_inseriti]
-        
-        totale_rapporti_presenti += (len(mesi_attesi) - len(mesi_mancanti))
-        
-        if mesi_mancanti:
-            proclamatori_incompleti.append({
-                "nome": nome,
-                "mesi_mancanti": mesi_mancanti
-            })
+        for m in mesi_attesi:
+            if m in mesi_inseriti:
+                totale_rapporti_presenti += 1
+            else:
+                dettaglio_mancanti.append(f"{m} {nome}")
 
-    return totale_rapporti_presenti, totale_rapporti_dovuti, proclamatori_incompleti
+    return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
