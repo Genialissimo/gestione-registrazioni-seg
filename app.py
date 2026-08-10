@@ -1376,7 +1376,7 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
 
 
 # ─────────────────────────────────────────────────────────────────
-# RIEPILOGO ATTIVITÀ (report libero per sorveglianti di gruppo/categoria)
+# Pagina: RIEPILOGO ATTIVITÀ (report libero per sorveglianti di gruppo/categoria)
 # ─────────────────────────────────────────────────────────────────
 CATEGORIE_RIEPILOGO_ATTIVITA = {
     "Tutti": None,
@@ -1389,19 +1389,37 @@ CATEGORIE_RIEPILOGO_ATTIVITA = {
 
 
 def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
-    """Ritorna (anno, mese) del mese più recente per cui esiste almeno un
-    rapporto nel foglio Tutti, o None se il foglio è vuoto."""
+    """Ritorna (anno, mese) del mese più recente per cui esiste un rapporto 
+    conffettivamente consegnato/presente nel foglio Tutti."""
     if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
         return None
+    
+    # Filtriamo solo le righe che hanno un effettivo rapporto di servizio
+    # (es. ha partecipato al ministero oppure ha ore/studi/crediti compilati)
+    condizione_dati = (
+        (df_tutti["Ha partecipato al ministero"] == True) | 
+        (df_tutti["Ha partecipato al ministero"].astype(str).str.lower().isin(["sì", "si", "1", "true"])) |
+        (df_tutti["Ore"].notna() & (df_tutti["Ore"].astype(str).str.strip() != "")) |
+        (df_tutti["Studi Biblici"].notna() & (df_tutti["Studi Biblici"].astype(str).str.strip() != ""))
+    )
+    
+    df_con_dati = df_tutti[condizione_dati]
+    
+    if df_con_dati.empty:
+        # Se non trova righe filtrate, usa tutto il dataframe come fallback
+        df_con_dati = df_tutti
+
     validi = []
-    for m in df_tutti["Mese/Anno"].dropna().unique():
+    for m in df_con_dati["Mese/Anno"].dropna().unique():
         try:
-            a, mm = str(m).split("-")
+            a, mm = str(m).strip().split("-")
             validi.append((int(a), int(mm)))
         except Exception:
             continue
+            
     if not validi:
         return None
+        
     return max(validi)
 
 
