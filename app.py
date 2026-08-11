@@ -3,7 +3,7 @@ app.py
 Gestione Registrazioni SEG - Web App (Streamlit + Google Sheets)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 import io
 import os
 import re
@@ -63,9 +63,9 @@ if not st.session_state.utente_autenticato:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Inserisci il codice di accesso per entrare nell'applicazione.")
-        
+
         codice_input = st.text_input("Codice di Accesso:", type="password", placeholder="••••••••").strip()
-        
+
         if st.button("Accedi al Sistema", type="primary", use_container_width=True):
             if not codice_input:
                 st.warning("Per favore, inserisci il codice di accesso.")
@@ -84,7 +84,7 @@ if not st.session_state.utente_autenticato:
                 st.rerun()
             else:
                 st.error("⚠️ Codice di Accesso errato.")
-                    
+
     st.stop()  # Blocca l'esecuzione finché non si inserisce un codice valido
 
 
@@ -118,12 +118,6 @@ RIGA_INTESTAZIONE_PRESENZE = 1
 TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 
 # ── Impostazioni configurabili (es. giorni in cui si tengono le adunanze) ──
-# Foglio con due colonne: "Chiave" (A) e "Valore" (B). Se il foglio non
-# esiste ancora, va creato a mano nel documento Google con queste due
-# intestazioni in A1/B1 — vale lo stesso principio degli altri fogli.
-# I giorni sono associati al tipo di adunanza (una o più per tipo, restando
-# liberi di sceglierne quanti si vuole), così proponendo una data si può
-# proporre anche il tipo di adunanza giusto per quel giorno.
 NOME_FOGLIO_IMPOSTAZIONI = "Configurazioni"
 RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
 CHIAVE_GIORNI_PER_TIPO = {
@@ -137,11 +131,7 @@ GIORNI_ADUNANZE_DEFAULT = {"Infrasettimanale": ["Giovedì"], "Fine settimana": [
 @st.cache_data(ttl=300, show_spinner=False)
 def leggi_giorni_adunanze_per_tipo(_workbook) -> dict:
     """Legge dal foglio 'Configurazioni' i giorni della settimana per
-    ciascun tipo di adunanza (Infrasettimanale/Fine settimana). Se il
-    foglio non esiste, non è ancora stato impostato, o c'è un problema di
-    lettura, usa il default (Giovedì/Domenica) senza far fallire nulla: le
-    impostazioni sono opzionali. Ritorna {'Infrasettimanale': [...],
-    'Fine settimana': [...]}."""
+    ciascun tipo di adunanza (Infrasettimanale/Fine settimana)."""
     risultato = {tipo: list(giorni) for tipo, giorni in GIORNI_ADUNANZE_DEFAULT.items()}
     if _workbook is None:
         return risultato
@@ -163,8 +153,7 @@ def leggi_giorni_adunanze_per_tipo(_workbook) -> dict:
 
 
 def giorni_adunanze_tutti(giorni_per_tipo: dict) -> list:
-    """Unisce i giorni di tutti i tipi in un'unica lista (senza doppioni),
-    utile per il controllo 'questa data è un giorno di adunanza?'."""
+    """Unisce i giorni di tutti i tipi in un'unica lista (senza doppioni)."""
     tutti = []
     for giorni in giorni_per_tipo.values():
         for g in giorni:
@@ -174,9 +163,7 @@ def giorni_adunanze_tutti(giorni_per_tipo: dict) -> list:
 
 
 def tipo_adunanza_del_giorno(nome_giorno: str, giorni_per_tipo: dict):
-    """Ritorna il tipo di adunanza (Infrasettimanale/Fine settimana)
-    associato al giorno della settimana indicato, o None se quel giorno
-    non è configurato per nessun tipo."""
+    """Ritorna il tipo di adunanza associato al giorno della settimana indicato."""
     for tipo, giorni in giorni_per_tipo.items():
         if nome_giorno in giorni:
             return tipo
@@ -184,9 +171,7 @@ def tipo_adunanza_del_giorno(nome_giorno: str, giorni_per_tipo: dict):
 
 
 def salva_giorni_adunanze_per_tipo(_workbook, giorni_per_tipo: dict):
-    """Salva (o crea) le righe 'Giorni Adunanza Infrasettimanale' e 'Giorni
-    Adunanza Fine Settimana' nel foglio 'Configurazioni'. Ritorna
-    (successo, errore)."""
+    """Salva (o crea) le righe dei giorni adunanza nel foglio 'Configurazioni'."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
     except Exception:
@@ -212,9 +197,7 @@ def salva_giorni_adunanze_per_tipo(_workbook, giorni_per_tipo: dict):
 
 def _prossima_data_valida_precedente(data_scelta, giorni_validi: list):
     """Se 'data_scelta' cade in uno dei giorni della settimana validi,
-    ritorna (True, None). Altrimenti ritorna (False, data_proposta) con la
-    data valida più recente PRIMA di quella scelta (tornando indietro nel
-    calendario giorno per giorno)."""
+    ritorna (True, None). Altrimenti ritorna (False, data_proposta)."""
     nome_giorno = GIORNI_SETTIMANA_IT[data_scelta.weekday()]
     if nome_giorno in giorni_validi:
         return True, None
@@ -222,18 +205,17 @@ def _prossima_data_valida_precedente(data_scelta, giorni_validi: list):
         candidata = data_scelta - timedelta(days=delta)
         if GIORNI_SETTIMANA_IT[candidata.weekday()] in giorni_validi:
             return False, candidata
-    return False, None  # nessun giorno valido configurato (caso limite)
+    return False, None
 
 NOME_FOGLIO_ANAGRAFICA = "Anagrafica"
 RIGA_INTESTAZIONE_ANAGRAFICA = 1
 
 NOME_FOGLIO_TUTTI = "Tutti"
 RIGA_INTESTAZIONE_TUTTI = 4
-# Indici di colonna (0-based) nel foglio 'Tutti': B=1, C=2, D=3, E=4, G=6, H=7, I=8, J=9
 COL_TUTTI_NOME = 1
 COL_TUTTI_MESE = 2
-COL_TUTTI_TIPO_SERVIZIO = 3   # D: es. "Pioniere Ausiliario"
-COL_TUTTI_MINISTERO = 4       # E: "Si"/"No" — ha partecipato al ministero
+COL_TUTTI_TIPO_SERVIZIO = 3
+COL_TUTTI_MINISTERO = 4
 COL_TUTTI_ORE = 6
 COL_TUTTI_CRED_ORE = 7
 COL_TUTTI_STUDI = 8
@@ -244,8 +226,6 @@ MESI_ITALIANI = {
     7: "Luglio", 8: "Agosto", 9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre",
 }
 
-# Opzioni fisse per i campi a scelta della scheda anagrafica, basate sulla
-# cartolina di registrazione del proclamatore (modulo S-21).
 OPZIONI_SESSO = ["Maschio", "Femmina"]
 OPZIONI_INCARICO = ["(nessuno)", "Anziano", "Servitore di ministero"]
 OPZIONI_TIPO = ["Proclamatore", "Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"]
@@ -256,9 +236,7 @@ ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo", "TR": "Trasferito"}
 
 
 def categoria_stato_proclamatore(valore: str) -> str:
-    """Riconosce la categoria di stato da 'Attivi / Inattivi', sia scritto
-    come sigla ('A'/'I'/'TR') che per esteso. Ritorna 'A' come valore di
-    default se non riconosciuto."""
+    """Riconosce la categoria di stato da 'Attivi / Inattivi'."""
     v = (valore or "").strip().lower()
     if v.startswith("i"):
         return "I"
@@ -266,15 +244,11 @@ def categoria_stato_proclamatore(valore: str) -> str:
         return "TR"
     return "A"
 
-# ── Modulo S-21 (scheda di registrazione del proclamatore) ──────────
-# Il file del modello va messo nella stessa cartella di app.py.
-# ── Riepilogo attività (report libero, non modulo S-21) ──────────────
-# Modifica qui il nome della congregazione: appare nell'intestazione del PDF.
 NOME_CONGREGAZIONE = "Vibo Marina"
 
 PERCORSO_MODULO_S21 = os.path.join(os.path.dirname(__file__), "S-21_s-Mlt_I.pdf")
 S21_PAGE_W, S21_PAGE_H = 595.2, 841.9
-S21_OFFSET_PANNELLO = 421.0  # distanza verticale tra il pannello alto e quello basso
+S21_OFFSET_PANNELLO = 421.0
 
 PERCORSO_MODULO_S88 = os.path.join(os.path.dirname(__file__), "S-88_I.pdf")
 S88_PAGE_W, S88_PAGE_H = 595.2, 841.9
@@ -282,8 +256,6 @@ S88_PAGE_W, S88_PAGE_H = 595.2, 841.9
 S21_ORDINE_MESI = ["Settembre", "Ottobre", "Novembre", "Dicembre", "Gennaio", "Febbraio",
                     "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto"]
 
-# Coordinate (top, bottom) di ciascuna riga mensile, misurate sui quadratini
-# reali del modello (non sulle etichette) per un allineamento preciso.
 S21_RIGHE = {
     "Settembre": (158.44, 171.09), "Ottobre": (176.17, 188.83), "Novembre": (193.90, 206.56),
     "Dicembre": (211.64, 224.29), "Gennaio": (229.37, 242.02), "Febbraio": (247.10, 259.75),
@@ -292,15 +264,12 @@ S21_RIGHE = {
 }
 S21_TOTALE_RIGA = (371.9, 389.5)
 
-# Colonne della tabella mensile: (x0, x1) dei quadratini o del corpo colonna.
 S21_COL_MINISTERO = (130.28, 143.01)
 S21_COL_AUSILIARIO = (271.52, 284.25)
 S21_COL_STUDI = (172.0, 242.6)
 S21_COL_ORE = (313.2, 383.8)
-S21_COL_OSSERVAZIONI_X = 388.5  # allineato a sinistra, con piccolo margine dal bordo colonna (383.8)
+S21_COL_OSSERVAZIONI_X = 388.5
 
-# Quadratini della testata (sesso, classe spirituale, incarico/tipo), misurati
-# sui glifi reali del modello: (x0, x1, top, bottom).
 S21_BOX_SESSO_M = (384.18, 394.4, 53.12, 63.28)
 S21_BOX_SESSO_F = (485.58, 495.8, 53.12, 63.28)
 S21_BOX_ALTRE_PECORE = (384.18, 394.4, 67.65, 77.8)
@@ -311,19 +280,18 @@ S21_BOX_PIONIERE_REGOLARE = (216.05, 226.27, 82.08, 92.24)
 S21_BOX_PIONIERE_SPECIALE = (327.5, 337.72, 82.08, 92.24)
 S21_BOX_MISSIONARIO = (436.37, 446.59, 82.08, 92.24)
 
-# Font (aumentati di 1-2 pt rispetto alla versione precedente).
-S21_COL_ANNO_SERVIZIO = (17.5, 101.4)  # colonna "Anno di servizio"
-S21_ANNO_LABEL_TOP = 145.5  # tra l'intestazione di colonna e la prima riga (Settembre)
-S21_SPOSTAMENTO_RIGHE = 2.0  # piccolo spostamento verso il basso per le righe della tabella mensile
-S21_SPOSTAMENTO_TESTATA = 1.8  # spostamento verso il basso per le X di Sesso/Classe/Incarico
+S21_COL_ANNO_SERVIZIO = (17.5, 101.4)
+S21_ANNO_LABEL_TOP = 145.5
+S21_SPOSTAMENTO_RIGHE = 2.0
+S21_SPOSTAMENTO_TESTATA = 1.8
 
-S21_FONT_VALORI = 10.5      # nome, date
-S21_FONT_CHECK_HEADER = 9.5  # X nei quadratini della testata
-S21_FONT_TABELLA = 9.5      # testo/numeri nella tabella mensile
-S21_FONT_CHECK_TABELLA = 10.5  # X nei quadratini della tabella mensile
-S21_FONT_ETA = 8.5          # età calcolata accanto alle date, in rosso
+S21_FONT_VALORI = 10.5
+S21_FONT_CHECK_HEADER = 9.5
+S21_FONT_TABELLA = 9.5
+S21_FONT_CHECK_TABELLA = 10.5
+S21_FONT_ETA = 8.5
 
-S21_COLORE_ROSSO = (0.827, 0.125, 0.125)  # stesso rosso #D32F2F usato nel form web
+S21_COLORE_ROSSO = (0.827, 0.125, 0.125)
 S21_COLORE_NERO = (0, 0, 0)
 
 
@@ -332,8 +300,7 @@ S21_COLORE_NERO = (0, 0, 0)
 # ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def get_client() -> gspread.Client:
-    """Autentica il programma verso Google tramite l'account di servizio
-    definito nei 'secrets' dell'app (vedi README_SETUP.md)."""
+    """Autentica il programma verso Google tramite l'account di servizio."""
     credenziali = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"], scopes=SCOPES
     )
@@ -342,8 +309,7 @@ def get_client() -> gspread.Client:
 
 @st.cache_resource(show_spinner=False)
 def apri_foglio_dati():
-    """Apre il foglio Google dati (l'ID è definito una volta sola nei
-    secrets, in 'sheet_id'). Ritorna (workbook, errore)."""
+    """Apre il foglio Google dati. Ritorna (workbook, errore)."""
     try:
         client = get_client()
         wb = client.open_by_key(st.secrets["sheet_id"])
@@ -360,32 +326,7 @@ def apri_foglio_dati():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1):
-    """Legge un foglio (tab) del workbook e lo ritorna come DataFrame.
-    'riga_intestazione' è il numero di riga (1-based) in cui si trovano i
-    nomi delle colonne: tutto ciò che sta sopra viene ignorato, tutto ciò
-    che sta sotto diventa dati. Ritorna (dataframe, errore). Il parametro
-    workbook è preceduto da '_' per dire a Streamlit di non provare a
-    metterlo in cache lui stesso (gli oggetti gspread non sono 'hashable')."""
-    try:
-        ws = _workbook.worksheet(nome_foglio)
-    except gspread.WorksheetNotFound:
-        nomi_disponibili = ", ".join(f"'{f.title}'" for f in _workbook.worksheets())
-        return None, (
-            f"Il foglio '{nome_foglio}' non esiste nel documento collegato. "
-            f"Fogli disponibili: {nomi_disponibili}."
-        )
-    except Exception as e:
-        return None, f"Errore durante la lettura del foglio: {e}"
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1):
-    """Legge un foglio (tab) del workbook e lo ritorna come DataFrame.
-    'riga_intestazione' è il numero di riga (1-based) in cui si trovano i
-    nomi delle colonne: tutto ciò che sta sopra viene ignorato, tutto ciò
-    che sta sotto diventa dati. Ritorna (dataframe, errore). Il parametro
-    workbook è preceduto da '_' per dire a Streamlit di non provare a
-    metterlo in cache lui stesso (gli oggetti gspread non sono 'hashable')."""
+    """Legge un foglio (tab) del workbook e lo ritorna come DataFrame."""
     try:
         ws = _workbook.worksheet(nome_foglio)
     except gspread.WorksheetNotFound:
@@ -404,8 +345,6 @@ def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1
     intestazioni = tutti_i_valori[riga_intestazione - 1]
     righe_dati = tutti_i_valori[riga_intestazione:]
 
-    # Rende univoci eventuali nomi di colonna duplicati o vuoti, che
-    # altrimenti causerebbero un errore nella creazione del DataFrame.
     intestazioni_pulite = []
     contatori = {}
     for i, nome in enumerate(intestazioni):
@@ -417,7 +356,6 @@ def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1
             contatori[nome] = 0
         intestazioni_pulite.append(nome)
 
-    # Scarta le righe completamente vuote (capita spesso in fondo al foglio).
     righe_dati = [r for r in righe_dati if any(cella.strip() for cella in r)]
 
     df = pd.DataFrame(righe_dati, columns=intestazioni_pulite)
@@ -425,9 +363,7 @@ def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1
 
 
 def trova_indice_colonna(intestazioni: list, parola_chiave: str):
-    """Cerca (senza distinguere maiuscole/minuscole) la prima colonna la cui
-    intestazione contiene 'parola_chiave'. Ritorna l'indice (0-based) o None
-    se non trovata — usato per non dipendere da un testo esatto al carattere."""
+    """Cerca la prima colonna la cui intestazione contiene 'parola_chiave'."""
     parola_chiave = parola_chiave.lower()
     for i, nome in enumerate(intestazioni):
         if parola_chiave in nome.lower():
@@ -436,8 +372,7 @@ def trova_indice_colonna(intestazioni: list, parola_chiave: str):
 
 
 def calcola_eta(data_str: str) -> str:
-    """Calcola gli anni compiuti da una data in formato gg/mm/aaaa. Ritorna
-    stringa vuota se la data non è valida."""
+    """Calcola gli anni compiuti da una data in formato gg/mm/aaaa."""
     if not data_str:
         return ""
     try:
@@ -450,9 +385,7 @@ def calcola_eta(data_str: str) -> str:
 
 
 def calcola_eta_dettagliata(data_str: str) -> str:
-    """Calcola anni e mesi compiuti da una data in formato gg/mm/aaaa, nel
-    formato 'anni,mesi' (es. '51,7' = 51 anni e 7 mesi). Ritorna stringa
-    vuota se la data non è valida."""
+    """Calcola anni e mesi compiuti da una data in formato gg/mm/aaaa."""
     if not data_str:
         return ""
     try:
@@ -471,9 +404,7 @@ def calcola_eta_dettagliata(data_str: str) -> str:
 
 
 def opzioni_da_colonna(df: pd.DataFrame, nome_colonna: str) -> list:
-    """Ritorna i valori unici (non vuoti) già presenti in una colonna del
-    DataFrame, ordinati alfabeticamente — usati per popolare menu a tendina
-    con le voci realmente in uso nel foglio (es. i nomi dei Gruppi)."""
+    """Ritorna i valori unici (non vuoti) già presenti in una colonna del DataFrame."""
     if nome_colonna not in df.columns:
         return []
     valori = df[nome_colonna].astype(str).str.strip()
@@ -482,8 +413,7 @@ def opzioni_da_colonna(df: pd.DataFrame, nome_colonna: str) -> list:
 
 
 def a_float_it(s: str) -> float:
-    """Converte una stringa numerica in formato italiano (es. '15,00' o
-    '15') in float. Ritorna 0.0 se vuota o non valida."""
+    """Converte una stringa numerica in formato italiano in float."""
     s = (s or "").strip()
     if not s:
         return 0.0
@@ -499,8 +429,7 @@ def formatta_numero_it(v: float) -> str:
 
 
 def formatta_mese_esteso(mese_anno: str) -> str:
-    """Converte 'AAAA-MM' (es. '2025-09') nel nome del mese per esteso
-    (es. 'Settembre'). Ritorna il valore originale se non riconosciuto."""
+    """Converte 'AAAA-MM' nel nome del mese per esteso."""
     try:
         _, mese = mese_anno.split("-")
         return MESI_ITALIANI.get(int(mese), mese_anno)
@@ -510,11 +439,7 @@ def formatta_mese_esteso(mese_anno: str) -> str:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def leggi_foglio_tutti(_workbook):
-    """Legge il foglio 'Tutti' (archivio storico di tutti i rapporti di
-    tutti i mesi) leggendo le colonne per posizione (B, C, D, E, G, H, I, J),
-    dato che l'intestazione non è a riga 1. Calcola inoltre le due caselle
-    'Ha partecipato al ministero' e 'Pioniere ausiliario' secondo le regole
-    indicate. Ritorna (dataframe, errore)."""
+    """Legge il foglio 'Tutti' leggendo le colonne per posizione."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
     except gspread.WorksheetNotFound:
@@ -549,11 +474,8 @@ def leggi_foglio_tutti(_workbook):
         ha_partecipato = (ministero_testo.lower() in ("si", "sì")) or (a_float_it(ore_testo) > 0)
         pioniere_ausiliario = "pioniere ausiliario" in tipo_servizio.lower()
 
-        # Numero di riga reale nel foglio (1-based) e valori grezzi delle
-        # colonne C..J, necessari per poter salvare le modifiche più avanti
-        # senza perdere il contenuto delle colonne che non gestiamo (es. F).
         riga_foglio = RIGA_INTESTAZIONE_TUTTI + 1 + i
-        grezza = r[2:10]  # colonne C,D,E,F,G,H,I,J (indici 2..9)
+        grezza = r[2:10]
 
         record.append({
             "Nome": nome,
@@ -573,9 +495,7 @@ def leggi_foglio_tutti(_workbook):
 
 
 def anno_teocratico_di(mese_anno: str):
-    """Dato un valore 'Mese/Anno' in formato AAAA-MM (es. '2026-06'),
-    ritorna l'anno teocratico di appartenenza (l'anno teocratico X va da
-    settembre X ad agosto X+1). Ritorna None se il formato non è valido."""
+    """Dato un valore 'Mese/Anno' in formato AAAA-MM, ritorna l'anno teocratico."""
     try:
         anno_str, mese_str = mese_anno.split("-")
         anno, mese = int(anno_str), int(mese_str)
@@ -585,9 +505,6 @@ def anno_teocratico_di(mese_anno: str):
 
 
 def _s21_y_da_top(top: float, offset: float = 0.0, alza: float = 8.0) -> float:
-    """Converte una coordinata 'top' (distanza dall'alto pagina, come la
-    ritorna pdfplumber) nella coordinata Y usata da reportlab (che parte
-    dal basso pagina). 'offset' sposta il calcolo sul pannello basso."""
     return S21_PAGE_H - (top + offset + alza)
 
 
@@ -597,13 +514,8 @@ def _s21_y_da_bottom(bottom: float, offset: float = 0.0, alza: float = 1.5) -> f
 
 def _s21_centro_box(c: rl_canvas.Canvas, box: tuple, offset: float, testo: str = "X",
                      font_name: str = "Helvetica-Bold", font_size: float = 10.0, sposta: float = 0.0):
-    """Disegna 'testo' (di norma una 'X') perfettamente centrato — sia in
-    orizzontale che in verticale — dentro un quadratino le cui coordinate
-    reali (x0, x1, top, bottom) sono state misurate sul modello PDF.
-    'sposta' aggiunge un piccolo spostamento verticale (positivo = più in
-    basso), usato per le righe della tabella mensile."""
     x0, x1, top, bottom = box
-    fattore_altezza_maiuscole = 0.717  # approssimazione per Helvetica-Bold
+    fattore_altezza_maiuscole = 0.717
     largo_testo = c.stringWidth(testo, font_name, font_size)
     x = (x0 + x1) / 2 - largo_testo / 2
     centro_verticale_top = (top + bottom) / 2 + offset
@@ -616,9 +528,6 @@ def _s21_centro_box(c: rl_canvas.Canvas, box: tuple, offset: float, testo: str =
 def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top: float, bottom: float,
                                  offset: float, font_name: str = "Helvetica", font_size: float = 9.5,
                                  sposta: float = 0.0):
-    """Scrive 'testo' centrato orizzontalmente in una colonna (x0, x1) e
-    centrato verticalmente in una riga (top, bottom). 'sposta' aggiunge un
-    piccolo spostamento verticale (positivo = più in basso)."""
     x0, x1 = col
     largo_testo = c.stringWidth(testo, font_name, font_size)
     x = (x0 + x1) / 2 - largo_testo / 2
@@ -626,12 +535,7 @@ def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top
     c.drawString(x, _s21_y_da_top((top + bottom) / 2, offset, alza=font_size * 0.36 + sposta), testo)
 
 
-
 def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico) -> dict:
-    """Ritorna un dizionario {nome_mese: {ha_partecipato, pioniere_ausiliario,
-    studi, ore, cred_ore, osservazioni}} per un Proclamatore e un anno
-    teocratico dati, pescando dal DataFrame prodotto da leggi_foglio_tutti().
-    Ritorna un dizionario vuoto se l'anno è None o non ci sono rapporti."""
     if anno_teocratico is None or df_tutti.empty:
         return {}
     righe_persona = df_tutti[df_tutti["Nome"].str.strip().str.lower() == nome.strip().lower()]
@@ -652,14 +556,6 @@ def _s21_righe_anno_per_nome(df_tutti: pd.DataFrame, nome: str, anno_teocratico)
 
 def _s21_righe_anno_aggregate(df_tutti: pd.DataFrame, nomi: list, anno_teocratico,
                                etichetta_conteggio: str = "proclamatori") -> dict:
-    """Come _s21_righe_anno_per_nome, ma aggrega più Proclamatori insieme:
-    Ore/Studi/Cred. Ore sono la somma del mese. Le caselle Ministero e
-    Pioniere ausiliario vengono marcate con una X se quel mese almeno una
-    persona della categoria ha partecipato/fatto l'ausiliario. Nelle
-    Osservazioni compare un solo numero: quante persone DI QUESTA CATEGORIA
-    hanno un rapporto quel mese (es. '8 pionieri regolari') — mai dati di
-    altre categorie mescolati. Usata per le cartoline di riepilogo (Tutti i
-    proclamatori, Pionieri Regolari, ecc.)."""
     if anno_teocratico is None or df_tutti.empty or not nomi:
         return {}
     nomi_lower = {n.strip().lower() for n in nomi if n and n.strip()}
@@ -694,16 +590,6 @@ def _s21_righe_anno_aggregate(df_tutti: pd.DataFrame, nomi: list, anno_teocratic
 
 def _s21_righe_anno_aggregate_per_tipo(df_tutti: pd.DataFrame, anno_teocratico,
                                         parola_chiave_tipo: str, etichetta_conteggio: str) -> dict:
-    """Aggrega Ore/Studi/Cred. Ore mese per mese SOLO per le righe del
-    foglio Tutti il cui 'Tipo di servizio' di quel mese (colonna D) contiene
-    'parola_chiave_tipo' (es. 'pioniere regolare', 'pioniere speciale',
-    'missionario', 'pioniere ausiliario'). Fotografa ESATTAMENTE quello che
-    trova nel foglio Tutti per quell'anno teocratico, su TUTTI i nominativi
-    presenti — anche chi nel frattempo è diventato Inattivo o è stato
-    Trasferito: non applica nessun filtro basato sullo stato attuale in
-    Anagrafica, solo sul periodo e sul Tipo di servizio di quel mese. Nelle
-    Osservazioni viene scritto solo il conteggio trovato quel mese, con
-    'etichetta_conteggio' (es. '11 pionieri regolari')."""
     if anno_teocratico is None or df_tutti.empty:
         return {}
     righe = df_tutti[df_tutti["Mese/Anno"].apply(anno_teocratico_di) == anno_teocratico]
@@ -735,9 +621,6 @@ def _s21_righe_anno_aggregate_per_tipo(df_tutti: pd.DataFrame, anno_teocratico,
 
 
 def _s21_dati_riepilogo(titolo: str) -> dict:
-    """Dati di testata per una cartolina di riepilogo aggregata: solo il
-    titolo nel campo 'Nome e cognome', nessuna data/sesso/incarico (quindi
-    nessuna casella della testata verrà spuntata)."""
     return {
         "nome": titolo,
         "data_nascita": "",
@@ -750,9 +633,6 @@ def _s21_dati_riepilogo(titolo: str) -> dict:
 
 
 def _s21_nota_inattivo_dal(riga_anagrafica: dict) -> str:
-    """Se il Proclamatore è Inattivo, ritorna il testo 'Inattivo dal
-    gg/mm/aaaa' da scrivere nella prima riga di Osservazioni. Ritorna
-    stringa vuota se non è Inattivo o se la data non è compilata."""
     stato = categoria_stato_proclamatore(riga_anagrafica.get("Attivi / Inattivi", ""))
     if stato != "I":
         return ""
@@ -763,10 +643,6 @@ def _s21_nota_inattivo_dal(riga_anagrafica: dict) -> str:
 
 
 def _s21_con_nota_prima_riga(righe_anno: dict, nota: str) -> dict:
-    """Ritorna una copia di 'righe_anno' con 'nota' anteposta alle
-    Osservazioni della prima riga (Settembre) — creandola se il mese non ha
-    ancora dati, così la nota compare anche su una cartolina altrimenti
-    completamente vuota."""
     if not nota:
         return righe_anno
     righe_anno = dict(righe_anno)
@@ -778,11 +654,6 @@ def _s21_con_nota_prima_riga(righe_anno: dict, nota: str) -> dict:
 
 
 def anni_teocratici_per_menu(df_tutti: pd.DataFrame) -> list:
-    """Ritorna l'elenco degli anni teocratici (int) da proporre in un menu a
-    tendina: solo gli anni per cui esistono già rapporti nel foglio 'Tutti'.
-    Un anno nuovo (es. 2026-2027) compare da solo non appena arriva e viene
-    registrato il primo rapporto di Settembre — non prima. Ordinati dal più
-    recente al più vecchio."""
     anni = set()
     if not df_tutti.empty and "Mese/Anno" in df_tutti.columns:
         anni |= {a for a in df_tutti["Mese/Anno"].apply(anno_teocratico_di) if a is not None}
@@ -794,13 +665,6 @@ def anni_teocratici_per_menu(df_tutti: pd.DataFrame) -> list:
 
 def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_anno: dict,
                            anno_teocratico=None, mostra_equazione_crediti: bool = True):
-    """Disegna un pannello completo (dati anagrafici + tabella mensile) sul
-    canvas di overlay. 'offset' è 0 per il pannello alto, S21_OFFSET_PANNELLO
-    per quello basso. 'anno_teocratico' (es. 2025) viene mostrato come
-    intervallo (es. '2025-2026') sotto l'intestazione di colonna.
-    'mostra_equazione_crediti' se False non scrive la formula
-    'ore + (crediti) = totale' nella riga Totale (usato per le cartoline di
-    riepilogo, dove può risultare fuorviante)."""
     c.setFillColorRGB(*S21_COLORE_NERO)
     c.setFont("Helvetica", S21_FONT_VALORI)
     c.drawString(116, _s21_y_da_bottom(51.5, offset), dati.get("nome", ""))
@@ -909,12 +773,9 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top_tot + bottom_tot) / 2, offset,
                                                              alza=S21_FONT_TABELLA * 0.36 + S21_SPOSTAMENTO_RIGHE),
                      testo_crediti)
-    # La somma degli Studi biblici non viene più riportata nel totale, su richiesta.
 
 
 def _s21_dati_da_riga_anagrafica(riga: dict) -> dict:
-    """Converte una riga del foglio Anagrafica (dizionario) nel formato
-    atteso da _s21_disegna_pannello."""
     return {
         "nome": riga.get("Cognome e Nome", ""),
         "data_nascita": riga.get("Data Nascita", ""),
@@ -927,10 +788,6 @@ def _s21_dati_da_riga_anagrafica(riga: dict) -> dict:
 
 
 def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
-    """Genera il PDF del modulo S-21 per un singolo Proclamatore: pannello
-    basso con l'anno teocratico scelto dall'utente (es. 2025 → '2025-2026'),
-    pannello alto con l'anno precedente (es. 2024 → '2024-2025'). Ritorna i
-    byte del PDF pronto da scaricare."""
     nome = riga_anagrafica.get("Cognome e Nome", "")
     dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
 
@@ -964,8 +821,6 @@ def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame, anno_c
 
 
 def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
-    """Genera un unico PDF con una pagina per ciascun Proclamatore passato
-    in 'righe_anagrafica' (lista di dizionari, come per il singolo)."""
     writer = PdfWriter()
     template_reader = PdfReader(PERCORSO_MODULO_S21)
 
@@ -992,8 +847,6 @@ def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame, anno
         overlay_reader = PdfReader(buf)
         pagina = template_reader.pages[0]
         pagina_overlay = pagina
-        # Serve una copia fresca della pagina modello per ogni Proclamatore,
-        # altrimenti gli overlay si sovrapporrebbero tutti sulla stessa pagina.
         template_fresh = PdfReader(PERCORSO_MODULO_S21)
         pagina_overlay = template_fresh.pages[0]
         pagina_overlay.merge_page(overlay_reader.pages[0])
@@ -1005,8 +858,6 @@ def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame, anno
 
 
 def _s21_nome_file_sicuro(nome: str) -> str:
-    """Ripulisce un nome da caratteri non ammessi nei nomi di file/cartella
-    (Windows e Dropbox in particolare non ammettono \\ / : * ? " < > |)."""
     nome_pulito = "".join(c for c in nome if c not in '\\/:*?"<>|').strip()
     return nome_pulito or "Senza_nome"
 
@@ -1014,28 +865,12 @@ def _s21_nome_file_sicuro(nome: str) -> str:
 # ─────────────────────────────────────────────────────────────────
 # IMPORTAZIONE S-21 RICEVUTA (da altra congregazione)
 # ─────────────────────────────────────────────────────────────────
-# Legge un modulo S-21 già compilato (ricevuto da un'altra congregazione al
-# trasferimento di un Proclamatore) usando ESATTAMENTE le stesse coordinate
-# con cui il nostro programma scrive le cartoline, ma al contrario: invece
-# di disegnare testo in quelle posizioni, ritaglia quelle posizioni e legge
-# il testo che vi si trova. Funziona solo se il PDF ha un vero livello di
-# testo (compilato al computer); se è una scansione/foto di un modulo
-# compilato a mano non c'è testo da estrarre — in quel caso lo segnaliamo
-# e l'inserimento va fatto a mano guardando l'immagine.
 
 def _s21_ripulisci_data(testo: str) -> str:
-    """Toglie l'eventuale età tra parentesi che potrebbe finire nel
-    ritaglio insieme alla data (es. '12/05/1990 (35)' o '12/05/1990
-    (35,2)' -> '12/05/1990')."""
     return re.sub(r"\s*\([\d,\.]+\)\s*$", "", testo or "").strip()
 
 
 def _s21_estrai_dati_pdf(sorgente) -> dict:
-    """Estrae dal PDF sorgente (percorso o file-like) i dati dei due
-    pannelli del modulo S-21. Ritorna {'testo_rilevato': bool, 'pannelli':
-    [dict, dict]}. 'testo_rilevato' è False se non è stato letto nessun
-    valore in nessuna casella dati di nessuno dei due pannelli (probabile
-    scansione/foto senza livello di testo)."""
     pannelli = []
     almeno_un_valore = False
 
@@ -1052,10 +887,6 @@ def _s21_estrai_dati_pdf(sorgente) -> dict:
                 return ""
             ritaglio = pagina.crop((x0_r, top_r, x1_r, bottom_r))
             testo_grezzo = (ritaglio.extract_text() or "").strip()
-            # Il template ha un carattere "fantasma" (cid:N) in OGNI casella
-            # della tabella, anche vuota (probabile glifo decorativo del
-            # quadratino): va tolto per non falsare né i valori letti né il
-            # rilevamento "c'è del testo vero qui dentro".
             testo = re.sub(r"\(cid:\d+\)", "", testo_grezzo).strip()
             if testo:
                 almeno_un_valore = True
@@ -1112,20 +943,11 @@ def _s21_estrai_dati_pdf(sorgente) -> dict:
 
 
 def _s21_anno_da_testo(anno_testo: str):
-    """Estrae il primo anno (es. 2024 da '2024-2025') da un'etichetta di
-    anno di servizio letta dal PDF. Ritorna None se non riconosciuto."""
     m = re.search(r"(20\d{2})", anno_testo or "")
     return int(m.group(1)) if m else None
 
 
 def _s21_tipo_servizio_mese(tipo_panello: str, ministero: bool, ausiliario: bool) -> str:
-    """Deduce il valore da scrivere in 'Tipo Servizio' per un dato mese, a
-    partire dalla designazione annuale del pannello (Pioniere Regolare/
-    Speciale/Missionario, letta dalle caselle di testata) e dalle caselle
-    mensili (Ministero/Ausiliario). Se il pannello non ha nessuna
-    designazione speciale, un mese con la sola casella Ausiliario spuntata
-    è 'Pioniere Ausiliario'; altrimenti, se ha partecipato al ministero, è
-    'Proclamatore'."""
     if tipo_panello == "Pioniere Regolare":
         return "Pioniere Regolare"
     if tipo_panello == "Pioniere speciale":
@@ -1138,13 +960,6 @@ def _s21_tipo_servizio_mese(tipo_panello: str, ministero: bool, ausiliario: bool
 
 
 def _s21_costruisci_righe_import(dati_estratti: dict, mesi_gia_presenti: set) -> list:
-    """A partire dal risultato di '_s21_estrai_dati_pdf', costruisce la
-    lista di righe candidate all'importazione (una per mese con dati),
-    con 'mese_anno' (AAAA-MM) calcolato dall'anno di servizio letto sul
-    pannello. 'mesi_gia_presenti' è un insieme di 'AAAA-MM' già presenti
-    nel foglio Tutti per questa persona: quei mesi vengono inclusi
-    comunque nell'elenco ma marcati 'gia_presente' = True (saltati di
-    default, ma visibili per trasparenza)."""
     righe = []
     for pannello in dati_estratti["pannelli"]:
         anno = _s21_anno_da_testo(pannello["anno_testo"])
@@ -1158,7 +973,7 @@ def _s21_costruisci_righe_import(dati_estratti: dict, mesi_gia_presenti: set) ->
                 anno_calendario = anno if mese_num >= 9 else anno + 1
                 mese_anno = f"{anno_calendario}-{mese_num:02d}"
             else:
-                mese_anno = ""  # anno non riconosciuto: l'utente lo imposterà a mano
+                mese_anno = ""
 
             tipo_servizio = _s21_tipo_servizio_mese(pannello["tipo"], dati_mese["ministero"],
                                                      dati_mese["ausiliario"])
@@ -1179,15 +994,9 @@ def _s21_costruisci_righe_import(dati_estratti: dict, mesi_gia_presenti: set) ->
 
 def aggiungi_riga_tutti(_workbook, nome: str, mese_anno: str, tipo_servizio: str,
                          ministero: str, ore: str, studi: str, osservazioni: str):
-    """Aggiunge una nuova riga in fondo al foglio 'Tutti', per posizione di
-    colonna (A vuota, B..J come da COL_TUTTI_*) invece che per nome
-    intestazione, perché l'intestazione di questo foglio non è affidabile
-    per l'abbinamento automatico (leggi_foglio_tutti fa lo stesso). 'Cred.
-    Ore' viene lasciato vuoto: il modulo S-21 non riporta i crediti per
-    singolo mese, solo nel totale annuale. Ritorna (successo, errore)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
-        riga = [""] * 10  # A..J
+        riga = [""] * 10
         riga[COL_TUTTI_NOME] = nome
         riga[COL_TUTTI_MESE] = mese_anno
         riga[COL_TUTTI_TIPO_SERVIZIO] = tipo_servizio
@@ -1202,9 +1011,6 @@ def aggiungi_riga_tutti(_workbook, nome: str, mese_anno: str, tipo_servizio: str
 
 
 def _importa_s21_cerca_persona(df_anagrafica: pd.DataFrame, nome_letto: str) -> pd.DataFrame:
-    """Cerca possibili corrispondenze in Anagrafica per il nome letto dal
-    PDF (confronto semplice, senza distinzione maiuscole/minuscole, che
-    tollera un ordine parziale delle parole)."""
     if df_anagrafica.empty or not nome_letto:
         return df_anagrafica.iloc[0:0]
     parole = [p.lower() for p in nome_letto.split() if len(p) > 2]
@@ -1221,21 +1027,12 @@ def _importa_s21_cerca_persona(df_anagrafica: pd.DataFrame, nome_letto: str) -> 
 
 
 def _s21_anno_cartella_corrente() -> str:
-    """Ritorna l'anno (come stringa) da usare come cartella principale
-    dell'esportazione, cioè l'anno di fine dell'anno di servizio in corso
-    oggi (es. per l'anno di servizio Settembre 2025 → Agosto 2026,
-    ritorna '2026')."""
     oggi = datetime.now()
     anno_teo = anno_teocratico_di(f"{oggi.year}-{oggi.month:02d}")
     return str(anno_teo + 1) if anno_teo is not None else str(oggi.year)
 
 
 def _s21_cartella_per_riga(riga: dict) -> str:
-    """Determina il sotto-percorso di cartella (dentro 'Anno AAAA/') per un
-    Proclamatore, secondo la struttura:
-    Attivi/Proclamatori/<Gruppo>, Attivi/Pionieri Regolari,
-    Attivi/Pionieri Speciali, Attivi/Missionari sul campo, Inattivi,
-    Trasferiti."""
     stato = categoria_stato_proclamatore(riga.get("Attivi / Inattivi", ""))
     if stato == "I":
         return "Inattivi"
@@ -1255,13 +1052,6 @@ def _s21_cartella_per_riga(riga: dict) -> str:
 
 
 def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
-    """Genera uno ZIP con una scheda S-21 per ciascun Proclamatore in
-    'righe_anagrafica', organizzate secondo la struttura di cartelle
-    'Anno AAAA/Attivi/…', 'Anno AAAA/Inattivi/…' ecc., col nome del file
-    uguale al Cognome e Nome. 'anno_corrente' è l'anno teocratico scelto
-    dall'utente (es. 2025): la cartella principale sarà 'Anno 2026' (l'anno
-    in cui l'anno di servizio 2025-2026 termina). Pronto da scompattare
-    dentro Dropbox o Drive."""
     anno_cartella = anno_corrente + 1
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1280,19 +1070,6 @@ def genera_zip_s21(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente
 
 def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, anno_corrente: int,
                               parola_chiave_tipo: str = None, etichetta_conteggio: str = "proclamatori") -> bytes:
-    """Genera una cartolina S-21 di riepilogo aggregato per una categoria
-    (es. 'Tutti i proclamatori', 'Tutti i pionieri regolari'): stessa
-    grafica delle cartoline individuali, ma con conteggi e somme al posto
-    dei dati di una singola persona.
-
-    Se 'parola_chiave_tipo' è specificata (es. 'pioniere regolare'), la
-    cartolina fotografa ESATTAMENTE il foglio Tutti per quell'anno
-    teocratico (vedi _s21_righe_anno_aggregate_per_tipo) — nessun filtro
-    sullo stato attuale in Anagrafica, quindi include anche chi nel
-    frattempo è diventato Inattivo o è stato Trasferito. Se invece è None,
-    si usa la lista fissa 'nomi' (caso non usato di norma, tenuto per
-    flessibilità). 'etichetta_conteggio' è la parola usata nelle
-    Osservazioni (es. '8 pionieri regolari')."""
     anno_precedente = anno_corrente - 1
     dati = _s21_dati_riepilogo(titolo)
     if parola_chiave_tipo:
@@ -1326,18 +1103,9 @@ def genera_pdf_s21_riepilogo(titolo: str, nomi: list, df_tutti: pd.DataFrame, an
 
 
 def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
-    """Genera il pacchetto ZIP completo e ufficiale: una cartolina per
-    OGNI Proclamatore Attivo o Inattivo in Anagrafica (i Trasferiti sono
-    esclusi), più le cinque cartoline di riepilogo aggregato nella cartella
-    principale. Le cartoline di riepilogo NON dipendono dallo stato attuale
-    in Anagrafica: fotografano esattamente il foglio Tutti per ciascun
-    periodo, quindi includono anche chi nel frattempo è diventato Inattivo
-    o è stato Trasferito. Non dipende da nessuna selezione: è pensato per
-    essere sempre coerente e completo."""
     anno_cartella = anno_corrente + 1
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1) Una cartolina per ciascun Proclamatore Attivo o Inattivo (Trasferiti esclusi).
         for _, riga in df.iterrows():
             riga_dict = riga.to_dict()
             nome = (riga_dict.get("Cognome e Nome") or "").strip()
@@ -1350,10 +1118,6 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
             nome_file = _s21_nome_file_sicuro(nome) + ".pdf"
             zf.writestr(f"Anno {anno_cartella}/{sotto_cartella}/{nome_file}", pdf_bytes)
 
-        # 2) Cartoline di riepilogo: fotografia esatta del foglio Tutti per il periodo,
-        # nessun filtro sullo stato attuale in Anagrafica. Ogni riga del foglio Tutti
-        # finisce in una sola categoria per quel mese, in base al Tipo di servizio
-        # (colonna D) di quel mese — non alla lista fissa Attivi.
         riepiloghi = [
             ("Tutti i proclamatori", "Riepilogo Tutti i Proclamatori.pdf", "proclamatore", "proclamatori"),
             ("Tutti i pionieri regolari", "Riepilogo Pionieri Regolari.pdf",
@@ -1389,24 +1153,19 @@ CATEGORIE_RIEPILOGO_ATTIVITA = {
 
 
 def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
-    """Ritorna (anno, mese) del mese più recente per cui esiste un rapporto 
-    conffettivamente consegnato/presente nel foglio Tutti."""
     if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
         return None
-    
-    # Filtriamo solo le righe che hanno un effettivo rapporto di servizio
-    # (es. ha partecipato al ministero oppure ha ore/studi/crediti compilati)
+
     condizione_dati = (
-        (df_tutti["Ha partecipato al ministero"] == True) | 
+        (df_tutti["Ha partecipato al ministero"] == True) |
         (df_tutti["Ha partecipato al ministero"].astype(str).str.lower().isin(["sì", "si", "1", "true"])) |
         (df_tutti["Ore"].notna() & (df_tutti["Ore"].astype(str).str.strip() != "")) |
         (df_tutti["Studi Biblici"].notna() & (df_tutti["Studi Biblici"].astype(str).str.strip() != ""))
     )
-    
+
     df_con_dati = df_tutti[condizione_dati]
-    
+
     if df_con_dati.empty:
-        # Se non trova righe filtrate, usa tutto il dataframe come fallback
         df_con_dati = df_tutti
 
     validi = []
@@ -1416,16 +1175,14 @@ def _riepilogo_ultimo_mese_con_dati(df_tutti: pd.DataFrame):
             validi.append((int(a), int(mm)))
         except Exception:
             continue
-            
+
     if not validi:
         return None
-        
+
     return max(validi)
 
 
 def _riepilogo_finestra_ultimi_n_mesi(anno_fine: int, mese_fine: int, n: int = 6) -> set:
-    """Ritorna l'insieme (anno, mese) degli ultimi 'n' mesi, contando a
-    ritroso da (anno_fine, mese_fine) incluso."""
     risultato = set()
     a, m = anno_fine, mese_fine
     for _ in range(n):
@@ -1448,13 +1205,6 @@ ETICHETTE_SINTETICO_CATEGORIA = {
 
 
 def _riepilogo_mesi_nel_periodo(df_tutti: pd.DataFrame, periodo: str) -> list:
-    """Ritorna la lista ordinata (stringhe 'AAAA-MM') dei mesi per cui
-    esistono realmente dei rapporti nel foglio Tutti, all'interno della
-    finestra scelta (12 mesi = anno teocratico corrente, 6 mesi = ultimi 6
-    mesi con dati). Non filtra per categoria o gruppo: serve solo a sapere
-    quali mesi sono effettivamente coperti dal report, perché ad es. un
-    anno teocratico può includere mesi futuri per cui i rapporti non sono
-    ancora stati consegnati."""
     if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
         return []
     df = df_tutti.copy()
@@ -1480,11 +1230,6 @@ def _riepilogo_mesi_nel_periodo(df_tutti: pd.DataFrame, periodo: str) -> list:
 
 
 def _riepilogo_etichetta_dati_estratti(df_tutti: pd.DataFrame, periodo: str):
-    """Costruisce la riga 'Dati estratti (N mesi): primo – ultimo' da
-    mostrare separata dal 'Periodo' nel PDF, con l'intervallo di mesi
-    realmente presenti nei dati per la finestra scelta (utile perché un
-    anno teocratico può includere mesi futuri per cui i rapporti non sono
-    ancora stati consegnati). Ritorna None se non ci sono dati nel periodo."""
     mesi = _riepilogo_mesi_nel_periodo(df_tutti, periodo)
     if not mesi:
         return None
@@ -1505,11 +1250,6 @@ def _riepilogo_etichetta_dati_estratti(df_tutti: pd.DataFrame, periodo: str):
 
 def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, periodo: str,
                             gruppo_scelto: str, categoria: str) -> pd.DataFrame:
-    """Filtra il foglio Tutti per periodo, categoria (Tipo di servizio di
-    quel mese) ed eventualmente Gruppo (assegnazione attuale in Anagrafica
-    — è l'unico filtro che dipende da Anagrafica, perché il Gruppo non
-    esiste nel foglio Tutti). Usata sia dalla vista Dettagliato che da
-    quella Sintetico del Riepilogo attività."""
     df = df_tutti.copy()
     if df.empty:
         return df
@@ -1552,10 +1292,6 @@ def _riepilogo_filtra_dati(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame, 
 
 
 def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list:
-    """Un blocco per ciascun Proclamatore presente in 'df_filtrato' (già
-    filtrato per periodo/categoria/gruppo). Ogni blocco: {'nome', 'righe',
-    'totale_ore', 'totale_crediti', 'totale_studi', 'media_ore',
-    'media_crediti', 'media_studi'}."""
     if df_filtrato.empty:
         return []
 
@@ -1596,12 +1332,6 @@ def _riepilogo_costruisci_blocchi_dettagliato(df_filtrato: pd.DataFrame) -> list
 
 
 def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria: str) -> list:
-    """Un UNICO blocco, intestato con il nome della categoria (es. 'Pionieri
-    Ausiliari') invece che con un nome di persona: raggruppa 'df_filtrato'
-    (già filtrato per periodo/categoria/gruppo) per mese, sommando
-    Ore/Crediti/Studi e mettendo nelle Note il conteggio di quante persone
-    quel mese risultano in quella categoria. Totale e Media in fondo, come
-    nella vista Dettagliato."""
     if df_filtrato.empty:
         return []
 
@@ -1648,14 +1378,6 @@ def _riepilogo_costruisci_blocco_sintetico(df_filtrato: pd.DataFrame, categoria:
 
 
 def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) -> list:
-    """Usata quando Tipo='Sintetico' e Categoria='Tutti': niente righe
-    mensili, solo il gran totale (e la media) per ciascuna delle categorie
-    (Proclamatori, Pionieri Regolari, Pionieri Speciali, Missionari sul
-    campo, Pionieri Ausiliari) trovate in 'df_periodo_gruppo' — già
-    filtrato per periodo ed eventuale Gruppo, ma NON per categoria. Salta
-    le categorie senza nessuna riga. Ritorna una lista di dict:
-    {'categoria', 'totale_ore', 'totale_crediti', 'totale_studi',
-    'media_ore', 'media_crediti', 'media_studi'}."""
     if df_periodo_gruppo.empty:
         return []
 
@@ -1684,14 +1406,6 @@ def _riepilogo_totali_generali_per_categoria(df_periodo_gruppo: pd.DataFrame) ->
 
 def _riepilogo_totali_per_categoria_e_gruppo(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame,
                                               periodo: str) -> list:
-    """Usata quando Tipo='Sintetico compara gruppi': per ciascuna categoria
-    (Proclamatori, Pionieri Regolari, Pionieri Speciali, Missionari sul
-    campo, Pionieri Ausiliari), scompone il totale/media per Gruppo
-    (sorvegliante), in ordine alfabetico di gruppo. Ignora i filtri
-    Categoria e Gruppo del form: mostra sempre tutte le categorie e tutti
-    i gruppi, per poterli confrontare. Ritorna una lista di dict:
-    {'categoria', 'gruppi': [{'gruppo', 'totale_ore', 'totale_crediti',
-    'totale_studi', 'media_ore', 'media_crediti', 'media_studi'}, ...]}."""
     df_periodo = _riepilogo_filtra_dati(df_tutti, df_anagrafica, periodo, "Tutti i gruppi", "Tutti")
     if df_periodo.empty or "Gruppo" not in df_anagrafica.columns:
         return []
@@ -1741,15 +1455,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                                    totali_per_categoria: list = None,
                                    comparazione_gruppi: list = None,
                                    etichetta_dati_periodo: str = None) -> bytes:
-    """Genera il PDF del Riepilogo attività: un documento libero (non un
-    modulo prestampato) con un blocco per Proclamatore (vista Dettagliato)
-    o un unico blocco per categoria (vista Sintetico) — mese, tipo di
-    servizio, ministero, ore, crediti, studi, note — più Totale e Media,
-    con interruzioni di pagina automatiche.
-
-    Se 'totali_per_categoria' è specificato (caso Sintetico + Categoria
-    'Tutti'), ignora 'blocchi' e mostra invece solo il gran totale e la
-    media per ciascuna categoria, senza righe mensili."""
     buf = io.BytesIO()
     if comparazione_gruppi is not None:
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.6 * cm, bottomMargin=0.6 * cm,
@@ -1796,8 +1501,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B6FA8")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ]
-            # Ogni coppia Totale/Media di una categoria ha lo sfondo alternato,
-            # per distinguere a colpo d'occhio dove finisce una categoria e inizia l'altra.
             for i in range(1, len(dati_tabella), 2):
                 colore = colors.HexColor("#F2F2F2") if ((i - 1) // 2) % 2 == 0 else colors.HexColor("#DCEEF9")
                 stile_righe.append(("BACKGROUND", (0, i), (-1, i + 1), colore))
@@ -1868,8 +1571,8 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             elementi.append(KeepTogether([tabella, Spacer(1, 3)]))
         doc.build(elementi)
         buf.seek(0)
-        return buf.getvalue()                                   
-                                       
+        return buf.getvalue()
+
     if not blocchi:
         elementi.append(Paragraph("Nessun dato trovato per i filtri selezionati.", stili["Normal"]))
 
@@ -1907,10 +1610,6 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
-        # KeepTogether: se il blocco non entra nello spazio rimasto in pagina, passa
-        # intero alla pagina successiva invece di spezzarsi — altrimenti reportlab
-        # ricalcola male i colori alternati e la griglia di Totale/Media sul pezzo
-        # che continua nella pagina dopo.
         blocco_pdf = [Paragraph(f"<b>{blocco['nome']}</b>", stili["Heading3"]), tabella, Spacer(1, 16)]
         elementi.append(KeepTogether(blocco_pdf))
 
@@ -1928,12 +1627,6 @@ def prossimo_id_anagrafica(df: pd.DataFrame) -> int:
 
 def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
                        valori: dict, riga_da_aggiornare: int = None):
-    """Scrive una nuova riga in fondo a un foglio, oppure aggiorna una riga
-    esistente (numero di riga del foglio, 1-based) se 'riga_da_aggiornare'
-    è specificato. 'valori' è un dizionario {nome_colonna: valore}; le
-    colonne del foglio non presenti nel dizionario vengono lasciate vuote
-    (nuova riga) o svuotate (modifica: si riscrive l'intera riga in
-    ordine). Ritorna (successo: bool, errore: str|None)."""
     try:
         ws = _workbook.worksheet(nome_foglio)
         intestazioni = ws.row_values(riga_intestazione)
@@ -1951,8 +1644,6 @@ def salva_riga_foglio(_workbook, nome_foglio: str, riga_intestazione: int,
 
 
 def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
-    """Elimina una riga (numero 1-based) da un foglio. Ritorna
-    (successo: bool, errore: str|None)."""
     try:
         ws = _workbook.worksheet(nome_foglio)
         ws.delete_rows(riga_da_eliminare)
@@ -1962,10 +1653,6 @@ def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
 
 
 def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
-    """Aggiorna una riga del foglio 'Tutti' (colonne C:J) con i nuovi
-    valori, preservando inalterata la colonna F (che non gestiamo nel
-    form). 'nuova_grezza' deve avere 8 elementi (C,D,E,F,G,H,I,J).
-    Ritorna (successo: bool, errore: str|None)."""
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
         ws.update(f"C{riga_foglio}:J{riga_foglio}", [nuova_grezza], value_input_option="USER_ENTERED")
@@ -1975,8 +1662,6 @@ def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
 
 
 def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = None):
-    """Scorciatoia per salvare una riga nel foglio Anagrafica (vedi
-    'salva_riga_foglio' per i dettagli)."""
     return salva_riga_foglio(_workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA,
                               valori, riga_da_aggiornare)
 
@@ -1992,45 +1677,89 @@ def vai_a(pagina: str):
     st.session_state.pagina = pagina
 
 
+def vai_a_home_reset_riepilogo():
+    st.session_state["riepilogo_expander_aperto"] = False
+    vai_a("home")
+
+
+def vai_a_home_reset_importa_s21():
+    for chiave in ("importa_s21_dati", "importa_s21_chiave_file",
+                   "importa_s21_persona_scelta", "s21_form_manuale_aperto"):
+        st.session_state.pop(chiave, None)
+    vai_a("home")
+
+
 workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
 
-
-import streamlit as st
-from datetime import datetime
-
-import streamlit as st
-from datetime import datetime
-
-import streamlit as st
-from datetime import datetime, date, timedelta
-
-import streamlit as st
-from datetime import datetime, date, timedelta
-
-import streamlit as st
-from datetime import datetime, date, timedelta
 
 # ─────────────────────────────────────────────────────────────────
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
 # ─────────────────────────────────────────────────────────────────
 
+def _normalizza_data_report(valore) -> str:
+    """Converte un valore di 'Mese/Anno' nel formato canonico 'AAAA-MM',
+    indipendentemente da come è stato scritto in origine. Gestisce:
+    - 'AAAA-MM' (es. '2026-06')
+    - 'AAAA-MM-GG' (es. '2026-06-01')
+    - 'GG/MM/AAAA' (es. '01/06/2026')
+    - 'MM/AAAA' (es. '06/2026')
+    - oggetti data/datetime/Timestamp
+    Restituisce None se il valore non è riconoscibile. Usata SOLO per il
+    controllo dei rapporti mancanti in Home (nome diverso dalla
+    'normalizza_mese_anno' usata in Importa S-21, per non avere due
+    funzioni con lo stesso nome e comportamento diverso nello stesso file)."""
+    if valore is None or (isinstance(valore, float) and pd.isna(valore)):
+        return None
+    if hasattr(valore, "year") and hasattr(valore, "month"):
+        return f"{valore.year}-{valore.month:02d}"
+
+    v = str(valore).strip()
+    if not v or v.lower() == "nan":
+        return None
+
+    if "-" in v:
+        parti = v.split("-")
+        if len(parti) in (2, 3):
+            try:
+                a, m = int(parti[0]), int(parti[1])
+                if 1 <= m <= 12:
+                    return f"{a}-{m:02d}"
+            except Exception:
+                pass
+
+    if "/" in v:
+        parti = v.split("/")
+        if len(parti) == 3:
+            try:
+                g, m, a = int(parti[0]), int(parti[1]), int(parti[2])
+                if 1 <= m <= 12:
+                    return f"{a}-{m:02d}"
+            except Exception:
+                pass
+        elif len(parti) == 2:
+            try:
+                m, a = int(parti[0]), int(parti[1])
+                if 1 <= m <= 12:
+                    return f"{a}-{m:02d}"
+            except Exception:
+                pass
+
+    return None
+
 
 def trova_ultimo_mese_consegnato_foglio_tutti(df_tutti: pd.DataFrame) -> str:
-    """
-    Individua l'ultimo mese ('AAAA-MM') effettivamente presente nel foglio Tutti.
-    """
+    """Individua l'ultimo mese ('AAAA-MM') effettivamente presente nel
+    foglio Tutti, indipendentemente dal formato con cui la data è scritta."""
     if df_tutti.empty or "Mese/Anno" not in df_tutti.columns:
         return None
 
     validi = []
     for m in df_tutti["Mese/Anno"].dropna().unique():
-        m_str = str(m).strip()
-        try:
-            a, mm = m_str.split("-")
-            validi.append((int(a), int(mm), m_str))
-        except Exception:
-            continue
+        m_norm = _normalizza_data_report(m)
+        if m_norm:
+            a, mm = m_norm.split("-")
+            validi.append((int(a), int(mm), m_norm))
 
     if not validi:
         return None
@@ -2040,10 +1769,8 @@ def trova_ultimo_mese_consegnato_foglio_tutti(df_tutti: pd.DataFrame) -> str:
 
 
 def genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese_str: str) -> list:
-    """
-    Genera la lista dei mesi ('AAAA-MM') da Settembre dell'anno teocratico corrente
-    fino all'ultimo mese presente in archivio (es. da 2025-09 a 2026-06).
-    """
+    """Genera la lista dei mesi ('AAAA-MM') da Settembre dell'anno
+    teocratico corrente fino all'ultimo mese presente in archivio."""
     if not ultimo_mese_str:
         return []
 
@@ -2069,10 +1796,11 @@ def genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_mese_str: str) -> list:
 
 
 def trova_colonna_stato_robusta(df_anagrafica: pd.DataFrame):
-    """
-    Individua la colonna di stato (Attivi/Inattivi) tra i candidati che
-    contengono 'attiv'/'stato'/'a/i' nel nome.
-    """
+    """Individua la colonna di stato (Attivi/Inattivi) tra i candidati che
+    contengono 'attiv'/'stato'/'a/i' nel nome, scegliendo quella che si
+    comporta realmente come una colonna di stato: pochi valori distinti
+    e brevi (es. 'A', 'I', 'ATTIVO'), NON una colonna di date o testo
+    libero (es. 'Data attività') che conterrebbe comunque 'attiv'."""
     candidati = []
     for col in df_anagrafica.columns:
         c_str = str(col).strip().lower()
@@ -2100,11 +1828,12 @@ def trova_colonna_stato_robusta(df_anagrafica: pd.DataFrame):
 
 
 def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.DataFrame):
-    """
-    Verifica che ogni proclamatore attivo in Anagrafica abbia un rapporto nel foglio Tutti
-    per CIASCUN mese da Settembre dell'anno teocratico corrente fino all'ultimo mese registrato.
-    Restituisce esattamente 3 elementi: (totale_presenti, totale_dovuti, dettaglio_mancanti)
-    """
+    """Verifica che ogni proclamatore attivo in Anagrafica abbia un
+    rapporto nel foglio Tutti per CIASCUN mese da Settembre dell'anno
+    teocratico corrente fino all'ultimo mese registrato. Le date in
+    'Mese/Anno' vengono normalizzate indipendentemente dal formato in cui
+    sono scritte. Restituisce esattamente 3 elementi:
+    (totale_presenti, totale_dovuti, dettaglio_mancanti)"""
     if df_anagrafica.empty or df_tutti.empty:
         return None, None, []
 
@@ -2144,7 +1873,7 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     if not mesi_attesi:
         return 0, 0, []
 
-    # 4. Mappa rapporti presenti
+    # 4. Mappa rapporti presenti (date normalizzate)
     col_nome_tutti = None
     for col in df_tutti.columns:
         c_str = str(col).strip().lower()
@@ -2156,7 +1885,7 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
     if col_nome_tutti and "Mese/Anno" in df_tutti.columns:
         for _, riga in df_tutti.iterrows():
             nome = str(riga.get(col_nome_tutti, "")).strip()
-            mese = str(riga.get("Mese/Anno", "")).strip()
+            mese = _normalizza_data_report(riga.get("Mese/Anno", ""))
             if nome and mese:
                 rapporti_presenti.setdefault(nome, set()).add(mese)
 
@@ -2173,13 +1902,12 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
                 dettaglio_mancanti.append(f"{m} {nome}")
 
     return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti
-    
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
 # ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
-    # Intestazione compatta con data e ora piccolina sotto il titolo
     ora_ora = datetime.now().strftime('%d/%m/%Y %H:%M')
     st.markdown(
         f"""
@@ -2193,7 +1921,6 @@ def mostra_home():
         unsafe_allow_html=True
     )
 
-    # CSS Custom per card, icone, tab e post-it
     st.markdown("""
     <style>
         .custom-card-header {
@@ -2261,7 +1988,6 @@ def mostra_home():
             border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
-        /* Tab in cima - accento verde */
         .stTabs [data-baseweb="tab-list"] {
             gap: 6px;
             border-bottom: 1px solid rgba(128,128,128,0.3);
@@ -2284,7 +2010,6 @@ def mostra_home():
             border-radius: 2px;
         }
 
-        /* ── CARD INTERA CLICCABILE SU TUTTA LA SUPERFICIE ── */
         div[class*="st-key-card_"] {
             position: relative !important;
             box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
@@ -2334,7 +2059,6 @@ def mostra_home():
             cursor: not-allowed !important;
         }
 
-        /* ── Card Post-it Promemoria ── */
         .postit-card {
             width: 92%;
             max-width: 900px;
@@ -2400,16 +2124,13 @@ def mostra_home():
     badge_rapporti = ""
     badge_anagrafica = ""
 
-    # Contatori per la card promemoria
     n_completi_anagrafica = None
     n_incompleti_anagrafica = None
-    
-    # Dataframe necessari per il controllo dell'anno teocratico
+
     df_anagrafica_home = pd.DataFrame()
     df_tutti_home = pd.DataFrame()
 
-    # Variabili per controllo presenze adunanza
-    esito_presenze_adunanza = None  # None = non connesso / errore, True = ok, (False, data_str, giorno_str) = mancante
+    esito_presenze_adunanza = None
 
     if collegato:
         try:
@@ -2421,7 +2142,6 @@ def mostra_home():
                 workbook, "Tutti", 1)
 
             if not err_ana_home and not df_anagrafica_home.empty:
-                # ── 1. BADGE RAPPORTI CONSEGNATI (Mese corrente per badge card) ──
                 if not err_risp_home:
                     if "Attivi / Inattivi" in df_anagrafica_home.columns:
                         categorie_home = df_anagrafica_home["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
@@ -2445,7 +2165,6 @@ def mostra_home():
                     cls_badge = "hud-green" if completo else "hud-red"
                     badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
 
-                # ── 2. BADGE ANAGRAFICHE ──
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
                     df_attivi_ana = df_anagrafica_home[
@@ -2478,7 +2197,6 @@ def mostra_home():
                         n_completi_anagrafica = int(tot_comp)
                         n_incompleti_anagrafica = int(tot_incomp)
 
-            # ── 3. VERIFICA PRESENZE ADUNANZA MANCANTI ──
             try:
                 df_config, err_cfg = leggi_foglio_come_df(workbook, "Configurazioni", 1)
                 df_presenze, err_pres = leggi_foglio_come_df(workbook, "Presenze Adunanze", 1)
@@ -2533,36 +2251,22 @@ def mostra_home():
             badge_rapporti = ""
             badge_anagrafica = ""
 
-    ## ── Costruzione righe promemoria per il post-it ──
     promemoria = []
 
-# ─────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
     # ─────────────────────────────────────────────────────────────────
-    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio = calcola_stato_rapporti_completo(df_tutti_home, df_anagrafica_home)
-
-    # Recupera l'intervallo di mesi analizzato dall'archivio
-    ultimo_m = trova_ultimo_mese_consegnato_foglio_tutti(df_tutti_home)
-    mesi_attesi = genera_mesi_anno_teocratico_fino_a_ultimo(ultimo_m)
-
-    if mesi_attesi:
-        mese_inizio = mesi_attesi[0]
-        mese_fine = mesi_attesi[-1]
-    else:
-        mese_inizio, mese_fine = "", ""
+    n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio = calcola_stato_rapporti_completo(
+        df_tutti_home, df_anagrafica_home)
 
     if n_dovuti_rapporti is None:
         promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
-    elif len(mancanti_dettaglio) == 0:
-        if mese_inizio and mese_fine:
-            testo_ok = f"In archivio sono presenti tutti i rapporti dal {mese_inizio} al {mese_fine}."
-        else:
-            testo_ok = "In archivio sono presenti tutti i rapporti dell'anno teocratico."
-        promemoria.append(("dot-green", testo_ok))
-    else:
-        elenco_str = "<br>".join(mancanti_dettaglio)
-        testo_segnalazione = f"Non risulta in archivio rapporto:<br><b>{elenco_str}</b>"
-        promemoria.append(("dot-yellow" if len(mancanti_dettaglio) < 5 else "dot-red", testo_segnalazione))
+    elif mancanti_dettaglio:
+        n_persone_mancanti = len(mancanti_dettaglio)
+        dot_cls = "dot-yellow" if n_persone_mancanti < 5 else "dot-red"
+        testo = "Rapporti mancanti in archivio:<br>" + "<br>".join(mancanti_dettaglio)
+        promemoria.append((dot_cls, testo))
+    # Se non manca nulla (o non ci sono proclamatori attivi da controllare), non si scrive nulla.
 
     # Segnalazione 2: Anagrafiche
     if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
@@ -2596,7 +2300,6 @@ def mostra_home():
     </div>
     """
 
-    # ── Card raggruppate per tab ──
     sezioni = {
         "📖 Rapporti": [
             ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
@@ -2639,15 +2342,10 @@ def mostra_home():
                             unsafe_allow_html=True
                         )
                         st.caption(desc)
-                        
-                        cliccato = st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
-                                             on_click=vai_a, args=(pagina,), use_container_width=True)
-                        
-                        if cliccato:
-                            vai_a(pagina)
-                            st.rerun()
 
-    # ── Tab: Home (post-it) + le 4 tab di navigazione ──
+                        st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
+                                 on_click=vai_a, args=(pagina,), use_container_width=True)
+
     nomi_tab = ["🏠 Home"] + list(sezioni.keys())
     tabs = st.tabs(nomi_tab)
 
@@ -2663,13 +2361,6 @@ def mostra_home():
 # ─────────────────────────────────────────────────────────────────
 def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int,
                     chiave: str, chiave_stato_modifica: str = None):
-    """Form generico di modifica per una riga del foglio 'Risposte del
-    modulo 9': un campo per ciascuna colonna del foglio, precompilato con
-    i valori attuali. I campi numerici (Ore, Cr. Ore, Studi) usano un
-    campo numerico, gli altri un campo di testo. Alcune colonne (es.
-    'Video mostrati') non vengono mostrate nel form ma il loro valore
-    esistente viene comunque preservato al salvataggio. 'chiave' deve
-    essere univoca per ogni istanza del form sulla stessa pagina."""
     e = riga_esistente
     colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
     colonne_nascoste = {"video mostrati", "cognome e nome"}
@@ -2740,9 +2431,6 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
             st.error(err)
 
 def _form_modifica_rapporto_consegnato(dati_selezione: dict):
-    """Pagina intera di modifica di un rapporto consegnato (foglio
-    'Risposte del modulo 9'), aperta cliccando 'Modifica' dentro la
-    griglia di un Proclamatore in Rapporti consegnati."""
     df = dati_selezione["df"]
     riga_dict = dati_selezione["riga_dict"]
     numero_riga_foglio = dati_selezione["numero_riga_foglio"]
@@ -2757,9 +2445,8 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 def mostra_registrazioni():
     st.title("Rapporti consegnati")
-    if st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True,
+              on_click=vai_a, args=("home",))
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -2789,11 +2476,9 @@ def mostra_registrazioni():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
-    # Ricerca dinamica con st_keyup per risposta istantanea a ogni tasto premuto
     ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_dinamica")
 
     def e_attivo(valore: str) -> bool:
-        """Vero se lo stato è 'A' oppure 'Attivi'/'Attivo' per esteso."""
         return (valore or "").strip().lower().startswith("a")
 
     colonna_stato = "Attivi / Inattivi" if "Attivi / Inattivi" in df_anagrafica.columns else None
@@ -2810,14 +2495,11 @@ def mostra_registrazioni():
             if colonna_gruppo:
                 gruppo_per_nome[n] = str(riga.get(colonna_gruppo, "")).strip()
 
-    # 1. Estrazione e pulizia nomi
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
-    
-    # 2. Filtro per proclamatori attivi
+
     if colonna_stato:
         nomi = [n for n in nomi if e_attivo(stato_per_nome.get(n, ""))]
 
-    # 3. Filtro dinamico sulla ricerca digitata
     testo_ricerca = ricerca.strip().lower()
     if testo_ricerca:
         nomi = [n for n in nomi if testo_ricerca in n.lower()]
@@ -2826,7 +2508,6 @@ def mostra_registrazioni():
         st.info("Nessun Proclamatore corrisponde alla ricerca.")
         return
 
-    # 4. Conteggio risposte per i soli nomi filtrati
     conteggi = {}
     if "Cognome e Nome" in df.columns:
         serie_nomi_df = df["Cognome e Nome"].astype(str).str.strip().str.lower()
@@ -2836,7 +2517,6 @@ def mostra_registrazioni():
         for nome in nomi:
             conteggi[nome] = 0
 
-    # 5. Raggruppamento alfabetico dei soli nomi filtrati
     gruppi = {}
     for n in nomi:
         g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
@@ -2918,7 +2598,6 @@ def mostra_registrazioni():
             if len(righe_persona) > 1:
                 st.divider()
 
-    # 6. Rendering dei soli gruppi che contengono elementi
     for gruppo in sorted(gruppi.keys()):
         if gruppi[gruppo]:
             st.markdown(f"#### 👤 {gruppo}")
@@ -2931,7 +2610,6 @@ def mostra_registrazioni():
 # ─────────────────────────────────────────────────────────────────
 def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_foglio: int = None,
                       chiave: str = "nuovo", modo_nuovo: bool = False, chiave_expander: str = None):
-    """Disegna il form di inserimento/modifica di un Proclamatore."""
     e = riga_esistente or {}
 
     def parse_data(s):
@@ -3106,9 +2784,8 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 def mostra_anagrafiche():
     st.title("Anagrafiche")
-    if st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True,
+              on_click=vai_a, args=("home",))
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_ANAGRAFICA}».")
 
     if not collegato:
@@ -3123,13 +2800,11 @@ def mostra_anagrafiche():
         st.error(err)
         return
 
-    # ── Form di inserimento nuovo Proclamatore ──────────────────────────
     if st.session_state.anagrafica_nuovo:
         st.subheader("➕ Nuovo Proclamatore")
         _form_anagrafica(df, chiave="nuovo", modo_nuovo=True)
         return
 
-    # ── Elenco Proclamatori a riquadri pieghevoli ───────────────────────
     if st.button("➕ Nuovo Proclamatore", use_container_width=True):
         st.session_state.anagrafica_nuovo = True
         st.rerun()
@@ -3147,10 +2822,8 @@ def mostra_anagrafiche():
         )
         df_mostrato = df_mostrato[maschera]
 
-    # ── Calcolo completezza schede per i proclamatori Attivi ────────────
-    # Nota: "Data Battesimo" è stata rimossa perché il proclamatore potrebbe non essere battezzato.
     colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
-    
+
     def riga_e_completa(riga):
         for col in colonne_obbligatorie:
             if col in riga:
@@ -3163,7 +2836,6 @@ def mostra_anagrafiche():
 
     df_mostrato["__completo"] = df_mostrato.apply(riga_e_completa, axis=1)
 
-    # ── Filtro per stato: Attivi / Inattivi / Trasferiti / Incompleti ────
     if "Attivi / Inattivi" in df_mostrato.columns:
         categorie = df_mostrato["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
     else:
@@ -3172,8 +2844,7 @@ def mostra_anagrafiche():
     conteggio_a = int((categorie == "A").sum())
     conteggio_i = int((categorie == "I").sum())
     conteggio_tr = int((categorie == "TR").sum())
-    
-    # Conteggio incompleti tra i soli Attivi
+
     conteggio_inc = int(((categorie == "A") & (~df_mostrato["__completo"])).sum())
 
     opzioni_stato = [
@@ -3182,18 +2853,17 @@ def mostra_anagrafiche():
         f"🔺 Inattivi ({conteggio_i})",
         f"↔️ Trasferiti ({conteggio_tr})",
     ]
-    
+
     scelta_stato = st.radio("Stato", opzioni_stato, index=0, horizontal=True,
                              label_visibility="collapsed", key="anagrafica_filtro_stato")
 
-    # Applicazione del filtro selezionato
-    if scelta_stato == opzioni_stato[0]:  # Attivi
+    if scelta_stato == opzioni_stato[0]:
         df_mostrato = df_mostrato[categorie == "A"]
-    elif scelta_stato == opzioni_stato[1]:  # Anagrafica incompleta (Attivi con dati mancanti)
+    elif scelta_stato == opzioni_stato[1]:
         df_mostrato = df_mostrato[(categorie == "A") & (~df_mostrato["__completo"])]
-    elif scelta_stato == opzioni_stato[2]:  # Inattivi
+    elif scelta_stato == opzioni_stato[2]:
         df_mostrato = df_mostrato[categorie == "I"]
-    elif scelta_stato == opzioni_stato[3]:  # Trasferiti
+    elif scelta_stato == opzioni_stato[3]:
         df_mostrato = df_mostrato[categorie == "TR"]
 
     df_mostrato = df_mostrato.sort_values("Cognome e Nome") if "Cognome e Nome" in df_mostrato.columns else df_mostrato
@@ -3222,7 +2892,6 @@ def mostra_anagrafiche():
         aperto = (st.session_state.anagrafica_aperto == chiave_persona)
         freccia = "▼" if aperto else "▶"
 
-        # Indicatore per identificare a colpo d'occhio le schede incomplete
         badge_stato = " 🟡" if not riga.get("__completo", True) else ""
 
         if st.button(f"{freccia}  {nome}{badge_stato}", key=f"btn_anagrafica_{chiave_persona}", use_container_width=True):
@@ -3241,10 +2910,8 @@ def mostra_anagrafiche():
 def mostra_riepilogo_attivita():
     st.title("📊 Riepilogo attività e statistiche")
 
-    if st.button("🏠", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True):
-        st.session_state["riepilogo_expander_aperto"] = False
-        vai_a("home")
-        st.rerun()
+    st.button("🏠", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True,
+              on_click=vai_a_home_reset_riepilogo)
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -3263,7 +2930,6 @@ def mostra_riepilogo_attivita():
         st.error(err_tutti)
         return
 
-    # ── Anno teocratico ───────────────────────────────────────────────
     anni_presenti = anni_teocratici_per_menu(df_tutti)
     anno_scelto = st.selectbox(
         "Seleziona anno teocratico",
@@ -3271,7 +2937,6 @@ def mostra_riepilogo_attivita():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Riepilogo attività (expander nativo: resta aperto durante l'uso) ──
     with st.expander("📊 Riepilogo attività", expanded=True, key="riepilogo_expander_aperto"):
         st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
                    "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
@@ -3369,7 +3034,7 @@ def mostra_riepilogo_attivita():
 # ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
     st.title("📇 Cartoline di registrazione")
-    contenitore_pulsanti = st.container()  # riserva lo spazio subito dopo il titolo
+    contenitore_pulsanti = st.container()
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -3392,7 +3057,6 @@ def mostra_cartoline_registrazione():
         st.error(err_tutti)
         return
 
-    # ── Anno teocratico ───────────────────────────────────────────────
     anni_presenti = anni_teocratici_per_menu(df_tutti)
     anno_scelto = st.selectbox(
         "Seleziona anno teocratico",
@@ -3400,7 +3064,6 @@ def mostra_cartoline_registrazione():
         format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    # ── Ricerca ed elenco con checkbox ───────────────────────────────
     df_lista = df.reset_index(drop=True)
     if "Attivi / Inattivi" in df_lista.columns:
         categorie = df_lista["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
@@ -3430,14 +3093,11 @@ def mostra_cartoline_registrazione():
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
     n_sel = len(selezionati)
 
-    # ── Home + menu "⋯" ────────────────────────────────────────────────
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
-            if st.button("🏠", key="home_da_cartoline", use_container_width=True,
-                         help="Torna alla Home"):
-                vai_a("home")
-                st.rerun()
+            st.button("🏠", key="home_da_cartoline", use_container_width=True,
+                      help="Torna alla Home", on_click=vai_a, args=("home",))
         with col_menu:
             if st.button("⋯", key="toggle_menu_cartoline", use_container_width=True):
                 st.session_state.cartoline_menu_aperto = not st.session_state.get(
@@ -3508,9 +3168,6 @@ COLORI_TESTATA_GRUPPI = ["9DC3E6", "F4B183", "A9D18E", "FFD966", "C9A0DC", "E8A0
 
 
 def _gruppi_calcola_sigla(riga: dict) -> str:
-    """Sigla da Incarico + Tipo, es. 'A' (Anziano), 'SM' (Servitore di
-    ministero), 'PR' (Pioniere Regolare), 'PS' (Pioniere speciale),
-    'M' (Missionario sul campo), combinabili tipo 'A/PR'."""
     parti = []
     incarico = (riga.get("Incarico") or "").strip()
     tipo = (riga.get("Tipo") or "").strip()
@@ -3528,9 +3185,6 @@ def _gruppi_calcola_sigla(riga: dict) -> str:
 
 
 def _gruppi_trova_assistente(df: pd.DataFrame, gruppo: str) -> str:
-    """Cerca in Anagrafica chi ha nel campo Note 'Assistente gruppo di
-    servizio' ed è nello stesso Gruppo — non esiste ancora un campo
-    dedicato, quindi si usa questa convenzione nelle Note."""
     for _, r in df.iterrows():
         g = str(r.get("Gruppo", "")).strip()
         note = str(r.get("Note", "")).strip().lower()
@@ -3540,10 +3194,6 @@ def _gruppi_trova_assistente(df: pd.DataFrame, gruppo: str) -> str:
 
 
 def _gruppi_dati_filtrati(df: pd.DataFrame, includi_inattivi: bool = False):
-    """Ritorna (df_filtrato, dizionario_gruppi) dove il dizionario è
-    {nome_gruppo: [{'nome':.., 'sigla':.., 'stato':'A'|'I'}, ...]}. I
-    Trasferiti sono sempre esclusi; gli Inattivi sono esclusi di default e
-    inclusi solo se 'includi_inattivi' è True."""
     if "Attivi / Inattivi" in df.columns:
         categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
         df = df[categorie != "TR"] if includi_inattivi else df[categorie == "A"]
@@ -3565,16 +3215,10 @@ def _gruppi_dati_filtrati(df: pd.DataFrame, includi_inattivi: bool = False):
 
 
 def _gruppi_ordina_membri(membri: list) -> list:
-    """Attivi prima (alfabetico), Inattivi dopo (alfabetico), in coda."""
     return sorted(membri, key=lambda m: (0 if m.get("stato") != "I" else 1, m["nome"]))
 
 
 def genera_excel_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False) -> bytes:
-    """Esporta i Gruppi di servizio come un 'poster': un riquadro colorato
-    per ciascun sorvegliante (due affiancati per banda), con intestazione
-    Sorvegliante/Assistente ed elenco numerato dei componenti con relativa
-    sigla (Anziano/Servitore di ministero/Pioniere Regolare/Speciale).
-    Esclude sempre i Trasferiti; include gli Inattivi solo se richiesto."""
     df, gruppi = _gruppi_dati_filtrati(df, includi_inattivi=includi_inattivi)
 
     nomi_gruppi = sorted(gruppi.keys())
@@ -3586,7 +3230,7 @@ def genera_excel_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = Fals
     bordo_sottile = Side(style="thin", color="999999")
     bordo = Border(left=bordo_sottile, right=bordo_sottile, top=bordo_sottile, bottom=bordo_sottile)
 
-    blocco_colonne = 3  # numero, nome, sigla
+    blocco_colonne = 3
     gutter = 1
     riga_cursore = 1
 
@@ -3638,7 +3282,7 @@ def genera_excel_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = Fals
             ws.column_dimensions[get_column_letter(col_nome)].width = 26
             ws.column_dimensions[get_column_letter(col_sigla)].width = 10
 
-        riga_cursore += 3 + max_membri + 2  # +2 righe di spaziatura tra bande
+        riga_cursore += 3 + max_membri + 2
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -3648,12 +3292,6 @@ def genera_excel_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = Fals
 
 def _gruppi_tabella_pdf(df: pd.DataFrame, nome_gruppo: str, membri: list,
                          colore_corpo: str, colore_testata: str, righe_totali: int = None):
-    """Costruisce la mini-tabella reportlab di un singolo gruppo (stessa
-    struttura della versione Excel: intestazione, Sorvegliante/Assistente,
-    elenco numerato con sigla). Se 'righe_totali' è specificato (il numero
-    di righe del gruppo più numeroso della banda), aggiunge righe vuote in
-    fondo così le due colonne colorate risultano sempre della stessa
-    altezza, anche se un gruppo ha meno componenti dell'altro."""
     membri_ordinati = _gruppi_ordina_membri(membri)
     assistente = _gruppi_trova_assistente(df, nome_gruppo)
     n_righe = righe_totali if righe_totali is not None else len(membri_ordinati)
@@ -3689,7 +3327,6 @@ def _gruppi_tabella_pdf(df: pd.DataFrame, nome_gruppo: str, membri: list,
         ("BOTTOMPADDING", (0, 0), (2, -1), 1),
         ("VALIGN", (0, 0), (2, -1), "MIDDLE"),
     ]
-    # Gli Inattivi (in coda all'elenco) hanno il testo in rosso.
     for i, m in enumerate(membri_ordinati):
         if m.get("stato") == "I":
             riga_tabella = 3 + i
@@ -3699,11 +3336,6 @@ def _gruppi_tabella_pdf(df: pd.DataFrame, nome_gruppo: str, membri: list,
 
 
 def genera_pdf_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False) -> bytes:
-    """Versione PDF dello stesso 'poster' dei Gruppi di servizio (vedi
-    genera_excel_gruppi_servizio): due riquadri colorati per banda,
-    interruzioni di pagina automatiche, ogni banda non si spezza tra due
-    pagine, margini stretti per far stare 4 gruppi (2 bande) per pagina.
-    Esclude sempre i Trasferiti; include gli Inattivi solo se richiesto."""
     df, gruppi = _gruppi_dati_filtrati(df, includi_inattivi=includi_inattivi)
     nomi_gruppi = sorted(gruppi.keys())
 
@@ -3736,10 +3368,9 @@ def genera_pdf_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False)
 
 def mostra_gruppi_servizio():
     st.title("👥 Gruppi di servizio")
-    if st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True):
-        vai_a("home")
-        st.rerun()
-    contenitore_associa = st.container()  # riserva lo spazio subito sotto Home
+    st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True,
+              on_click=vai_a, args=("home",))
+    contenitore_associa = st.container()
     st.caption("Seleziona uno o più Proclamatori e abbinali a un sorvegliante di gruppo.")
 
     if not collegato:
@@ -3791,7 +3422,6 @@ def mostra_gruppi_servizio():
                 on_click=lambda: st.session_state.pop("gruppi_export_pronto", None),
             )
 
-    # ── Filtro di stato: Attivi / Inattivi ───────────────────────────────
     if "Attivi / Inattivi" in df.columns:
         categorie = df["Attivi / Inattivi"].apply(categoria_stato_proclamatore)
     else:
@@ -3804,7 +3434,6 @@ def mostra_gruppi_servizio():
     def _chiave_cb(nome: str) -> str:
         return f"cb_gruppi_{nome}"
 
-    # Se lo stato filtrato cambia rispetto all'ultima volta, la selezione si azzera.
     if st.session_state.get("gruppi_stato_precedente") != codice_stato:
         for chiave in list(st.session_state.keys()):
             if chiave.startswith("cb_gruppi_"):
@@ -3818,7 +3447,6 @@ def mostra_gruppi_servizio():
         st.info("Nessun Proclamatore in questa categoria.")
         return
 
-    # ── Conteggio Attivi/Inattivi per ciascun sorvegliante (su tutti, non filtrati) ──
     conteggi_per_gruppo = {}
     for idx, riga in df.iterrows():
         stato_riga = categorie.loc[idx]
@@ -3828,7 +3456,6 @@ def mostra_gruppi_servizio():
         conteggi_per_gruppo.setdefault(g, {"A": 0, "I": 0})
         conteggi_per_gruppo[g][stato_riga] += 1
 
-    # ── Elenco con checkbox, raggruppato per sorvegliante di gruppo attuale ──
     gruppi_vista = {}
     for _, riga in df_filtrato.iterrows():
         nome = str(riga.get("Cognome e Nome", "")).strip()
@@ -3921,7 +3548,6 @@ def mostra_gruppi_servizio():
                                                                        riga_da_aggiornare=numero_riga_foglio)
                                 if not ok:
                                     errori.append(f"{nome}: {err_salva}")
-                        # I checkbox si azzerano subito dopo il click su Abbina, a prescindere dall'esito.
                         for nome in selezionati:
                             st.session_state.pop(_chiave_cb(nome), None)
                         if errori:
@@ -3935,8 +3561,6 @@ def mostra_gruppi_servizio():
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: Presenti alle adunanze
-# ─────────────────────────────────────────────────────────────────
-# MODULO S-88 (Registrazione dei presenti alle adunanze)
 # ─────────────────────────────────────────────────────────────────
 S88_CAMPI_RECT = {
     "1-Attendance_1": (161.84, 694.2, 221.65, 713.04),
@@ -4093,7 +3717,7 @@ S88_CAMPI_RECT = {
     "Service Year_4": (299.28, 365.16, 378.36, 386.76),
 }
 
-S88_MESI_ORDINE_SERVIZIO = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]  # Settembre..Agosto
+S88_MESI_ORDINE_SERVIZIO = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]
 
 
 def _s88_testo_centrato(c: rl_canvas.Canvas, testo: str, rect: tuple,
@@ -4270,7 +3894,7 @@ def _form_modifica_presenza(dati_selezione: dict):
             "Totale": str(int(totale)),
         }
         ok, err_salva = salva_riga_foglio(
-            workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE, 
+            workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE,
             valori, riga_da_aggiornare=numero_riga_foglio
         )
         if ok:
@@ -4332,14 +3956,12 @@ def _form_nuova_presenza():
 # ─────────────────────────────────────────────────────────────────
 def mostra_presenze_adunanze():
     st.title("🙌 Presenti alle adunanze")
-    
-    # Nasconde il tasto Home se si accede dal link rapido ?page=presenze
+
     is_modalita_ristretta = (st.query_params.get("page") == "presenze" or st.query_params.get("modalita") == "presenze")
-    
+
     if not is_modalita_ristretta:
-        if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
-            vai_a("home")
-            st.rerun()
+        st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True,
+                  on_click=vai_a, args=("home",))
 
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
@@ -4364,7 +3986,6 @@ def mostra_presenze_adunanze():
         st.info("Nessuna presenza registrata ancora.")
         return
 
-    # ── Genera modulo S-88 ────────────────────────────────────────────
     if not os.path.exists(PERCORSO_MODULO_S88):
         st.warning("Modulo S-88 non trovato: metti il file «S-88_I.pdf» nella stessa cartella di app.py "
                    "per poterlo generare.")
@@ -4384,7 +4005,6 @@ def mostra_presenze_adunanze():
                 on_click=lambda: st.session_state.pop("s88_pdf_pronto", None),
             )
 
-    # ── 1. PREPARAZIONE DATI E CREAZIONE MENU MESI ──
     df_prep = df.copy()
     df_prep["_dt"] = pd.to_datetime(df_prep["Data"], format="%d/%m/%Y", errors="coerce")
     df_prep = df_prep.dropna(subset=["_dt"])
@@ -4397,7 +4017,6 @@ def mostra_presenze_adunanze():
         st.warning("Nessuna data valida trovata nel foglio.")
         return
 
-    # ── 2. SELECTBOX IN ALTO ──
     st.markdown("### 📅 Seleziona Mese/Anno")
     mese_selezionato = st.selectbox(
         "Mese/Anno",
@@ -4417,15 +4036,14 @@ def mostra_presenze_adunanze():
 
     df_mese["_presenza_num"] = df_mese["In Presenza"].apply(a_float_it)
     df_mese["_zoom_num"] = df_mese["Su Zoom"].apply(a_float_it)
-    
+
     if "Totale" in df_mese.columns:
         df_mese["_totale_num"] = df_mese["Totale"].apply(a_float_it)
     else:
         df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
 
-    # ── 3. TABELLA RIEPILOGO MESE ──
     st.markdown("#### 📊 Riepilogo")
-    
+
     dati_riepilogo = []
     tipi_list = ["Infrasettimanale", "Fine settimana"]
 
@@ -4436,7 +4054,7 @@ def mostra_presenze_adunanze():
         totale = sotto["_totale_num"].sum()
         tot_presenza = sotto["_presenza_num"].sum()
         tot_zoom = sotto["_zoom_num"].sum()
-        
+
         media = (totale / settimane) if settimane > 0 else 0
         perc_zoom = (tot_zoom / totale * 100) if totale > 0 else 0
         perc_presenza = (tot_presenza / totale * 100) if totale > 0 else 0
@@ -4451,18 +4069,17 @@ def mostra_presenze_adunanze():
         })
 
     st.dataframe(
-        pd.DataFrame(dati_riepilogo), 
-        hide_index=True, 
+        pd.DataFrame(dati_riepilogo),
+        hide_index=True,
         use_container_width=True
     )
 
-    # ── 4. GRIGLIA DETTAGLIO MESE ──
     st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
-    
+
     colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
-    
+
     config_colonne = {
-        col: st.column_config.Column(alignment="center") 
+        col: st.column_config.Column(alignment="center")
         for col in colonne_visibili
     }
 
@@ -4522,38 +4139,32 @@ def mostra_presenze_adunanze():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
 # ─────────────────────────────────────────────────────────────────
-from datetime import datetime
-import io
-import re
-import pandas as pd
-import streamlit as st
 
-# ─────────────────────────────────────────────────────────────────
-# HELPER PER NORMALIZZAZIONE E FORMATTAZIONE DATE (YYYY-MM)
-# ─────────────────────────────────────────────────────────────────
 def normalizza_mese_anno(valore):
     """
     Estrae e formatta una o più date nel formato YYYY-MM come TESTO PURO.
     Garantisce che mesi ad una sola cifra (es. 2026-5) diventino '2026-05'.
+    Usata SOLO nella pagina Importa S-21: a differenza di
+    '_normalizza_data_report' (usata per il controllo rapporti in Home),
+    questa può ritornare una LISTA se nel testo sono presenti più date.
     """
     if pd.isna(valore) or valore is None:
         return ""
-        
+
     valore_str = str(valore).strip()
     if not valore_str:
         return ""
-    
-    # Se per errore viene passata una data intera ISO/datetime (es. 2026-05-01)
+
     if len(valore_str) >= 10 and valore_str[4] == '-' and valore_str[7] == '-':
         valore_str = valore_str[:7]
-        
+
     pattern = r'(\d{4})-(\d{1,2})'
     matches = re.findall(pattern, valore_str)
-    
+
     if matches:
         date_formattate = [f"{anno}-{int(mese):02d}" for anno, mese in matches]
         return date_formattate[0] if len(date_formattate) == 1 else date_formattate
-    
+
     return valore_str
 
 
@@ -4562,16 +4173,12 @@ def normalizza_mese_anno(valore):
 # ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
     st.title("📥 Importa da S-21")
-    
-    # ── Tastiera Navigazione ──────────────────────────────────────
+
     col_home, col_manuale = st.columns([1, 1])
     with col_home:
-        if st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True):
-            for chiave in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta", "s21_form_manuale_aperto"):
-                st.session_state.pop(chiave, None)
-            vai_a("home")
-            st.rerun()
-            
+        st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True,
+                  on_click=vai_a_home_reset_importa_s21)
+
     with col_manuale:
         if st.button("➕ Inserisci storico manualmente", key="s21_apri_manuale", use_container_width=True, type="primary"):
             st.session_state.s21_form_manuale_aperto = not st.session_state.get("s21_form_manuale_aperto", False)
@@ -4580,7 +4187,6 @@ def mostra_importa_s21():
         st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
-    # ── 1. FORM INSERIMENTO MANUALE ───────────────────────────────
     if st.session_state.get("s21_form_manuale_aperto", False):
         st.markdown("---")
         st.subheader("📝 Inserimento/Modifica Storico S-21 Manuale")
@@ -4595,7 +4201,6 @@ def mostra_importa_s21():
             st.error(err_tutti)
             return
 
-        # 1. Elenco proclamatori
         opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
         opzioni_proclamatori = [""] + [opzione_nuova]
         mappa_nomi_reali = {}
@@ -4606,17 +4211,16 @@ def mostra_importa_s21():
             if not nome:
                 continue
             stato_cod = str(riga.get("Attivi / Inattivi", "")).strip().upper()
-            
+
             if stato_cod in ("I", "INATTIVO"):
                 etichetta = f"⛔ {nome} (Inattivo)"
             elif stato_cod in ("TR", "TRASFERITO"):
                 etichetta = f"🚚 {nome} (Trasferito)"
             else:
                 etichetta = f"🟢 {nome}"
-            
+
             opzioni_proclamatori.append(etichetta)
             mappa_nomi_reali[etichetta] = nome
-            # Salviamo i dati dell'anagrafica per il recupero automatico
             mappa_dati_anagrafici[nome] = {
                 "gruppo": str(riga.get("Gruppo", "")).strip(),
                 "tipo": str(riga.get("Tipo", "")).strip()
@@ -4624,19 +4228,17 @@ def mostra_importa_s21():
 
         scelta_etichetta = st.selectbox("Abbina al Proclamatore:", opzioni_proclamatori, key="s21_man_persona")
         nuova_persona_flag = (scelta_etichetta == opzione_nuova)
-        
+
         if nuova_persona_flag:
             nome_finale = st.text_input("Nome e Cognome nuovo proclamatore:", key="s21_man_nome_nuovo")
             default_tipo = ""
             default_gruppo = ""
         else:
             nome_finale = mappa_nomi_reali.get(scelta_etichetta, "")
-            # Recupero dati automatico dall'anagrafica
             dati_rec = mappa_dati_anagrafici.get(nome_finale, {})
             default_tipo = dati_rec.get("tipo", "")
             default_gruppo = dati_rec.get("gruppo", "")
 
-        # 2. Tipo Servizio (con default dall'Anagrafica)
         opzioni_tipo_servizio = ["", "Proclamatore", "Pioniere Regolare", "Pioniere Speciale", "Missionario sul campo"]
         idx_tipo = opzioni_tipo_servizio.index(default_tipo) if default_tipo in opzioni_tipo_servizio else 0
 
@@ -4649,26 +4251,24 @@ def mostra_importa_s21():
 
         pion_aus_disabilitato = (tipo_servizio_scelto != "Proclamatore")
 
-        # 3. Gruppo e Stato (con default dall'Anagrafica)
         gruppi_disponibili = [""] + sorted({str(g).strip() for g in df_anagrafica.get("Gruppo", pd.Series(dtype=str)) if str(g).strip()})
         idx_gruppo = gruppi_disponibili.index(default_gruppo) if default_gruppo in gruppi_disponibili else 0
 
         col_grp, col_st = st.columns(2)
         with col_grp:
             sorvegliante_gruppo = st.selectbox(
-                "Sorvegliante del gruppo:", 
-                gruppi_disponibili, 
+                "Sorvegliante del gruppo:",
+                gruppi_disponibili,
                 index=idx_gruppo,
                 key=f"s21_man_gruppo_{nome_finale}"
             )
         with col_st:
             st.text_input("Stato", value="Attivo", disabled=True, key="s21_man_stato_vis")
 
-        # ── VERIFICA COMPILAZIONE CAMPI PER ABILITARE LA GRIGLIA ──
         campi_compilati = (
-            bool(scelta_etichetta) and 
-            bool(nome_finale.strip()) and 
-            bool(tipo_servizio_scelto) and 
+            bool(scelta_etichetta) and
+            bool(nome_finale.strip()) and
+            bool(tipo_servizio_scelto) and
             bool(sorvegliante_gruppo)
         )
 
@@ -4679,17 +4279,16 @@ def mostra_importa_s21():
                 st.rerun()
         else:
             st.markdown("##### 📅 Dati di Servizio (Schema S-21)")
-            
+
             anno_corrente = datetime.now().year
             anno_servizio = st.number_input("Anno di Servizio:", min_value=2000, max_value=2099, value=anno_corrente, step=1, key="s21_man_anno")
-            
+
             mesi_s21 = [
                 f"{anno_servizio-1}-09", f"{anno_servizio-1}-10", f"{anno_servizio-1}-11", f"{anno_servizio-1}-12",
                 f"{anno_servizio}-01", f"{anno_servizio}-02", f"{anno_servizio}-03", f"{anno_servizio}-04",
                 f"{anno_servizio}-05", f"{anno_servizio}-06", f"{anno_servizio}-07", f"{anno_servizio}-08"
             ]
 
-            # 4. CARICAMENTO DATI ESISTENTI DAL FOGLIO "TUTTI"
             mappa_esistenti = {}
             if not df_tutti.empty and nome_finale.strip():
                 col_nome_tutti = None
@@ -4715,7 +4314,7 @@ def mostra_importa_s21():
                         m_a_norm = normalizza_mese_anno(m_a)
                         if isinstance(m_a_norm, list):
                             m_a_norm = m_a_norm[0]
-                            
+
                         if m_a_norm:
                             valore_serv = str(riga.get("Servizio", riga.get("Ha partecipato al ministero", ""))).strip().lower()
                             mappa_esistenti[m_a_norm] = {
@@ -4755,7 +4354,6 @@ def mostra_importa_s21():
 
             df_iniziale = pd.DataFrame(righe_griglia)
 
-            # GRIGLIA CON ALTEZZA AUMENTATA (height=480) PER VEDERE TUTTE E 12 LE RIGHE
             tabella_manuale = st.data_editor(
                 df_iniziale,
                 hide_index=True,
@@ -4783,15 +4381,13 @@ def mostra_importa_s21():
                 st.session_state.s21_form_manuale_aperto = False
                 st.rerun()
 
-            # 5. SALVATAGGIO
             if btn_salva:
                 nome_pulito = nome_finale.strip()
                 if not nome_pulito:
                     st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
                 else:
-                    # 5.1 SALVATAGGIO IN ANAGRAFICA
                     nomi_esistenti_anag = [str(x).strip().lower() for x in df_anagrafica.get("Cognome e Nome", pd.Series(dtype=str)) if str(x).strip()]
-                    
+
                     if nuova_persona_flag or (nome_pulito.lower() not in nomi_esistenti_anag):
                         if nome_pulito.lower() in nomi_esistenti_anag:
                             st.warning(f"⚠️ **{nome_pulito}** è già presente in Anagrafica. Inserimento anagrafico saltato.")
@@ -4810,7 +4406,7 @@ def mostra_importa_s21():
                                 "Gruppo": sorvegliante_gruppo,
                                 "Attivi / Inattivi": "A"
                             }
-                            
+
                             try:
                                 salva_riga_anagrafica(workbook, nuovo_rec, None)
                             except TypeError:
@@ -4818,10 +4414,9 @@ def mostra_importa_s21():
 
                     aggiornati = 0
                     inseriti = 0
-                    
+
                     data_ora_consegna = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-                    # 5.2 SALVATAGGIO SU FOGLIO TUTTI
                     for _, r in tabella_manuale.iterrows():
                         if not r["Partecipato"]:
                             continue
@@ -4832,18 +4427,18 @@ def mostra_importa_s21():
                             m_a = m_a[0]
                         if not m_a:
                             continue
-                        
+
                         part = "Si"
                         is_pion_aus = False if pion_aus_disabilitato else bool(r["Pioniere Ausiliario"])
                         tipo = "Pioniere Ausiliario" if is_pion_aus else tipo_servizio_scelto
-                        
+
                         if tipo == "Proclamatore":
                             valore_ore = ""
                         else:
                             valore_ore = str(int(r["Ore"])) if pd.notna(r["Ore"]) and r["Ore"] > 0 else ""
-                            
+
                         valore_studi = str(int(r["Studi Biblici"])) if pd.notna(r["Studi Biblici"]) else "0"
-                        
+
                         valori_riga = {
                             "Informazioni cronologiche": data_ora_consegna,
                             "Cognome e Nome": nome_pulito,
@@ -4857,7 +4452,7 @@ def mostra_importa_s21():
                             "Sorvegliante del gruppo": sorvegliante_gruppo,
                             "ND": "ND"
                         }
-                        
+
                         if m_a in mappa_esistenti:
                             riga_idx = mappa_esistenti[m_a]["index_df"]
                             riga_excel_numero = RIGA_INTESTAZIONE_TUTTI + 1 + riga_idx
@@ -4888,7 +4483,6 @@ def mostra_importa_s21():
 
         st.markdown("---")
 
-    # ── 2. CARICAMENTO DA FILE PDF AUTOMATICO ─────────────────────
     st.caption("Carica la S-21 ricevuta da un'altra congregazione per un Proclamatore trasferito (o mai "
                "appartenuto qui): provo a leggere automaticamente ore, studi e mesi dal PDF, ma "
                "**niente viene scritto in archivio finché non confermi tu**, riga per riga.")
@@ -4924,7 +4518,6 @@ def mostra_importa_s21():
         st.success("✔ Testo letto correttamente dal PDF. Controlla comunque ogni valore prima di "
                    "confermare — soprattutto \"Tipo Servizio\", che è solo una proposta automatica.")
 
-    # ── 2.1 Riconoscimento persona dal PDF ────────────────────────
     st.subheader("1. Di chi è questa S-21?")
     nomi_letti = [p["nome"].strip() for p in dati_estratti["pannelli"] if p["nome"].strip()]
     nome_suggerito = nomi_letti[0] if nomi_letti else ""
@@ -4971,7 +4564,7 @@ def mostra_importa_s21():
             st.write("Attivo (nuova persona)")
         if nome_persona.strip():
             pannello_rif = dati_estratti["pannelli"][-1] if dati_estratti["pannelli"] else {}
-            
+
             id_massimo = 0
             if "ID" in df_anagrafica.columns:
                 ids_numerici = pd.to_numeric(df_anagrafica["ID"], errors="coerce").dropna()
@@ -5016,7 +4609,6 @@ def mostra_importa_s21():
         st.warning("Inserisci il nome della persona per continuare.")
         return
 
-    # ── 2.2 Tabella di revisione dal PDF ──────────────────────────
     st.subheader("2. Controlla i mesi da importare")
 
     df_tutti, err_tutti = leggi_foglio_tutti(workbook)
@@ -5027,7 +4619,7 @@ def mostra_importa_s21():
     if not df_tutti.empty:
         col_nome_tutti = next((c for c in df_tutti.columns if str(c).strip().lower() in ("cognome e nome", "nome", "proclamatore")), df_tutti.columns[1] if len(df_tutti.columns) > 1 else None)
         col_mese_tutti = next((c for c in df_tutti.columns if str(c).strip().lower() in ("mese", "mese/anno")), df_tutti.columns[2] if len(df_tutti.columns) > 2 else None)
-        
+
         if col_nome_tutti and col_mese_tutti:
             righe_persona_tutti = df_tutti[df_tutti[col_nome_tutti].astype(str).str.strip().str.lower() == nome_persona.strip().lower()]
             for m in righe_persona_tutti[col_mese_tutti].dropna():
@@ -5062,8 +4654,7 @@ def mostra_importa_s21():
 
     colonne_editor = ["Importa", "Mese/Anno", "Tipo Servizio", "Ha partecipato al ministero",
                        "Ore", "Studi Biblici", "Osservazioni", "Anno servizio letto", "Mese (dal modulo)"]
-    
-    # GRIGLIA IMPORTAZIONE PDF CON ALTEZZA AUMENTATA (height=480)
+
     tabella_modificata = st.data_editor(
         df_proposte[colonne_editor],
         hide_index=True,
@@ -5090,7 +4681,6 @@ def mostra_importa_s21():
         },
     )
 
-    # ── 2.3 Conferma e salvataggio da PDF ─────────────────────────
     st.subheader("3. Conferma")
     righe_da_importare = tabella_modificata[tabella_modificata["Importa"] == True]
     righe_da_importare = righe_da_importare[righe_da_importare["Mese/Anno"].astype(str).str.strip() != ""]
@@ -5109,12 +4699,12 @@ def mostra_importa_s21():
                     df_con_indice["Cognome e Nome"] == scelta_nome].tolist()
                 if corrispondenza_idx:
                     riga_numero = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + corrispondenza_idx[0]
-            
+
             try:
                 ok, err_salva = salva_riga_anagrafica(workbook, aggiornamento_anagrafica, riga_numero)
             except TypeError:
                 ok, err_salva = salva_riga_anagrafica(workbook, aggiornamento_anagrafica)
-                
+
             if not ok:
                 errori.append(f"Anagrafica: {err_salva}")
 
@@ -5125,11 +4715,11 @@ def mostra_importa_s21():
             mese_anno = normalizza_mese_anno(riga["Mese/Anno"])
             if isinstance(mese_anno, list):
                 mese_anno = mese_anno[0]
-                
+
             if mese_anno in mesi_presenti_ora:
                 errori.append(f"{mese_anno}: saltato, già presente in archivio.")
                 continue
-            
+
             valori_pdf = {
                 "Informazioni cronologiche": data_ora_consegna_pdf,
                 "Cognome e Nome": nome_persona.strip(),
@@ -5143,7 +4733,7 @@ def mostra_importa_s21():
                 "Sorvegliante del gruppo": aggiornamento_anagrafica.get("Gruppo", "") if aggiornamento_anagrafica else "",
                 "ND": "ND"
             }
-            
+
             try:
                 ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_TUTTI, RIGA_INTESTAZIONE_TUTTI, valori_pdf, None)
             except TypeError:
@@ -5165,11 +4755,9 @@ def mostra_importa_s21():
         if errori:
             st.warning("Alcune note o errori durante l'importazione:\n- " + "\n- ".join(errori))
 
-        # Pulizia dello stato e ricaricamento della pagina
         for k in ("importa_s21_dati", "importa_s21_chiave_file", "importa_s21_persona_scelta", "importa_s21_tabella_editor"):
             st.session_state.pop(k, None)
         st.rerun()
-import streamlit as st
 import streamlit.components.v1 as components
 
 # ─────────────────────────────────────────────────────────────────
@@ -5177,9 +4765,8 @@ import streamlit.components.v1 as components
 # ─────────────────────────────────────────────────────────────────
 def mostra_impostazioni():
     st.title("⚙️ Impostazioni")
-    if st.button("🏠 Torna alla Home", key="home_da_impostazioni", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_impostazioni", use_container_width=True,
+              on_click=vai_a, args=("home",))
 
     if not collegato:
         st.warning("⚠️ Nessun foglio dati collegato.")
@@ -5212,11 +4799,9 @@ def mostra_impostazioni():
 
     st.markdown("---")
 
-    # ── LINK ACCESSO RAPIDO PRESENZE CON TASTO COPIA ──
     st.subheader("🔗 Link di Accesso Rapido Presenze")
     st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
 
-    # Sostituisci l'URL qui sotto con il link reale della tua app Streamlit Cloud
     url_app = "https://gestioneseg.streamlit.app/?page=presenze"
 
     html_copia_link = f"""
@@ -5263,202 +4848,6 @@ def mostra_impostazioni():
 
 
 # ─────────────────────────────────────────────────────────────────
-# PAGINA: PRESENTI ALLE ADUNANZE
-# ─────────────────────────────────────────────────────────────────
-def mostra_presenze_adunanze():
-    st.title("🙌 Presenti alle adunanze")
-    
-    # Se si accede in modalità ristretta (link ?page=presenze), il tasto "Torna alla Home" non viene mostrato
-    is_modalita_ristretta = (st.query_params.get("page") == "presenze" or st.query_params.get("modalita") == "presenze")
-    
-    if not is_modalita_ristretta:
-        if st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True):
-            vai_a("home")
-            st.rerun()
-
-    if not collegato:
-        st.warning("⚠️ Nessun foglio dati collegato.")
-        return
-
-    if st.button("➕ Inserisci presenti alle adunanze", key="apri_nuova_presenza", use_container_width=True):
-        st.session_state.presenze_form_nuovo_aperto = not st.session_state.get(
-            "presenze_form_nuovo_aperto", False)
-        st.session_state.presenze_modifica = None
-    if st.session_state.get("presenze_form_nuovo_aperto"):
-        _form_nuova_presenza()
-
-    if st.session_state.get("presenze_modifica"):
-        _form_modifica_presenza(st.session_state.presenze_modifica)
-
-    df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_PRESENZE, RIGA_INTESTAZIONE_PRESENZE)
-    if err:
-        st.error(err)
-        return
-
-    if df.empty:
-        st.info("Nessuna presenza registrata ancora.")
-        return
-
-    # ── Genera modulo S-88 ────────────────────────────────────────────
-    if not os.path.exists(PERCORSO_MODULO_S88):
-        st.warning("Modulo S-88 non trovato: metti il file «S-88_I.pdf» nella stessa cartella di app.py "
-                   "per poterlo generare.")
-    else:
-        if st.button("📄 Genera modulo S-88", key="genera_s88", use_container_width=True):
-            with st.spinner("Genero il modulo S-88…"):
-                st.session_state.s88_pdf_pronto = genera_pdf_s88(df)
-
-        if st.session_state.get("s88_pdf_pronto"):
-            st.download_button(
-                "⬇️ Scarica modulo S-88 (PDF)",
-                data=st.session_state.s88_pdf_pronto,
-                file_name="Modulo_S-88.pdf",
-                mime="application/pdf",
-                key="download_s88",
-                use_container_width=True,
-                on_click=lambda: st.session_state.pop("s88_pdf_pronto", None),
-            )
-
-    # ── 1. PREPARAZIONE DATI E CREAZIONE MENU MESI ──
-    df_prep = df.copy()
-    df_prep["_dt"] = pd.to_datetime(df_prep["Data"], format="%d/%m/%Y", errors="coerce")
-    df_prep = df_prep.dropna(subset=["_dt"])
-    df_prep["_anno_mese"] = df_prep["_dt"].dt.strftime("%Y-%m")
-    df_prep["_riga_foglio"] = RIGA_INTESTAZIONE_PRESENZE + 1 + df_prep.index
-
-    # Mesi unici ordinati dal più recente
-    mesi_disponibili = sorted(df_prep["_anno_mese"].unique(), reverse=True)
-
-    if not mesi_disponibili:
-        st.warning("Nessuna data valida trovata nel foglio.")
-        return
-
-    # ── 2. SELECTBOX IN ALTO ──
-    st.markdown("### 📅 Seleziona Mese/Anno")
-    mese_selezionato = st.selectbox(
-        "Mese/Anno",
-        options=mesi_disponibili,
-        label_visibility="collapsed",
-        key="select_anno_mese"
-    )
-
-    if "presenze_tabella_versione" not in st.session_state:
-        st.session_state.presenze_tabella_versione = 0
-
-    if st.session_state.get("presenze_ultimo_mese_visto") != mese_selezionato:
-        st.session_state.presenze_ultimo_mese_visto = mese_selezionato
-        st.session_state.presenze_tabella_versione += 1
-
-    # Filtriamo i dati per il mese selezionato
-    df_mese = df_prep[df_prep["_anno_mese"] == mese_selezionato].copy()
-
-    # Conversione numerica sicura
-    df_mese["_presenza_num"] = df_mese["In Presenza"].apply(a_float_it)
-    df_mese["_zoom_num"] = df_mese["Su Zoom"].apply(a_float_it)
-    
-    if "Totale" in df_mese.columns:
-        df_mese["_totale_num"] = df_mese["Totale"].apply(a_float_it)
-    else:
-        df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
-
-    # ── 3. TABELLA RIEPILOGO MESE ──
-    st.markdown("#### 📊 Riepilogo")
-    
-    dati_riepilogo = []
-    tipi_list = ["Infrasettimanale", "Fine settimana"]
-
-    for tipo in tipi_list:
-        sotto = df_mese[df_mese["Tipo Adunanza"] == tipo]
-
-        settimane = len(sotto)
-        totale = sotto["_totale_num"].sum()
-        tot_presenza = sotto["_presenza_num"].sum()
-        tot_zoom = sotto["_zoom_num"].sum()
-        
-        media = (totale / settimane) if settimane > 0 else 0
-        perc_zoom = (tot_zoom / totale * 100) if totale > 0 else 0
-        perc_presenza = (tot_presenza / totale * 100) if totale > 0 else 0
-
-        dati_riepilogo.append({
-            "Tipo Adunanza": tipo,
-            "Sett.": settimane,
-            "Media": f"{media:,.2f}".replace(".", ","),
-            "Totale": int(totale),
-            "% Zoom": f"{perc_zoom:.2f}%".replace(".", ","),
-            "% Pres.": f"{perc_presenza:.2f}%".replace(".", ","),
-        })
-
-    st.dataframe(
-        pd.DataFrame(dati_riepilogo), 
-        hide_index=True, 
-        use_container_width=True
-    )
-
-    # ── 4. GRIGLIA DETTAGLIO MESE (Con testo/numeri centrati) ──
-    st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
-    
-    colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
-    
-    config_colonne = {
-        col: st.column_config.Column(alignment="center") 
-        for col in colonne_visibili
-    }
-
-    df_mese_reset = df_mese.reset_index(drop=True)
-    chiave_tabella_dettaglio = f"presenze_tabella_dettaglio_{st.session_state.presenze_tabella_versione}"
-    evento_dettaglio = st.dataframe(
-        df_mese_reset[colonne_visibili],
-        hide_index=True,
-        use_container_width=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key=chiave_tabella_dettaglio,
-        column_config=config_colonne,
-    )
-
-    righe_sel_dett = evento_dettaglio.selection.rows if evento_dettaglio and evento_dettaglio.selection else []
-    righe_sel_dett = [i for i in righe_sel_dett if i < len(df_mese_reset)]
-
-    if righe_sel_dett:
-        riga_scelta = df_mese_reset.loc[righe_sel_dett[0]]
-        numero_riga_foglio = int(riga_scelta["_riga_foglio"])
-
-        col_mod, col_elim = st.columns(2)
-        with col_mod:
-            if st.button("✏️ Modifica riga selezionata", key="presenze_btn_mod", use_container_width=True):
-                st.session_state.presenze_form_nuovo_aperto = False
-                st.session_state.presenze_modifica = {
-                    "riga": riga_scelta.to_dict(),
-                    "numero_riga_foglio": numero_riga_foglio,
-                }
-                st.rerun()
-        with col_elim:
-            if st.button("🗑️ Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True):
-                st.session_state.presenze_conferma_elimina = numero_riga_foglio
-                st.rerun()
-
-        if st.session_state.get("presenze_conferma_elimina") == numero_riga_foglio:
-            st.warning("Sei sicuro di voler eliminare questa riga? L'operazione non è reversibile.")
-            col_si, col_no = st.columns(2)
-            with col_si:
-                if st.button("✔ Sì, elimina", key="presenze_conf_si", type="primary", use_container_width=True):
-                    ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
-                    if ok:
-                        st.cache_data.clear()
-                        st.session_state.presenze_conferma_elimina = None
-                        st.session_state.presenze_tabella_versione += 1
-                        st.success("✔ Riga eliminata.")
-                        st.rerun()
-                    else:
-                        st.error(err_elim)
-            with col_no:
-                if st.button("No, annulla", key="presenze_conf_no", use_container_width=True):
-                    st.session_state.presenze_conferma_elimina = None
-                    st.rerun()
-    else:
-        st.session_state.presenze_conferma_elimina = None
-
-# ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
 # ─────────────────────────────────────────────────────────────────
 CATEGORIE_FILIALE = [
@@ -5478,8 +4867,6 @@ COLORI_FILIALE = {
 
 
 def _filiale_mesi_disponibili(df_tutti: pd.DataFrame) -> list:
-    """Ritorna i (anno, mese) per cui esiste almeno un rapporto nel foglio
-    Tutti, ordinati dal più recente al più vecchio."""
     mesi = set()
     if not df_tutti.empty and "Mese/Anno" in df_tutti.columns:
         for m in df_tutti["Mese/Anno"].dropna().unique():
@@ -5492,10 +4879,6 @@ def _filiale_mesi_disponibili(df_tutti: pd.DataFrame) -> list:
 
 
 def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
-    """Calcola, per il mese scelto, riga per riga per ciascuna categoria:
-    Rapporti Registrati (conteggio), Forma Ministero (quanti hanno
-    partecipato), Ore totali, Studi totali — più il totale generale.
-    Ritorna (righe: list[dict], totale: dict)."""
     def _stesso_mese(mese_anno):
         try:
             a, m = str(mese_anno).split("-")
@@ -5530,9 +4913,8 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
 
 def mostra_rapporto_filiale():
     st.title("🏢 Rapporto per la Filiale")
-    if st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True,
+              on_click=vai_a, args=("home",))
     st.caption("Dati statistici mensili (tipo modulo S-10), calcolati dal foglio Tutti.")
 
     if not collegato:
@@ -5623,13 +5005,10 @@ def mostra_rapporto_filiale():
 
 
 def _form_modifica_rapporto_tutti(dati_selezione: dict):
-    """Form di modifica di una riga del foglio 'Tutti' (colonne C..J),
-    aperto cliccando una riga dentro la tabella espansa di un Proclamatore
-    in Storico rapporti consegnati."""
     nome = dati_selezione["nome"]
     mese_leggibile = dati_selezione["mese_leggibile"]
     riga_foglio = dati_selezione["riga_foglio"]
-    grezza = dati_selezione["grezza"]  # [C, D, E, F, G, H, I, J]
+    grezza = dati_selezione["grezza"]
 
     st.title("Modifica rapporto")
     st.caption(f"{nome} — {mese_leggibile} (foglio «{NOME_FOGLIO_TUTTI}», riga {riga_foglio})")
@@ -5673,7 +5052,6 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
         nuova_grezza[5] = formatta_numero_it(cred_ore)
         nuova_grezza[6] = studi.strip()
         nuova_grezza[7] = osservazioni.strip()
-        # nuova_grezza[3] (colonna F) resta invariata, non la gestiamo nel form
 
         ok, err = salva_riga_tutti(workbook, riga_foglio, nuova_grezza)
         if ok:
@@ -5689,9 +5067,8 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 # ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
-    if st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True):
-        vai_a("home")
-        st.rerun()
+    st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True,
+              on_click=vai_a, args=("home",))
     st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
                f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
 
@@ -5717,7 +5094,6 @@ def mostra_storico_proclamatori():
         st.error(err_tutti)
         return
 
-    # ── Elenco anni teocratici disponibili ──
     anni_presenti = anni_teocratici_per_menu(df_tutti)
 
     def formatta_anno_teocratico(valore):
@@ -5761,36 +5137,33 @@ def mostra_storico_proclamatori():
 
     nomi = sorted(n for n in df_anagrafica["Cognome e Nome"].astype(str).str.strip().unique() if n)
 
-    # Esclude i Trasferiti ("TR") ed eventuali vuoti
     if colonna_stato:
         nomi = [n for n in nomi if stato_valido_anagrafica(stato_anagrafica_per_nome.get(n, ""))]
-    
+
     testo_ricerca = ricerca.strip().lower()
     if testo_ricerca:
         nomi = [n for n in nomi if testo_ricerca in n.lower()]
 
-    # ── LOGICA CALCOLO STATO ──
     def calcola_stato_proclamatore(nome: str) -> str:
         st_anag = stato_anagrafica_per_nome.get(nome, "").strip().upper()
-        
-        # 1. Se in Anagrafica è segnato come Inattivo ("I" / "INATTIVO") -> Inattivo immediato
+
         if st_anag.startswith("I"):
             return "inattivo"
 
         col_partecipazione = "Ha partecipato al ministero"
         righe_p = df_tutti[df_tutti["Nome"].astype(str).str.strip().str.lower() == nome.lower()]
-        
+
         if not righe_p.empty and col_partecipazione in righe_p.columns:
             righe_anno_corrente = righe_p[
                 righe_p["Mese/Anno"].apply(anno_teocratico_di) == anno_scelto
             ].sort_values("Mese/Anno")
-            
+
             if not righe_anno_corrente.empty:
                 valori_no = [
                     str(v).strip().lower() in ["no", "false", "0"]
                     for v in righe_anno_corrente[col_partecipazione]
                 ]
-                
+
                 consecutivi_no = 0
                 for e_no in reversed(valori_no):
                     if e_no:
@@ -5798,10 +5171,8 @@ def mostra_storico_proclamatori():
                     else:
                         break
 
-                # 6 "No" consecutivi -> Inattivo
                 if consecutivi_no >= 6:
                     return "inattivo"
-                # Almeno un "No" registrato -> Irregolare
                 elif any(valori_no):
                     return "irregolare"
 
@@ -5813,7 +5184,6 @@ def mostra_storico_proclamatori():
     tot_inattivi = sum(1 for s in mappa_stati.values() if s == "inattivo")
     tot_irregolari = sum(1 for s in mappa_stati.values() if s == "irregolare")
 
-    # ── FILTRO RADIO BUTTONS ──────────────────────────────────────────────
     scelta_stato = st.radio(
         "Filtra per stato:",
         options=["Tutti", "Attivi", "Inattivi", "Irregolari"],
@@ -5838,7 +5208,6 @@ def mostra_storico_proclamatori():
         st.info("Nessun Proclamatore corrisponde ai criteri di ricerca.")
         return
 
-    # ── RAGGRUPPAMENTO PER GRUPPO ────────────────────────────────────────
     gruppi = {}
     for n in nomi:
         g = gruppo_per_nome.get(n, "") or "(Senza gruppo)"
@@ -5912,7 +5281,6 @@ def mostra_storico_proclamatori():
                             }
                             st.rerun()
 
-    # ── RENDERING FILTRATO PER GRUPPO ──────────────────────────────────
     for gruppo in sorted(gruppi.keys()):
         if gruppi[gruppo]:
             if gruppo == "(Senza gruppo)":
@@ -5926,17 +5294,16 @@ def mostra_storico_proclamatori():
                     unsafe_allow_html=True
                 )
             else:
-                # Banner moderno per il gruppo con doppio badge e conteggio
                 st.markdown(
                     f"""
                     <div style="
-                        display: flex; 
-                        align-items: center; 
+                        display: flex;
+                        align-items: center;
                         justify-content: space-between;
-                        background: linear-gradient(135deg, #1e293b 0%, #334155 100%); 
-                        color: white; 
-                        padding: 10px 18px; 
-                        border-radius: 10px; 
+                        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+                        color: white;
+                        padding: 10px 18px;
+                        border-radius: 10px;
                         margin: 20px 0 12px 0;
                         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
                     ">
@@ -5955,14 +5322,14 @@ def mostra_storico_proclamatori():
             for nome in gruppi[gruppo]:
                 _riga_proclamatore(nome)
             st.divider()
-   
+
 # ─────────────────────────────────────────────────────────────────
 # CONTROLLO ACCESSO RISTRETTO (DA RUOLO O LINK DIRETTO)
 # ─────────────────────────────────────────────────────────────────
 query_params = st.query_params
 modalita_solo_presenze = (
     st.session_state.get("ruolo") == "presenze" or
-    query_params.get("page") == "presenze" or 
+    query_params.get("page") == "presenze" or
     query_params.get("modalita") == "presenze"
 )
 
@@ -5989,7 +5356,7 @@ elif st.session_state.pagina == "gruppi":
 elif st.session_state.pagina == "filiale":
     mostra_rapporto_filiale()
 elif st.session_state.pagina == "presenze":
-    mostra_presenze_adunanze()    
+    mostra_presenze_adunanze()
 elif st.session_state.pagina == "importa_s21":
     mostra_importa_s21()
 elif st.session_state.pagina == "impostazioni":
