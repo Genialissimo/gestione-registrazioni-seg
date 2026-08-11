@@ -2131,6 +2131,7 @@ def mostra_home():
     df_tutti_home = pd.DataFrame()
 
     esito_presenze_adunanza = None
+    nomi_mancanti_rapporto_mese = None  # None = non calcolabile; lista = proclamatori attivi senza rapporto del mese
 
     if collegato:
         try:
@@ -2164,6 +2165,9 @@ def mostra_home():
                     completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
                     cls_badge = "hud-green" if completo else "hud-red"
                     badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
+
+                    # Proclamatori attivi che non compaiono ancora in "Risposte del modulo 9" (colonna B) per questo mese
+                    nomi_mancanti_rapporto_mese = sorted(nomi_attivi_home - nomi_consegnati_home)
 
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
@@ -2252,6 +2256,17 @@ def mostra_home():
             badge_anagrafica = ""
 
     promemoria = []
+
+    # ─────────────────────────────────────────────────────────────────
+    # Segnalazione: Rapporto del mese corrente (da Anagrafica attivi + foglio
+    # "Risposte del modulo 9", colonna B) — non ancora consegnato
+    # ─────────────────────────────────────────────────────────────────
+    if nomi_mancanti_rapporto_mese:
+        n_mancanti_mese = len(nomi_mancanti_rapporto_mese)
+        dot_cls_mese = "dot-yellow" if n_mancanti_mese < 5 else "dot-red"
+        testo_mese = "Rapporto del mese non ancora consegnato:<br>" + "<br>".join(nomi_mancanti_rapporto_mese)
+        promemoria.append((dot_cls_mese, testo_mese))
+    # Se tutti hanno già consegnato (o non ci sono proclamatori attivi), non si scrive nulla.
 
     # ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
