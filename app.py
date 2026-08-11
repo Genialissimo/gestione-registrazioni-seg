@@ -2059,6 +2059,72 @@ def mostra_home():
             cursor: not-allowed !important;
         }
 
+        /* ── Mini-card cliccabile: Rapporto del mese non ancora consegnato ── */
+        div[class*="st-key-alert_mese_corrente"] {
+            position: relative !important;
+            width: 92%;
+            max-width: 900px;
+            margin: 0 auto 14px auto;
+            border-radius: 10px;
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.15);
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        div[class*="st-key-alert_mese_corrente"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 4px 7px 18px rgba(0,0,0,0.22);
+        }
+        div[class*="st-key-alert_mese_corrente"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]) {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            z-index: 5 !important;
+        }
+        div[class*="st-key-alert_mese_corrente"] div[data-testid="stButton"] {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        div[class*="st-key-alert_mese_corrente"] div[data-testid="stButton"] button {
+            width: 100% !important;
+            height: 100% !important;
+            opacity: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .alert-mese-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.98rem;
+            pointer-events: none;
+        }
+        .alert-mese-yellow {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.45);
+            color: #92400e;
+        }
+        .alert-mese-red {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            color: #b91c1c;
+        }
+        .alert-mese-freccia {
+            font-size: 1.2rem;
+            opacity: 0.6;
+        }
+
         .postit-card {
             width: 92%;
             max-width: 900px;
@@ -2258,15 +2324,12 @@ def mostra_home():
     promemoria = []
 
     # ─────────────────────────────────────────────────────────────────
-    # Segnalazione: Rapporto del mese corrente (da Anagrafica attivi + foglio
-    # "Risposte del modulo 9", colonna B) — non ancora consegnato
+    # Rapporto del mese corrente (da Anagrafica attivi + foglio "Risposte del
+    # modulo 9", colonna B) — non ancora consegnato. Non entra nel post-it
+    # statico: viene mostrato come mini-card cliccabile a parte (vedi sotto),
+    # che porta direttamente a "Rapporti consegnati".
     # ─────────────────────────────────────────────────────────────────
-    if nomi_mancanti_rapporto_mese:
-        n_mancanti_mese = len(nomi_mancanti_rapporto_mese)
-        dot_cls_mese = "dot-yellow" if n_mancanti_mese < 5 else "dot-red"
-        testo_mese = "Rapporto del mese non ancora consegnato:<br>" + "<br>".join(nomi_mancanti_rapporto_mese)
-        promemoria.append((dot_cls_mese, testo_mese))
-    # Se tutti hanno già consegnato (o non ci sono proclamatori attivi), non si scrive nulla.
+    n_mancanti_mese = len(nomi_mancanti_rapporto_mese) if nomi_mancanti_rapporto_mese else 0
 
     # ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
@@ -2365,6 +2428,21 @@ def mostra_home():
     tabs = st.tabs(nomi_tab)
 
     with tabs[0]:
+        if n_mancanti_mese > 0:
+            cls_alert = "alert-mese-yellow" if n_mancanti_mese < 5 else "alert-mese-red"
+            with st.container(key="alert_mese_corrente"):
+                st.markdown(
+                    f"""
+                    <div class="alert-mese-box {cls_alert}">
+                        <span>📨 Rapporto del mese non ancora consegnato: {n_mancanti_mese}</span>
+                        <span class="alert-mese-freccia">›</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                st.button(" ", key="nav_alert_mese_corrente", disabled=not collegato,
+                          on_click=vai_a, args=("registrazioni",), use_container_width=True)
+
         st.markdown(postit_html, unsafe_allow_html=True)
 
     for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
@@ -2531,6 +2609,22 @@ def mostra_registrazioni():
     else:
         for nome in nomi:
             conteggi[nome] = 0
+
+    filtro_stato_rapporto = st.radio(
+        "Filtro rapporti",
+        ["Tutti", "🔴 Da consegnare", "🟢 Consegnati"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="registrazioni_filtro_stato",
+    )
+    if filtro_stato_rapporto == "🔴 Da consegnare":
+        nomi = [n for n in nomi if conteggi.get(n, 0) == 0]
+    elif filtro_stato_rapporto == "🟢 Consegnati":
+        nomi = [n for n in nomi if conteggi.get(n, 0) >= 1]
+
+    if not nomi:
+        st.info("Nessun Proclamatore corrisponde al filtro selezionato.")
+        return
 
     gruppi = {}
     for n in nomi:
