@@ -44,6 +44,9 @@ import extra_streamlit_components as stx
 
 import extra_streamlit_components as stx
 
+import time
+import extra_streamlit_components as stx
+
 # ==============================================================================
 # 2. CONFIGURAZIONE CODICI DI ACCESSO, RUOLI E COOKIE
 # ==============================================================================
@@ -71,9 +74,14 @@ if "email_logged" not in st.session_state:
 # Leggi il cookie salvato nel browser
 auth_cookie = cookie_manager.get(cookie=COOKIE_NAME)
 
-# IMPORTANTE: Se all'avvio auth_cookie è None, diamo un secondo giro di lettura 
-# per evitare falsi negativi dovuti al caricamento asincrono del browser
-if not st.session_state.utente_autenticato and auth_cookie is not None:
+# CORRETTO: Se il cookie è None alla primissima lettura, diamo un attimo di tempo 
+# al componente JavaScript per caricarlo prima di bloccare l'utente.
+if auth_cookie is None and not st.session_state.utente_autenticato:
+    time.sleep(0.3)
+    auth_cookie = cookie_manager.get(cookie=COOKIE_NAME)
+
+# Se troviamo un cookie valido, ripristiniamo la sessione automaticamente
+if not st.session_state.utente_autenticato and auth_cookie:
     if auth_cookie == "admin_token_xyz":
         st.session_state.utente_autenticato = True
         st.session_state.ruolo = "admin"
@@ -84,13 +92,7 @@ if not st.session_state.utente_autenticato and auth_cookie is not None:
         st.session_state.email_logged = "Operatore Presenze"
         st.session_state.pagina = "presenze"
 
-# Se il cookie sta ancora caricando (auth_cookie == None la primissima frazione di secondo)
-# evitiamo di sbattere fuori l'utente se era già loggato in sessione
-if auth_cookie is None and not st.session_state.utente_autenticato:
-    # Mostriamo un piccolo avviso o lasciamo caricare senza bloccare subito
-    pass
-
-# Se l'utente non è autenticato, mostra la schermata di login
+# Se l'utente non è autenticato nemmeno dopo la lettura del cookie, mostra il login
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -108,7 +110,7 @@ if not st.session_state.utente_autenticato:
                 st.session_state.ruolo = "admin"
                 st.session_state.email_logged = "Amministratore"
                 
-                # Imposta il cookie e forza un attimo di respiro prima del reload
+                # Imposta il cookie e aggiorna
                 cookie_manager.set(COOKIE_NAME, "admin_token_xyz", max_age=30*24*60*60)
                 st.success("Accesso Amministratore eseguito!")
                 st.rerun()
@@ -126,7 +128,6 @@ if not st.session_state.utente_autenticato:
                 st.error("⚠️ Codice di Accesso errato.")
 
     st.stop()
-
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
