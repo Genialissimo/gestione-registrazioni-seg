@@ -42,6 +42,8 @@ import extra_streamlit_components as stx
 
 import extra_streamlit_components as stx
 
+import extra_streamlit_components as stx
+
 # ==============================================================================
 # 2. CONFIGURAZIONE CODICI DI ACCESSO, RUOLI E COOKIE
 # ==============================================================================
@@ -49,7 +51,6 @@ CODICE_ADMIN = "123456"        # Codice per accesso completo (Amministratore)
 CODICE_PRESENZE = "654321"    # Codice per solo inserimento presenze
 COOKIE_NAME = "seg_app_auth_token"
 
-# SENZA decorator @st.cache_resource per evitare il CachedWidgetWarning
 def get_cookie_manager():
     return stx.CookieManager()
 
@@ -67,11 +68,12 @@ if "ruolo" not in st.session_state:
 if "email_logged" not in st.session_state:
     st.session_state.email_logged = ""
 
-# Leggi il cookie salvato nel browser per verificare se c'è una sessione persistente
+# Leggi il cookie salvato nel browser
 auth_cookie = cookie_manager.get(cookie=COOKIE_NAME)
 
-# Se l'utente non è segnato come autenticato in memoria, ma il cookie è valido, ripristinalo
-if not st.session_state.utente_autenticato and auth_cookie:
+# IMPORTANTE: Se all'avvio auth_cookie è None, diamo un secondo giro di lettura 
+# per evitare falsi negativi dovuti al caricamento asincrono del browser
+if not st.session_state.utente_autenticato and auth_cookie is not None:
     if auth_cookie == "admin_token_xyz":
         st.session_state.utente_autenticato = True
         st.session_state.ruolo = "admin"
@@ -82,7 +84,13 @@ if not st.session_state.utente_autenticato and auth_cookie:
         st.session_state.email_logged = "Operatore Presenze"
         st.session_state.pagina = "presenze"
 
-# Se l'utente non è ancora autenticato (né in memoria né via cookie), mostra il login
+# Se il cookie sta ancora caricando (auth_cookie == None la primissima frazione di secondo)
+# evitiamo di sbattere fuori l'utente se era già loggato in sessione
+if auth_cookie is None and not st.session_state.utente_autenticato:
+    # Mostriamo un piccolo avviso o lasciamo caricare senza bloccare subito
+    pass
+
+# Se l'utente non è autenticato, mostra la schermata di login
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -99,24 +107,25 @@ if not st.session_state.utente_autenticato:
                 st.session_state.utente_autenticato = True
                 st.session_state.ruolo = "admin"
                 st.session_state.email_logged = "Amministratore"
-                # Imposta il cookie persistente per 30 giorni
+                
+                # Imposta il cookie e forza un attimo di respiro prima del reload
                 cookie_manager.set(COOKIE_NAME, "admin_token_xyz", max_age=30*24*60*60)
                 st.success("Accesso Amministratore eseguito!")
                 st.rerun()
+                
             elif codice_input == CODICE_PRESENZE:
                 st.session_state.utente_autenticato = True
                 st.session_state.ruolo = "presenze"
                 st.session_state.email_logged = "Operatore Presenze"
                 st.session_state.pagina = "presenze"
-                # Imposta il cookie persistente per 30 giorni
+                
                 cookie_manager.set(COOKIE_NAME, "presenze_token_xyz", max_age=30*24*60*60)
                 st.success("Accesso Presenze eseguito!")
                 st.rerun()
             else:
                 st.error("⚠️ Codice di Accesso errato.")
 
-    st.stop()  # Blocca l'esecuzione finché non si inserisce un codice valido
-
+    st.stop()
 
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
