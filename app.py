@@ -144,6 +144,25 @@ if not st.session_state.utente_autenticato:
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
         
+        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
+        st.markdown("""
+            <style>
+            /* Seleziona il link button specifico di Google e lo colora di rosso */
+            a[kind="secondary"] {
+                background-color: #DB4437 !important;
+                color: white !important;
+                border: 1px solid #DB4437 !important;
+                font-weight: bold !important;
+                border-radius: 4px !important;
+            }
+            a[kind="secondary"]:hover {
+                background-color: #C23321 !important;
+                color: white !important;
+                border: 1px solid #C23321 !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
         # Costruisce il link ufficiale di login Google OAuth
         google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
             "client_id": GOOGLE_CLIENT_ID,
