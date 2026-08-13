@@ -49,42 +49,28 @@ import extra_streamlit_components as stx
 
 from streamlit_google_auth import Authenticate
 
+from urllib.parse import urlencode
+import requests
+
 # ==============================================================================
-# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH E FOGLIO UTENTI
+# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
-authenticator = Authenticate(
-    client_id=st.secrets["auth"]["client_id"],
-    client_secret=st.secrets["auth"]["client_secret"],
-    redirect_uri=st.secrets["auth"]["redirect_uri"],
-    cookie_secret=st.secrets["auth"]["cookie_secret"],
-    cookie_name="seg_app_google_auth",
-    cookie_expiry_days=30,
-)
+GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
+GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
+REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE E CONTROLLO FOGLIO UTENTI
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
 # ==============================================================================
 
-# Controlla lo stato dell'autenticazione tramite Google
-authenticator.check_auth()
-
-if not st.session_state.get("connected", False):
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.title("🔒 Accesso Riservato")
-        st.subheader("Gestione Registrazioni SEG")
-        st.write("Accedi utilizzando il tuo account Google autorizzato.")
-        
-        # Mostra il pulsante ufficiale di login Google
-        authenticator.login()
-        
-    st.stop()  # Blocca l'esecuzione finché non si effettua il login
-
-# Estrai l'email dell'utente loggato con Google
-user_info = st.session_state.get("user_info", {})
-email_logged = user_info.get("email", "").strip().lower()
+if "utente_autenticato" not in st.session_state:
+    st.session_state.utente_autenticato = False
+if "ruolo" not in st.session_state:
+    st.session_state.ruolo = None
+if "email_logged" not in st.session_state:
+    st.session_state.email_logged = ""
 
 # Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
@@ -94,41 +80,82 @@ def verifica_utente_foglio(email_cercata):
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
-        # Salta la prima riga (intestazione) e scorre le righe successive
         for riga in valori[1:]:
             if len(riga) >= 4:
-                # Colonna C (indice 2) = Indirizzo email, Colonna D (indice 3) = Ruolo
                 email_foglio = riga[2].strip().lower()
                 ruolo_foglio = riga[3].strip()
-                
                 if email_foglio == email_cercata:
                     return True, ruolo_foglio
     except Exception:
         pass
     return False, None
 
-# Verifica l'autorizzazione e assegna il ruolo basato sul foglio "Utenti"
-if "utente_autenticato" not in st.session_state or not st.session_state.utente_autenticato:
-    autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
+# Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
+query_params = st.query_params
+if "code" in query_params and not st.session_state.utente_autenticato:
+    code = query_params["code"]
     
-    if autorizzato:
-        st.session_state.utente_autenticato = True
-        st.session_state.email_logged = email_logged
-        st.session_state.ruolo = ruolo_trovato.lower()  # Es. "amministratore", "editor", "utente"
+    # Scambia il codice con il token di accesso
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "code": code,
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code",
+    }
+    response = requests.post(token_url, data=data)
+    
+    if response.status_code == 200:
+        token_info = response.json()
+        access_token = token_info.get("access_token")
         
-        # Se il ruolo è di base, imposta la pagina iniziale sulle presenze se necessario
-        if st.session_state.ruolo in ("utente", "presenze"):
-            st.session_state.pagina = "presenze"
-    else:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere a questa applicazione.")
-            st.write("Verifica che la tua email sia registrata correttamente nella colonna **C** del foglio **Utenti**.")
-            if st.button("🚪 Esci / Usa un altro account", use_container_width=True):
-                authenticator.logout()
-                st.session_state.clear()
+        # Recupera le informazioni del profilo utente da Google
+        user_info_res = requests.get(
+            "https://www.googleapis.com/oauth2/v1/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        
+        if user_info_res.status_code == 200:
+            user_data = user_info_res.json()
+            email_logged = user_data.get("email", "").strip().lower()
+            
+            # Verifica se l'email è abilitata nel foglio "Utenti"
+            autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
+            
+            if autorizzato:
+                st.session_state.utente_autenticato = True
+                st.session_state.email_logged = email_logged
+                st.session_state.ruolo = ruolo_trovato.lower()
+                if st.session_state.ruolo in ("utente", "presenze"):
+                    st.session_state.pagina = "presenze"
+                # Pulisce i parametri dall'URL
+                st.query_params.clear()
                 st.rerun()
-        st.stop()
+            else:
+                st.error(⚠️ L'account `{email_logged}` non è autorizzato ad accedere.)
+                st.stop()
+
+# Se non è autenticato, mostra il pulsante di accesso con Google
+if not st.session_state.utente_autenticato:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔒 Accesso Riservato")
+        st.subheader("Gestione Registrazioni SEG")
+        st.write("Accedi utilizzando il tuo account Google autorizzato.")
+        
+        # Costruisce il link ufficiale di login Google OAuth
+        google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": REDIRECT_URI,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "prompt": "select_account"
+        })
+        
+        st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
+        
+    st.stop()
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
