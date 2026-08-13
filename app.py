@@ -38,17 +38,26 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+import extra_streamlit_components as stx
+
 # ==============================================================================
-# 2. CONFIGURAZIONE CODICI DI ACCESSO E RUOLI
+# 2. CONFIGURAZIONE CODICI DI ACCESSO, RUOLI E COOKIE
 # ==============================================================================
-CODICE_ADMIN = "123456"       # Codice per accesso completo (Amministratore)
+CODICE_ADMIN = "123456"        # Codice per accesso completo (Amministratore)
 CODICE_PRESENZE = "654321"    # Codice per solo inserimento presenze
+COOKIE_NAME = "seg_app_auth_token"
+
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE
+# 3. PANNELLO DI AUTENTICAZIONE E GESTIONE PERSISTENZA
 # ==============================================================================
 
-# Inizializza le variabili di sessione per l'autenticazione
+# Inizializza le variabili di sessione se non esistono
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
 if "ruolo" not in st.session_state:
@@ -56,7 +65,22 @@ if "ruolo" not in st.session_state:
 if "email_logged" not in st.session_state:
     st.session_state.email_logged = ""
 
-# Se l'utente non è ancora autenticato, mostra la schermata di login
+# Leggi il cookie salvato nel browser per verificare se c'è una sessione persistente
+auth_cookie = cookie_manager.get(cookie=COOKIE_NAME)
+
+# Se l'utente non è segnato come autenticato in memoria, ma il cookie è valido, ripristinalo
+if not st.session_state.utente_autenticato and auth_cookie:
+    if auth_cookie == "admin_token_xyz":
+        st.session_state.utente_autenticato = True
+        st.session_state.ruolo = "admin"
+        st.session_state.email_logged = "Amministratore"
+    elif auth_cookie == "presenze_token_xyz":
+        st.session_state.utente_autenticato = True
+        st.session_state.ruolo = "presenze"
+        st.session_state.email_logged = "Operatore Presenze"
+        st.session_state.pagina = "presenze"
+
+# Se l'utente non è ancora autenticato (né in memoria né via cookie), mostra il login
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -73,6 +97,8 @@ if not st.session_state.utente_autenticato:
                 st.session_state.utente_autenticato = True
                 st.session_state.ruolo = "admin"
                 st.session_state.email_logged = "Amministratore"
+                # Imposta il cookie persistente per 30 giorni
+                cookie_manager.set(COOKIE_NAME, "admin_token_xyz", max_age=30*24*60*60)
                 st.success("Accesso Amministratore eseguito!")
                 st.rerun()
             elif codice_input == CODICE_PRESENZE:
@@ -80,6 +106,8 @@ if not st.session_state.utente_autenticato:
                 st.session_state.ruolo = "presenze"
                 st.session_state.email_logged = "Operatore Presenze"
                 st.session_state.pagina = "presenze"
+                # Imposta il cookie persistente per 30 giorni
+                cookie_manager.set(COOKIE_NAME, "presenze_token_xyz", max_age=30*24*60*60)
                 st.success("Accesso Presenze eseguito!")
                 st.rerun()
             else:
@@ -97,6 +125,9 @@ with st.sidebar:
     st.write("👤 Utente connesso:")
     st.write(f"📧 `{st.session_state.email_logged}`")
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
+        # Rimuove il cookie salvato nel browser
+        cookie_manager.delete(COOKIE_NAME)
+        # Resetta lo stato locale
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
