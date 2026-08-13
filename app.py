@@ -47,87 +47,88 @@ import extra_streamlit_components as stx
 import time
 import extra_streamlit_components as stx
 
-# ==============================================================================
-# 2. CONFIGURAZIONE CODICI DI ACCESSO, RUOLI E COOKIE
-# ==============================================================================
-CODICE_ADMIN = "123456"        # Codice per accesso completo (Amministratore)
-CODICE_PRESENZE = "654321"    # Codice per solo inserimento presenze
-COOKIE_NAME = "seg_app_auth_token"
-
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+from streamlit_google_auth import Authenticate
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE E GESTIONE PERSISTENZA
+# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH E FOGLIO UTENTI
+# ==============================================================================
+NOME_FOGLIO_UTENTI = "Utenti"
+
+authenticator = Authenticate(
+    client_id=st.secrets["auth"]["client_id"],
+    client_secret=st.secrets["auth"]["client_secret"],
+    redirect_uri=st.secrets["auth"]["redirect_uri"],
+    cookie_secret=st.secrets["auth"]["cookie_secret"],
+    cookie_name="seg_app_google_auth",
+    cookie_expiry_days=30,
+)
+
+# ==============================================================================
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE E CONTROLLO FOGLIO UTENTI
 # ==============================================================================
 
-# Inizializza le variabili di sessione se non esistono
-if "utente_autenticato" not in st.session_state:
-    st.session_state.utente_autenticato = False
-if "ruolo" not in st.session_state:
-    st.session_state.ruolo = None
-if "email_logged" not in st.session_state:
-    st.session_state.email_logged = ""
+# Controlla lo stato dell'autenticazione tramite Google
+authenticator.check_auth()
 
-# Leggi il cookie salvato nel browser
-auth_cookie = cookie_manager.get(cookie=COOKIE_NAME)
-
-# CORRETTO: Se il cookie è None alla primissima lettura, diamo un attimo di tempo 
-# al componente JavaScript per caricarlo prima di bloccare l'utente.
-if auth_cookie is None and not st.session_state.utente_autenticato:
-    time.sleep(0.3)
-    auth_cookie = cookie_manager.get(cookie=COOKIE_NAME)
-
-# Se troviamo un cookie valido, ripristiniamo la sessione automaticamente
-if not st.session_state.utente_autenticato and auth_cookie:
-    if auth_cookie == "admin_token_xyz":
-        st.session_state.utente_autenticato = True
-        st.session_state.ruolo = "admin"
-        st.session_state.email_logged = "Amministratore"
-    elif auth_cookie == "presenze_token_xyz":
-        st.session_state.utente_autenticato = True
-        st.session_state.ruolo = "presenze"
-        st.session_state.email_logged = "Operatore Presenze"
-        st.session_state.pagina = "presenze"
-
-# Se l'utente non è autenticato nemmeno dopo la lettura del cookie, mostra il login
-if not st.session_state.utente_autenticato:
+if not st.session_state.get("connected", False):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
-        st.write("Inserisci il codice di accesso per entrare nell'applicazione.")
+        st.write("Accedi utilizzando il tuo account Google autorizzato.")
+        
+        # Mostra il pulsante ufficiale di login Google
+        authenticator.login()
+        
+    st.stop()  # Blocca l'esecuzione finché non si effettua il login
 
-        codice_input = st.text_input("Codice di Accesso:", type="password", placeholder="••••••••").strip()
+# Estrai l'email dell'utente loggato con Google
+user_info = st.session_state.get("user_info", {})
+email_logged = user_info.get("email", "").strip().lower()
 
-        if st.button("Accedi al Sistema", type="primary", use_container_width=True):
-            if not codice_input:
-                st.warning("Per favore, inserisci il codice di accesso.")
-            elif codice_input == CODICE_ADMIN:
-                st.session_state.utente_autenticato = True
-                st.session_state.ruolo = "admin"
-                st.session_state.email_logged = "Amministratore"
+# Funzione per verificare l'utente nel foglio Google "Utenti"
+def verifica_utente_foglio(email_cercata):
+    wb, err = apri_foglio_dati()
+    if err:
+        return False, None
+    try:
+        ws = wb.worksheet(NOME_FOGLIO_UTENTI)
+        valori = ws.get_all_values()
+        # Salta la prima riga (intestazione) e scorre le righe successive
+        for riga in valori[1:]:
+            if len(riga) >= 4:
+                # Colonna C (indice 2) = Indirizzo email, Colonna D (indice 3) = Ruolo
+                email_foglio = riga[2].strip().lower()
+                ruolo_foglio = riga[3].strip()
                 
-                # Imposta il cookie e aggiorna
-                cookie_manager.set(COOKIE_NAME, "admin_token_xyz", max_age=30*24*60*60)
-                st.success("Accesso Amministratore eseguito!")
+                if email_foglio == email_cercata:
+                    return True, ruolo_foglio
+    except Exception:
+        pass
+    return False, None
+
+# Verifica l'autorizzazione e assegna il ruolo basato sul foglio "Utenti"
+if "utente_autenticato" not in st.session_state or not st.session_state.utente_autenticato:
+    autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
+    
+    if autorizzato:
+        st.session_state.utente_autenticato = True
+        st.session_state.email_logged = email_logged
+        st.session_state.ruolo = ruolo_trovato.lower()  # Es. "amministratore", "editor", "utente"
+        
+        # Se il ruolo è di base, imposta la pagina iniziale sulle presenze se necessario
+        if st.session_state.ruolo in ("utente", "presenze"):
+            st.session_state.pagina = "presenze"
+    else:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere a questa applicazione.")
+            st.write("Verifica che la tua email sia registrata correttamente nella colonna **C** del foglio **Utenti**.")
+            if st.button("🚪 Esci / Usa un altro account", use_container_width=True):
+                authenticator.logout()
+                st.session_state.clear()
                 st.rerun()
-                
-            elif codice_input == CODICE_PRESENZE:
-                st.session_state.utente_autenticato = True
-                st.session_state.ruolo = "presenze"
-                st.session_state.email_logged = "Operatore Presenze"
-                st.session_state.pagina = "presenze"
-                
-                cookie_manager.set(COOKIE_NAME, "presenze_token_xyz", max_age=30*24*60*60)
-                st.success("Accesso Presenze eseguito!")
-                st.rerun()
-            else:
-                st.error("⚠️ Codice di Accesso errato.")
-
-    st.stop()
+        st.stop()
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
