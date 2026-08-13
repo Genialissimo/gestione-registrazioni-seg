@@ -778,7 +778,8 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         c.setFillColorRGB(*S21_COLORE_ROSSO)
         c.setFont("Helvetica-Bold", S21_FONT_ETA)
         larghezza_data_batt = c.stringWidth(data_battesimo_str, "Helvetica", S21_FONT_VALORI)
-        c.drawString(125 + la
+        c.drawString(125 + larghezza_data_batt + 6, _s21_y_da_bottom(80.4, offset), f"({eta_batt})")
+        c.setFillColorRGB(*S21_COLORE_NERO)
 
 # ─────────────────────────────────────────────────────────────────
 # IMPORTAZIONE S-21 RICEVUTA (da altra congregazione)
