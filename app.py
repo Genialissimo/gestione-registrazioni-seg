@@ -40,6 +40,8 @@ st.set_page_config(
 
 import extra_streamlit_components as stx
 
+import extra_streamlit_components as stx
+
 # ==============================================================================
 # 2. CONFIGURAZIONE CODICI DI ACCESSO, RUOLI E COOKIE
 # ==============================================================================
@@ -47,7 +49,7 @@ CODICE_ADMIN = "123456"        # Codice per accesso completo (Amministratore)
 CODICE_PRESENZE = "654321"    # Codice per solo inserimento presenze
 COOKIE_NAME = "seg_app_auth_token"
 
-@st.cache_resource
+# SENZA decorator @st.cache_resource per evitare il CachedWidgetWarning
 def get_cookie_manager():
     return stx.CookieManager()
 
