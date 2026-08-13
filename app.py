@@ -211,6 +211,13 @@ if not st.session_state.utente_autenticato:
 with st.sidebar:
     st.write("👤 Utente connesso:")
     st.write(f"📧 `{st.session_state.email_logged}`")
+    
+    # Recupera il ruolo salvato in sessione e lo mostra con l'iniziale maiuscola
+    ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
+    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
+    
+    st.divider()  # Linea di separazione visiva
+    
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
         # Rimuove il cookie salvato nel browser
         cookie_manager.delete(COOKIE_NAME)
