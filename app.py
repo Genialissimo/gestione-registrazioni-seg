@@ -133,7 +133,7 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.query_params.clear()
                 st.rerun()
             else:
-                st.error(⚠️ L'account `{email_logged}` non è autorizzato ad accedere.)
+                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
                 st.stop()
 
 # Se non è autenticato, mostra il pulsante di accesso con Google
