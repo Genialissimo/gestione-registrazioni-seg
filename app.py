@@ -4855,12 +4855,26 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
     e = editor.get("riga", {}) if modo == "modifica" else {}
     chiave = editor.get("numero_riga_foglio", "nuovo")
 
+    # Determinazione automatica dell'ID progressivo
+    if modo == "modifica":
+        id_valore = str(e.get("ID", ""))
+    else:
+        id_valore = str(prossimo_id_anagrafica(df_utenti))
+
     if modo == "modifica":
         st.markdown(f"#### ✏️ Modifica accesso — {e.get('Utente', '')}")
     else:
         st.markdown("#### ➕ Nuovo accesso")
 
     with st.form(f"form_utente_{chiave}", clear_on_submit=False):
+        # Campo ID automatico e non modificabile
+        st.text_input(
+            "ID Utente", 
+            value=id_valore, 
+            disabled=True, 
+            help="ID progressivo generato automaticamente dal sistema."
+        )
+
         nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
         email_utente = st.text_input(
             "Indirizzo email (Google) *", value=e.get("Indirizzo", ""),
@@ -4870,7 +4884,7 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
         if ruolo_corrente not in OPZIONI_RUOLO_UTENTE:
             ruolo_corrente = OPZIONI_RUOLO_UTENTE[0]
         ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE,
-                                     index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente))
+                                    index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente))
 
         id_telegram = st.text_input("ID Telegram (opzionale)", value=e.get("Id telegram", ""),
                                     help="Verrà usato in futuro per l'invio di notifiche.")
@@ -4910,7 +4924,7 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
             valori = {
-                "ID": e.get("ID") or str(prossimo_id_anagrafica(df_utenti)),
+                "ID": id_valore,
                 "Utente": nome_pulito,
                 "Indirizzo": email_pulita,
                 "Ruolo": ruolo_scelto,
@@ -4936,7 +4950,7 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
         with col_si:
             if st.button("✔ Sì, elimina", key="utenti_conf_si", type="primary", use_container_width=True):
                 ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI,
-                                                    editor["numero_riga_foglio"])
+                                                   editor["numero_riga_foglio"])
                 if ok:
                     st.cache_data.clear()
                     st.session_state.utenti_editor = None
@@ -5021,7 +5035,6 @@ def mostra_gestione_utenti():
         editor = st.session_state.get("utenti_editor")
         if editor:
             _form_utente(editor, df_utenti)
-
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
