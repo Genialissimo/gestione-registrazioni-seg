@@ -361,6 +361,9 @@ OPZIONI_TIPO = ["Proclamatore", "Pioniere Regolare", "Pioniere speciale", "Missi
 OPZIONI_HAI_SERVITO = ["Proclamatore", "Pioniere Ausiliario", "Pioniere Regolare",
                        "Pioniere Speciale", "Rappresentante sul campo"]
 OPZIONI_ATTIVI_INATTIVI = ["A", "I", "TR"]
+
+RIGA_INTESTAZIONE_UTENTI = 1
+OPZIONI_RUOLO_UTENTE = ["Amministratore", "Utente", "Presenze"]
 ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo", "TR": "Trasferito"}
 
 
@@ -2251,6 +2254,14 @@ def mostra_home():
     </div>
     """
 
+    lista_impostazioni = [
+        ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
+    ]
+    if st.session_state.get("ruolo") == "amministratore":
+        lista_impostazioni.append(
+            ("🔐", "bg-purple", "Accessi", "Gestisci chi può accedere all'app e con quale ruolo.", "utenti", "")
+        )
+
     sezioni = {
         "📖 Rapporti": [
             ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
@@ -2267,9 +2278,7 @@ def mostra_home():
         "🙌 Adunanze": [
             ("🙌", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
         ],
-        "⚙️ Impostazioni": [
-            ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
-        ],
+        "⚙️ Impostazioni": lista_impostazioni,
     }
 
     def mostra_griglia_card(lista_card):
@@ -4839,6 +4848,84 @@ def mostra_impostazioni():
 
 
 # ─────────────────────────────────────────────────────────────────
+# PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
+# ─────────────────────────────────────────────────────────────────
+def mostra_gestione_utenti():
+    st.title("🔐 Accessi")
+    st.button("🏠 Torna alla Home", key="home_da_utenti", use_container_width=True,
+              on_click=vai_a, args=("home",))
+
+    if st.session_state.get("ruolo") != "amministratore":
+        st.warning("⚠️ Questa pagina è riservata agli amministratori.")
+        return
+
+    if not collegato:
+        st.warning("⚠️ Nessun foglio dati collegato.")
+        return
+
+    df_utenti, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_UTENTI, RIGA_INTESTAZIONE_UTENTI)
+    if err:
+        st.error(err)
+        return
+
+    st.caption(f"Persone abilitate ad accedere all'app (foglio «{NOME_FOGLIO_UTENTI}»). "
+               "Il ruolo stabilisce cosa possono vedere e modificare: Amministratore (accesso "
+               "completo), Utente (sola lettura su tutte le pagine), Presenze (solo la pagina "
+               "Presenti alle adunanze, con permessi pieni lì).")
+
+    if not df_utenti.empty:
+        colonne_mostrate = [c for c in ["ID", "Utente", "Indirizzo", "Ruolo", "Id telegram"]
+                             if c in df_utenti.columns]
+        st.dataframe(df_utenti[colonne_mostrate] if colonne_mostrate else df_utenti,
+                     hide_index=True, use_container_width=True)
+    else:
+        st.info("Nessun utente presente ancora nel foglio.")
+
+    st.divider()
+    st.subheader("➕ Aggiungi nuovo accesso")
+
+    with st.form("form_nuovo_utente", clear_on_submit=True):
+        nome_utente = st.text_input("Nome e Cognome *")
+        email_utente = st.text_input("Indirizzo email (Google) *",
+                                     help="Deve corrispondere esattamente all'account Google con cui la persona farà l'accesso.")
+        ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE)
+        id_telegram = st.text_input("ID Telegram (opzionale)",
+                                    help="Verrà usato in futuro per l'invio di notifiche.")
+
+        invia = st.form_submit_button("✔ Aggiungi utente", type="primary", use_container_width=True)
+
+    if invia:
+        nome_pulito = nome_utente.strip()
+        email_pulita = email_utente.strip().lower()
+
+        email_gia_presenti = set()
+        if not df_utenti.empty and "Indirizzo" in df_utenti.columns:
+            email_gia_presenti = set(df_utenti["Indirizzo"].astype(str).str.strip().str.lower())
+
+        if not nome_pulito or not email_pulita:
+            st.error("Nome e indirizzo email sono obbligatori.")
+        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
+            st.error("L'indirizzo email non sembra valido.")
+        elif email_pulita in email_gia_presenti:
+            st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
+        else:
+            valori = {
+                "ID": str(prossimo_id_anagrafica(df_utenti)),
+                "Utente": nome_pulito,
+                "Indirizzo": email_pulita,
+                "Ruolo": ruolo_scelto,
+                "Id telegram": id_telegram.strip(),
+            }
+            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_UTENTI, RIGA_INTESTAZIONE_UTENTI, valori)
+            if ok:
+                st.cache_data.clear()
+                st.success(f"✔ «{nome_pulito}» aggiunto correttamente con ruolo «{ruolo_scelto}».")
+                st.rerun()
+            else:
+                st.error(err_salva)
+
+
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
 # ─────────────────────────────────────────────────────────────────
 CATEGORIE_FILIALE = [
@@ -5354,5 +5441,7 @@ elif st.session_state.pagina == "importa_s21":
     mostra_importa_s21()
 elif st.session_state.pagina == "impostazioni":
     mostra_impostazioni()
+elif st.session_state.pagina == "utenti":
+    mostra_gestione_utenti()
 else:
     mostra_home()
