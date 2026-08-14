@@ -106,7 +106,7 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti" (versione flessibile)
+# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
     wb, err = apri_foglio_dati()
     if err:
@@ -118,19 +118,19 @@ def verifica_utente_foglio(email_cercata):
         # Scorriamo tutte le righe escludendo l'intestazione
         for riga in valori[1:]:
             email_trovata = ""
-            ruolo_trovato = "utente" # di default
+            ruolo_trovato = "utente" # Valore di fallback
             
-            # Cerca in ogni cella della riga se c'è un'email o un ruolo valido
+            # Cerca in ogni cella della riga
             for cella in riga:
                 cella_str = str(cella).strip()
-                # Se la cella contiene '@', è l'email
+                # Se la cella contiene '@', consideriamo che sia l'indirizzo email
                 if "@" in cella_str:
                     email_trovata = cella_str.lower().replace('\u200b', '')
-                # Se la cella contiene un ruolo noto
+                # Rileva il ruolo testuale presente nella riga
                 elif cella_str.lower() in ["amministratore", "admin", "utente", "presenze"]:
                     ruolo_trovato = cella_str.lower()
             
-            # Confronta l'email trovata con quella cercata
+            # Confronto finale sull'email pulita
             if email_trovata == email_cercata.strip().lower():
                 return True, ruolo_trovato
                 
@@ -138,7 +138,6 @@ def verifica_utente_foglio(email_cercata):
         st.error(f"Errore tecnico durante la lettura del foglio Utenti: {e}")
         
     return False, None
-
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
