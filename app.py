@@ -100,6 +100,12 @@ if "ruolo" not in st.session_state:
 if "email_logged" not in st.session_state:
     st.session_state.email_logged = ""
 
+
+def sola_lettura() -> bool:
+    """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
+    return st.session_state.get("ruolo") == "utente"
+
+
 # Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
     wb, err = apri_foglio_dati()
@@ -155,7 +161,7 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.session_state.utente_autenticato = True
                 st.session_state.email_logged = email_logged
                 st.session_state.ruolo = ruolo_trovato.lower()
-                if st.session_state.ruolo in ("utente", "presenze"):
+                if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
                 # Pulisce i parametri dall'URL
                 st.query_params.clear()
@@ -215,7 +221,10 @@ with st.sidebar:
     # Recupera il ruolo salvato in sessione e lo mostra con l'iniziale maiuscola
     ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
     st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
-    
+
+    if sola_lettura():
+        st.caption("🔒 Modalità sola lettura: puoi consultare i dati ma non modificarli.")
+
     st.divider()  # Linea di separazione visiva
     
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
@@ -2308,6 +2317,7 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
     e = riga_esistente
     colonne_numeriche = {"ore", "cr. ore", "cr ore", "studi"}
     colonne_nascoste = {"video mostrati", "cognome e nome"}
+    bloccato = sola_lettura()
 
     with st.form(f"form_rapporto_{chiave}", clear_on_submit=False):
         valori_inseriti = {}
@@ -2323,21 +2333,25 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
                     opzioni = [valore_attuale] + opzioni
                 indice = opzioni.index(valore_attuale) if valore_attuale in opzioni else 0
                 valori_inseriti[colonna] = st.selectbox(colonna, opzioni, index=indice,
-                                                        key=f"campo_{colonna}_{chiave}")
+                                                        key=f"campo_{colonna}_{chiave}",
+                                                        disabled=bloccato)
             elif chiave_norm in colonne_numeriche:
                 try:
                     default_num = float(str(valore_attuale).replace(",", ".")) if valore_attuale else 0.0
                 except ValueError:
                     default_num = 0.0
                 valori_inseriti[colonna] = st.number_input(colonna, value=default_num, step=1.0,
-                                                           key=f"campo_{colonna}_{chiave}")
+                                                           key=f"campo_{colonna}_{chiave}",
+                                                           disabled=bloccato)
             else:
                 valori_inseriti[colonna] = st.text_input(colonna, value=str(valore_attuale),
-                                                         key=f"campo_{colonna}_{chiave}")
+                                                         key=f"campo_{colonna}_{chiave}",
+                                                         disabled=bloccato)
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
-            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True,
+                                          disabled=bloccato)
         with col_btn2:
             annulla = st.form_submit_button("Annulla", use_container_width=True)
 
@@ -2531,7 +2545,7 @@ def mostra_registrazioni():
                     st.rerun()
             with col_elim:
                 if st.button("🗑️ Elimina riga selezionata", key=f"btn_elim_{nome}",
-                            disabled=idx_originale is None, use_container_width=True):
+                            disabled=(idx_originale is None) or sola_lettura(), use_container_width=True):
                     st.session_state[chiave_conferma_elim] = True
                     st.rerun()
 
@@ -2571,6 +2585,7 @@ def mostra_registrazioni():
 def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_foglio: int = None,
                       chiave: str = "nuovo", modo_nuovo: bool = False, chiave_expander: str = None):
     e = riga_esistente or {}
+    bloccato = sola_lettura()
 
     def parse_data(s):
         try:
@@ -2580,7 +2595,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
     with st.form(f"form_anagrafica_{chiave}", clear_on_submit=False):
         nome_cognome = st.text_input("Cognome e Nome *", value=e.get("Cognome e Nome", ""),
-                                     key=f"nome_{chiave}")
+                                     key=f"nome_{chiave}", disabled=bloccato)
 
         eta_nascita = calcola_eta_dettagliata(e.get("Data Nascita", ""))
         if eta_nascita:
@@ -2591,13 +2606,14 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             st.markdown("**Data di nascita**")
         data_nascita = st.date_input("Data di nascita", value=parse_data(e.get("Data Nascita", "")),
                                      format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                     label_visibility="collapsed", key=f"data_nascita_{chiave}")
+                                     label_visibility="collapsed", key=f"data_nascita_{chiave}",
+                                     disabled=bloccato)
 
         sesso_corrente = e.get("Sesso", "")
         sesso_default = ("Maschio" if sesso_corrente.upper().startswith("M")
                           else "Femmina" if sesso_corrente.upper().startswith("F") else "Maschio")
         sesso = st.selectbox("Sesso", OPZIONI_SESSO, index=OPZIONI_SESSO.index(sesso_default),
-                              key=f"sesso_{chiave}")
+                              key=f"sesso_{chiave}", disabled=bloccato)
 
         eta_battesimo = calcola_eta_dettagliata(e.get("Data Battesimo", ""))
         if eta_battesimo:
@@ -2608,25 +2624,27 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             st.markdown("**Data del battesimo**")
         data_battesimo = st.date_input("Data del battesimo", value=parse_data(e.get("Data Battesimo", "")),
                                         format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                        label_visibility="collapsed", key=f"data_batt_{chiave}")
+                                        label_visibility="collapsed", key=f"data_batt_{chiave}",
+                                        disabled=bloccato)
 
         incarico_corrente = e.get("Incarico", "") or "(nessuno)"
         if incarico_corrente not in OPZIONI_INCARICO:
             incarico_corrente = "(nessuno)"
         incarico = st.selectbox("Incarico", OPZIONI_INCARICO,
                                  index=OPZIONI_INCARICO.index(incarico_corrente),
-                                 key=f"incarico_{chiave}")
+                                 key=f"incarico_{chiave}", disabled=bloccato)
 
         tipo_corrente = e.get("Tipo", "") or "Proclamatore"
         if tipo_corrente not in OPZIONI_TIPO:
             tipo_corrente = "Proclamatore"
         tipo = st.selectbox("Tipo di servizio", OPZIONI_TIPO,
-                             index=OPZIONI_TIPO.index(tipo_corrente), key=f"tipo_{chiave}")
+                             index=OPZIONI_TIPO.index(tipo_corrente), key=f"tipo_{chiave}",
+                             disabled=bloccato)
         pr_dal = None
         if tipo in ("Pioniere Regolare", "Pioniere speciale", "Missionario sul campo"):
             pr_dal = st.date_input(f"{tipo} dal", value=parse_data(e.get("PR dal", "")),
                                     format="DD/MM/YYYY", min_value=datetime(1900, 1, 1),
-                                    key=f"pr_dal_{chiave}")
+                                    key=f"pr_dal_{chiave}", disabled=bloccato)
 
         opzioni_gruppo = opzioni_da_colonna(df, "Gruppo")
         gruppo_corrente = e.get("Gruppo", "")
@@ -2636,9 +2654,10 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         scelta_gruppo = st.selectbox("Gruppo", elenco_gruppo or ["➕ Nuovo…"],
                                       index=(elenco_gruppo.index(gruppo_corrente)
                                              if gruppo_corrente in elenco_gruppo else 0),
-                                      key=f"gruppo_{chiave}")
+                                      key=f"gruppo_{chiave}", disabled=bloccato)
         if scelta_gruppo == "➕ Nuovo…":
-            scelta_gruppo = st.text_input("Nome del nuovo gruppo", key=f"gruppo_nuovo_{chiave}")
+            scelta_gruppo = st.text_input("Nome del nuovo gruppo", key=f"gruppo_nuovo_{chiave}",
+                                          disabled=bloccato)
 
         opzioni_au = opzioni_da_colonna(df, "A/U")
         au_corrente = e.get("A/U", "")
@@ -2647,28 +2666,30 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
             elenco_au = [au_corrente] + elenco_au
         scelta_au = st.selectbox("A/U", elenco_au or ["➕ Nuovo…"],
                                   index=(elenco_au.index(au_corrente) if au_corrente in elenco_au else 0),
-                                  key=f"au_{chiave}")
+                                  key=f"au_{chiave}", disabled=bloccato)
         if scelta_au == "➕ Nuovo…":
-            scelta_au = st.text_input("Nuovo valore A/U", key=f"au_nuovo_{chiave}")
+            scelta_au = st.text_input("Nuovo valore A/U", key=f"au_nuovo_{chiave}", disabled=bloccato)
 
-        note = st.text_area("Note", value=e.get("Note", ""), height=100, key=f"note_{chiave}")
+        note = st.text_area("Note", value=e.get("Note", ""), height=100, key=f"note_{chiave}",
+                            disabled=bloccato)
 
         st.divider()
         st.caption("Promemoria regolarità (da aggiornare quando manca il rapporto mensile)")
         irregolare = st.checkbox("Irregolare", value=e.get("Irregolare", "").strip().upper() in ("X", "SI", "SÌ"),
-                                  key=f"irregolare_{chiave}")
+                                  key=f"irregolare_{chiave}", disabled=bloccato)
         irregolare_mesi = st.number_input("Irregolare da mesi", min_value=0, max_value=36, step=1,
                                            value=int(e.get("Irregolare da Mesi", 0) or 0),
-                                           key=f"irregolare_mesi_{chiave}")
+                                           key=f"irregolare_mesi_{chiave}", disabled=bloccato)
         attivi_inattivi_corrente = e.get("Attivi / Inattivi", "A") or "A"
         if attivi_inattivi_corrente not in OPZIONI_ATTIVI_INATTIVI:
             attivi_inattivi_corrente = "A"
         etichetta_stato = st.selectbox("Stato", list(ETICHETTE_ATTIVI_INATTIVI.values()),
                                         index=OPZIONI_ATTIVI_INATTIVI.index(attivi_inattivi_corrente),
-                                        key=f"stato_{chiave}")
+                                        key=f"stato_{chiave}", disabled=bloccato)
         attivi_inattivi = {v: k for k, v in ETICHETTE_ATTIVI_INATTIVI.items()}[etichetta_stato]
         dal = st.date_input("Inattivo Da", value=parse_data(e.get("Inattivo dal", "")),
-                             format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}")
+                             format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), key=f"dal_{chiave}",
+                             disabled=bloccato)
 
         st.divider()
 
@@ -2680,15 +2701,18 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
         scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["➕ Nuovo…"],
                                      index=(elenco_trasf.index(trasf_corrente)
                                             if trasf_corrente in elenco_trasf else 0),
-                                     key=f"trasf_{chiave}")
+                                     key=f"trasf_{chiave}", disabled=bloccato)
         if scelta_trasf == "➕ Nuovo…":
-            scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}")
+            scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}",
+                                         disabled=bloccato)
 
-        messaggio = st.text_input("Messaggio", value=e.get("Messaggio", ""), key=f"messaggio_{chiave}")
+        messaggio = st.text_input("Messaggio", value=e.get("Messaggio", ""), key=f"messaggio_{chiave}",
+                                  disabled=bloccato)
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
-            invia = st.form_submit_button("✔ Salva", use_container_width=True, type="primary")
+            invia = st.form_submit_button("✔ Salva", use_container_width=True, type="primary",
+                                          disabled=bloccato)
         with col_btn2:
             annulla = st.form_submit_button("Annulla", use_container_width=True)
 
@@ -3434,7 +3458,8 @@ def mostra_gruppi_servizio():
     n_sel = len(selezionati)
 
     with contenitore_associa:
-        if st.button(f"🔗 Associa al gruppo ({n_sel})", use_container_width=True, disabled=n_sel == 0):
+        if st.button(f"🔗 Associa al gruppo ({n_sel})", use_container_width=True,
+                     disabled=(n_sel == 0 or sola_lettura())):
             st.session_state.gruppi_mostra_scelta = True
 
         if st.session_state.get("gruppi_mostra_scelta") and n_sel > 0:
@@ -3768,7 +3793,8 @@ def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
 
 # ─────────────────────────────────────────────────────────────────
 def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
-                         presenza_default: int, zoom_default: int, giorni_per_tipo: dict):
+                         presenza_default: int, zoom_default: int, giorni_per_tipo: dict,
+                         disabled: bool = False):
     giorni_validi = giorni_adunanze_tutti(giorni_per_tipo)
     chiave_data = f"{chiave_prefix}_data"
     chiave_tipo = f"{chiave_prefix}_tipo"
@@ -3792,21 +3818,21 @@ def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
         if tipo_suggerito:
             st.session_state[chiave_tipo] = tipo_suggerito
 
-    data_scelta = st.date_input("Data", format="DD/MM/YYYY", key=chiave_data)
+    data_scelta = st.date_input("Data", format="DD/MM/YYYY", key=chiave_data, disabled=disabled)
 
     if not data_valida and not giorni_validi:
         st.warning("Nessun giorno di adunanza configurato — impostalo nella card ⚙️ Impostazioni "
                    "in Home per attivare il controllo sulla data.")
 
-    tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, key=chiave_tipo)
+    tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, key=chiave_tipo, disabled=disabled)
 
     col_p, col_z = st.columns(2)
     with col_p:
         in_presenza = st.number_input("In presenza", min_value=0, step=1, value=presenza_default,
-                                       key=f"{chiave_prefix}_presenza")
+                                       key=f"{chiave_prefix}_presenza", disabled=disabled)
     with col_z:
         su_zoom = st.number_input("Su Zoom", min_value=0, step=1, value=zoom_default,
-                                   key=f"{chiave_prefix}_zoom")
+                                   key=f"{chiave_prefix}_zoom", disabled=disabled)
 
     totale = int(in_presenza) + int(su_zoom)
     st.metric("Totale (calcolato)", totale)
@@ -3830,13 +3856,13 @@ def _form_modifica_presenza(dati_selezione: dict):
     data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
         chiave_prefix, data_default, riga.get("Tipo Adunanza", ""),
         int(a_float_it(riga.get("In Presenza", "0"))), int(a_float_it(riga.get("Su Zoom", "0"))),
-        giorni_per_tipo,
+        giorni_per_tipo, disabled=sola_lettura(),
     )
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         invia = st.button("✔ Salva", type="primary", use_container_width=True,
-                          disabled=not data_valida, key=f"{chiave_prefix}_salva")
+                          disabled=(not data_valida) or sola_lettura(), key=f"{chiave_prefix}_salva")
     with col_btn2:
         annulla = st.button("✖ Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
 
@@ -3874,12 +3900,13 @@ def _form_nuova_presenza():
     chiave_prefix = "presenze_nuovo"
     data_scelta, tipo_adunanza, in_presenza, su_zoom, totale, data_valida = _presenze_campi_form(
         chiave_prefix, datetime.now().date(), TIPI_ADUNANZA[0], 0, 0, giorni_per_tipo,
+        disabled=sola_lettura(),
     )
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         invia = st.button("✔ Salva", type="primary", use_container_width=True,
-                          disabled=not data_valida, key=f"{chiave_prefix}_salva")
+                          disabled=(not data_valida) or sola_lettura(), key=f"{chiave_prefix}_salva")
     with col_btn2:
         annulla = st.button("✖ Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
 
@@ -4072,7 +4099,8 @@ def mostra_presenze_adunanze():
                 }
                 st.rerun()
         with col_elim:
-            if st.button("🗑️ Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True):
+            if st.button("🗑️ Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True,
+                         disabled=sola_lettura()):
                 st.session_state.presenze_conferma_elimina = numero_riga_foglio
                 st.rerun()
 
@@ -4321,6 +4349,7 @@ def mostra_importa_s21():
                 height=480,
                 num_rows="dynamic",
                 key=f"s21_manuale_editor_{nome_finale}_{anno_servizio}_{tipo_servizio_scelto}",
+                disabled=sola_lettura(),
                 column_config={
                     "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center"),
                     "Partecipato": st.column_config.CheckboxColumn("Ministero", width="small"),
@@ -4333,7 +4362,8 @@ def mostra_importa_s21():
 
             col_salva, col_annulla = st.columns(2)
             with col_salva:
-                btn_salva = st.button("✔ Salva", type="primary", use_container_width=True, key="s21_man_salva")
+                btn_salva = st.button("✔ Salva", type="primary", use_container_width=True,
+                                       key="s21_man_salva", disabled=sola_lettura())
             with col_annulla:
                 btn_annulla = st.button("✖ Annulla", use_container_width=True, key="s21_man_annulla")
 
@@ -4622,6 +4652,7 @@ def mostra_importa_s21():
         height=480,
         num_rows="dynamic",
         key="importa_s21_tabella_editor",
+        disabled=sola_lettura(),
         column_config={
             "Importa": st.column_config.CheckboxColumn("Importa", width="small"),
             "Mese/Anno": st.column_config.TextColumn("Mese/Anno (AAAA-MM)", width="small", alignment="center",
@@ -4647,7 +4678,8 @@ def mostra_importa_s21():
     st.caption(f"Righe selezionate per l'importazione: **{len(righe_da_importare)}**")
 
     if st.button(f"✅ Importa {len(righe_da_importare)} mese/i per {nome_persona}",
-                 use_container_width=True, disabled=righe_da_importare.empty):
+                 use_container_width=True,
+                 disabled=(righe_da_importare.empty or sola_lettura())):
         errori = []
         importate = 0
 
@@ -4742,11 +4774,12 @@ def mostra_impostazioni():
     for tipo in TIPI_ADUNANZA:
         giorni_scelti[tipo] = st.multiselect(f"Giorni — {tipo}", GIORNI_SETTIMANA_IT,
                                              default=giorni_attuali.get(tipo, []),
-                                             key=f"impostazioni_giorni_{tipo}")
+                                             key=f"impostazioni_giorni_{tipo}",
+                                             disabled=sola_lettura())
 
     tutti_vuoti = not any(giorni_scelti.values())
     if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
-                 disabled=tutti_vuoti):
+                 disabled=tutti_vuoti or sola_lettura()):
         ok, err_salva = salva_giorni_adunanze_per_tipo(workbook, giorni_scelti)
         if ok:
             st.cache_data.clear()
@@ -4969,33 +5002,35 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
     mese_leggibile = dati_selezione["mese_leggibile"]
     riga_foglio = dati_selezione["riga_foglio"]
     grezza = dati_selezione["grezza"]
+    bloccato = sola_lettura()
 
     st.title("Modifica rapporto")
     st.caption(f"{nome} — {mese_leggibile} (foglio «{NOME_FOGLIO_TUTTI}», riga {riga_foglio})")
 
     with st.form("form_modifica_tutti", clear_on_submit=False):
-        mese_anno = st.text_input("Mese/Anno (formato AAAA-MM)", value=grezza[0])
+        mese_anno = st.text_input("Mese/Anno (formato AAAA-MM)", value=grezza[0], disabled=bloccato)
 
         opzioni_tipo = list(OPZIONI_HAI_SERVITO)
         valore_tipo = grezza[1]
         if valore_tipo and valore_tipo not in opzioni_tipo:
             opzioni_tipo = [valore_tipo] + opzioni_tipo
         indice_tipo = opzioni_tipo.index(valore_tipo) if valore_tipo in opzioni_tipo else 0
-        tipo_servizio = st.selectbox("Ha servito come", opzioni_tipo, index=indice_tipo)
+        tipo_servizio = st.selectbox("Ha servito come", opzioni_tipo, index=indice_tipo, disabled=bloccato)
 
         opzioni_ministero = ["Si", "No"]
         valore_ministero = grezza[2] if grezza[2] in opzioni_ministero else "No"
         ministero = st.selectbox("Ha partecipato al ministero", opzioni_ministero,
-                                  index=opzioni_ministero.index(valore_ministero))
+                                  index=opzioni_ministero.index(valore_ministero), disabled=bloccato)
 
-        ore = st.number_input("Ore", value=a_float_it(grezza[4]), step=1.0)
-        cred_ore = st.number_input("Cred. Ore", value=a_float_it(grezza[5]), step=1.0)
-        studi = st.text_input("Studi Biblici", value=grezza[6])
-        osservazioni = st.text_area("Osservazioni", value=grezza[7])
+        ore = st.number_input("Ore", value=a_float_it(grezza[4]), step=1.0, disabled=bloccato)
+        cred_ore = st.number_input("Cred. Ore", value=a_float_it(grezza[5]), step=1.0, disabled=bloccato)
+        studi = st.text_input("Studi Biblici", value=grezza[6], disabled=bloccato)
+        osservazioni = st.text_area("Osservazioni", value=grezza[7], disabled=bloccato)
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
-            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True,
+                                          disabled=bloccato)
         with col_btn2:
             annulla = st.form_submit_button("Annulla", use_container_width=True)
 
