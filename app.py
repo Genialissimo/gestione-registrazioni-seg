@@ -111,17 +111,34 @@ def verifica_utente_foglio(email_cercata):
     wb, err = apri_foglio_dati()
     if err:
         return False, None
+    
+    email_cercata = str(email_cercata).strip().lower()
+    
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
+        
+        # Salta la prima riga (intestazione) e scorre le successive
         for riga in valori[1:]:
+            # Il foglio ha le colonne: 
+            # Indice 0: ID
+            # Indice 1: Utente (Nome)
+            # Indice 2: Indirizzo (Email) -> Colonna C
+            # Indice 3: Ruolo -> Colonna D
+            # Indice 4: Id telegram -> Colonna E
             if len(riga) >= 4:
-                email_foglio = riga[2].strip().lower()
-                ruolo_foglio = riga[3].strip()
+                email_foglio = str(riga[2]).strip().lower().replace('\u200b', '')
+                ruolo_foglio = str(riga[3]).strip()
+                
                 if email_foglio == email_cercata:
+                    # Se il ruolo è vuoto nel foglio, diamo un default (es. amministratore o utente)
+                    if not ruolo_foglio:
+                        ruolo_foglio = "amministratore"
                     return True, ruolo_foglio
-    except Exception:
-        pass
+                    
+    except Exception as e:
+        st.error(f"Errore tecnico durante la lettura del foglio Utenti: {e}")
+        
     return False, None
 
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
