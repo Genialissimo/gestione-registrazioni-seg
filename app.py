@@ -132,12 +132,7 @@ COOKIE_NOME_SESSIONE = "seg_auth_email"
 GIORNI_DURATA_COOKIE = 30
 
 
-@st.cache_resource(show_spinner=False)
-def get_cookie_manager():
-    return stx.CookieManager(key="cookie_manager_seg")
-
-
-cookie_manager = get_cookie_manager()
+cookie_manager = stx.CookieManager(key="cookie_manager_seg")
 
 
 def _imposta_cookie_sessione(email: str):
