@@ -201,7 +201,7 @@ with st.sidebar:
     if sola_lettura():
         st.caption("🔒 Modalità sola lettura.")
     st.divider()
-    if st.button("🚪 Logout", type="secondary", use_container_width=True):
+    if st.button("🚪 Logout", type="secondary", use_container_width=True, key="btn_logout_sidebar"):
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
