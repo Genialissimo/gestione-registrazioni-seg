@@ -4847,6 +4847,14 @@ def mostra_impostazioni():
     components.html(html_copia_link, height=140)
 
 
+import re
+import pandas as pd
+import streamlit as st
+
+# Regex per il controllo formale della sintassi dell'email
+REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
 # ─────────────────────────────────────────────────────────────────
@@ -4916,10 +4924,11 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
         if modo == "modifica":
             email_gia_presenti.discard((e.get("Indirizzo", "") or "").strip().lower())
 
+        # Controlli sui campi
         if not nome_pulito or not email_pulita:
             st.error("Nome e indirizzo email sono obbligatori.")
-        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
-            st.error("L'indirizzo email non sembra valido.")
+        elif not re.match(REGEX_EMAIL, email_pulita):
+            st.error("L'indirizzo email inserito non ha un formato valido (es. nome@gmail.com).")
         elif email_pulita in email_gia_presenti:
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
