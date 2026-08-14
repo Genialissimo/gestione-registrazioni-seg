@@ -86,17 +86,12 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
+# ─────────────────────────────────────────────────────────────────
 
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE (Con Persistenza Cookie)
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
 # ==============================================================================
-
-# Inizializza il gestore dei cookie
-cookie_manager = stx.CookieManager()
-
-# Recupera il cookie di sessione
-cookie_auth = cookie_manager.get(cookie="seg_auth_session")
 
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
@@ -105,18 +100,14 @@ if "ruolo" not in st.session_state:
 if "email_logged" not in st.session_state:
     st.session_state.email_logged = ""
 
-# Ripristino automatico della sessione tramite cookie
-if cookie_auth and not st.session_state.utente_autenticato:
-    st.session_state.utente_autenticato = True
-    st.session_state.email_logged = cookie_auth.get("email", "")
-    st.session_state.ruolo = cookie_auth.get("ruolo", "amministratore")
 
 def sola_lettura() -> bool:
+    """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
     return st.session_state.get("ruolo") == "utente"
 
+
+# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
-    if email_cercata.strip().lower() == "putrino.fabrizio@gmail.com":
-        return True, "amministratore"
     wb, err = apri_foglio_dati()
     if err:
         return False, None
@@ -124,17 +115,21 @@ def verifica_utente_foglio(email_cercata):
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
         for riga in valori[1:]:
-            for cella in riga:
-                cella_str = str(cella).strip().lower().replace('\u200b', '')
-                if cella_str == email_cercata.strip().lower():
-                    return True, "amministratore"
-    except Exception as e:
-        st.error(f"Errore tecnico: {e}")
+            if len(riga) >= 4:
+                email_foglio = riga[2].strip().lower()
+                ruolo_foglio = riga[3].strip()
+                if email_foglio == email_cercata:
+                    return True, ruolo_foglio
+    except Exception:
+        pass
     return False, None
-    
+
+# Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
     code = query_params["code"]
+    
+    # Scambia il codice con il token di accesso
     token_url = "https://oauth2.googleapis.com/token"
     data = {
         "code": code,
@@ -144,45 +139,65 @@ if "code" in query_params and not st.session_state.utente_autenticato:
         "grant_type": "authorization_code",
     }
     response = requests.post(token_url, data=data)
+    
     if response.status_code == 200:
         token_info = response.json()
         access_token = token_info.get("access_token")
+        
+        # Recupera le informazioni del profilo utente da Google
         user_info_res = requests.get(
             "https://www.googleapis.com/oauth2/v1/userinfo",
             headers={"Authorization": f"Bearer {access_token}"}
         )
+        
         if user_info_res.status_code == 200:
             user_data = user_info_res.json()
             email_logged = user_data.get("email", "").strip().lower()
+            
+            # Verifica se l'email è abilitata nel foglio "Utenti"
             autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
+            
             if autorizzato:
                 st.session_state.utente_autenticato = True
                 st.session_state.email_logged = email_logged
                 st.session_state.ruolo = ruolo_trovato.lower()
-                
-                # Salva il cookie per 30 giorni
-                cookie_manager.set("seg_auth_session", 
-                                   {"email": email_logged, "ruolo": ruolo_trovato.lower()}, 
-                                   expires_at=datetime.now() + timedelta(days=30))
-                
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
+                # Pulisce i parametri dall'URL
                 st.query_params.clear()
                 st.rerun()
             else:
-                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato.")
+                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
                 st.stop()
 
+# Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
-        st.markdown("""<style>
-            a[kind="secondary"] { background-color: #DB4437 !important; color: white !important; border: 1px solid #DB4437 !important; font-weight: bold !important; border-radius: 4px !important; }
-            a[kind="secondary"]:hover { background-color: #C23321 !important; color: white !important; border: 1px solid #C23321 !important; }
-            </style>""", unsafe_allow_html=True)
+        
+        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
+        st.markdown("""
+            <style>
+            /* Seleziona il link button specifico di Google e lo colora di rosso */
+            a[kind="secondary"] {
+                background-color: #DB4437 !important;
+                color: white !important;
+                border: 1px solid #DB4437 !important;
+                font-weight: bold !important;
+                border-radius: 4px !important;
+            }
+            a[kind="secondary"]:hover {
+                background-color: #C23321 !important;
+                color: white !important;
+                border: 1px solid #C23321 !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Costruisce il link ufficiale di login Google OAuth
         google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
             "client_id": GOOGLE_CLIENT_ID,
             "redirect_uri": REDIRECT_URI,
@@ -190,23 +205,10 @@ if not st.session_state.utente_autenticato:
             "scope": "openid email profile",
             "prompt": "select_account"
         })
+        
         st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
+        
     st.stop()
-
-with st.sidebar:
-    st.write("👤 Utente connesso:")
-    st.write(f"📧 `{st.session_state.email_logged}`")
-    ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
-    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
-    if sola_lettura():
-        st.caption("🔒 Modalità sola lettura.")
-    st.divider()
-    if st.button("🚪 Logout", type="secondary", use_container_width=True, key="btn_logout_sidebar"):
-        st.session_state.utente_autenticato = False
-        st.session_state.ruolo = None
-        st.session_state.email_logged = ""
-        cookie_manager.delete("seg_auth_session")
-        st.rerun()
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
@@ -800,7 +802,7 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
 # IMPORTAZIONE S-21 RICEVUTA (da altra congregazione)
 # ─────────────────────────────────────────────────────────────────
 
-def _s21_ripFulisci_data(testo: str) -> str:
+def _s21_ripulisci_data(testo: str) -> str:
     return re.sub(r"\s*\([\d,\.]+\)\s*$", "", testo or "").strip()
 
 
@@ -4845,86 +4847,6 @@ def mostra_impostazioni():
     components.html(html_copia_link, height=140)
 
 
-import re
-import pandas as pd
-import streamlit as st
-
-# Regex per il controllo formale della sintassi dell'email
-REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-
-import re
-import pandas as pd
-import streamlit as st
-
-# Regex per il controllo formale della sintassi dell'email
-REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-
-# ─────────────────────────────────────────────────────────────────
-# POPOUT / DIALOG DI CONFERMA ELIMINAZIONE
-# ─────────────────────────────────────────────────────────────────
-@st.dialog("⚠️ Conferma Eliminazione")
-def dialog_elimina_utente(editor: dict):
-    riga = editor.get("riga", {})
-    nome_utente = riga.get("Utente", "questo utente")
-    
-    st.write(f"Sei veramente sicuro di voler eliminare l'accesso di **«{nome_utente}»**?")
-    st.caption("L'operazione non è reversibile: la persona non potrà più accedere all'applicazione.")
-    
-    col_si, col_no = st.columns(2)
-    with col_si:
-        if st.button("✔ Sì, elimina", key="popout_conf_si", type="primary", use_container_width=True):
-            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI, editor["numero_riga_foglio"])
-            if ok:
-                st.cache_data.clear()
-                st.session_state.utenti_editor = None
-                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
-                st.success("✔ Accesso eliminato con successo.")
-                st.rerun()
-            else:
-                st.error(err_elim)
-    with col_no:
-        if st.button("✖ No, annulla", key="popout_conf_no", use_container_width=True):
-            st.rerun()
-
-
-import re
-import pandas as pd
-import streamlit as st
-
-# Regex per il controllo formale della sintassi dell'email
-REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-
-# ─────────────────────────────────────────────────────────────────
-# POPOUT / DIALOG DI CONFERMA ELIMINAZIONE
-# ─────────────────────────────────────────────────────────────────
-@st.dialog("⚠️ Conferma Eliminazione")
-def dialog_elimina_utente(editor: dict):
-    riga = editor.get("riga", {})
-    nome_utente = riga.get("Utente", "questo utente")
-    
-    st.write(f"Sei veramente sicuro di voler eliminare l'accesso di **«{nome_utente}»**?")
-    st.caption("L'operazione non è reversibile: la persona non potrà più accedere all'applicazione.")
-    
-    col_si, col_no = st.columns(2)
-    with col_si:
-        if st.button("✔ Sì, elimina", key="popout_conf_si", type="primary", use_container_width=True):
-            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI, editor["numero_riga_foglio"])
-            if ok:
-                st.cache_data.clear()
-                st.session_state.utenti_editor = None
-                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
-                st.success("✔ Accesso eliminato con successo.")
-                st.rerun()
-            else:
-                st.error(err_elim)
-    with col_no:
-        if st.button("✖ No, annulla", key="popout_conf_no", use_container_width=True):
-            st.rerun()
-
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
 # ─────────────────────────────────────────────────────────────────
@@ -4933,90 +4855,46 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
     e = editor.get("riga", {}) if modo == "modifica" else {}
     chiave = editor.get("numero_riga_foglio", "nuovo")
 
-    # Determinazione automatica dell'ID progressivo
-    if modo == "modifica":
-        id_valore = str(e.get("ID", ""))
-    else:
-        id_valore = str(prossimo_id_anagrafica(df_utenti))
-
     if modo == "modifica":
         st.markdown(f"#### ✏️ Modifica accesso — {e.get('Utente', '')}")
     else:
         st.markdown("#### ➕ Nuovo accesso")
 
-    # Usiamo st.container() per consentire la verifica in tempo reale (on blur)
-    with st.container():
-        # Campo ID automatico e non modificabile
-        st.text_input(
-            "ID Utente", 
-            value=id_valore, 
-            disabled=True, 
-            key=f"id_ut_{chiave}",
-            help="ID progressivo generato automaticamente dal sistema."
-        )
-
-        nome_utente = st.text_input(
-            "Nome e Cognome *", 
-            value=e.get("Utente", ""), 
-            key=f"nome_ut_{chiave}"
-        )
-        
+    with st.form(f"form_utente_{chiave}", clear_on_submit=False):
+        nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
         email_utente = st.text_input(
-            "Indirizzo email (Google) *", 
-            value=e.get("Indirizzo", ""),
-            key=f"email_ut_{chiave}",
-            placeholder="esempio@gmail.com",
-            help="Inserisci l'indirizzo email con cui l'utente farà l'accesso."
-        )
-
-        # Controllo IMMEDIATO dell'email appena si esce dalla casella di testo
-        email_pulita = email_utente.strip().lower()
-        email_valida = True
-        if email_pulita:
-            if not re.match(REGEX_EMAIL, email_pulita):
-                st.error("⚠️ L'indirizzo email inserito non ha un formato valido (es. nome@dominio.com).")
-                email_valida = False
+            "Indirizzo email (Google) *", value=e.get("Indirizzo", ""),
+            help="Deve corrispondere esattamente all'account Google con cui la persona farà l'accesso.")
 
         ruolo_corrente = e.get("Ruolo", "") or OPZIONI_RUOLO_UTENTE[0]
         if ruolo_corrente not in OPZIONI_RUOLO_UTENTE:
             ruolo_corrente = OPZIONI_RUOLO_UTENTE[0]
-            
-        ruolo_scelto = st.selectbox(
-            "Ruolo", 
-            OPZIONI_RUOLO_UTENTE,
-            index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente),
-            key=f"ruolo_ut_{chiave}"
-        )
+        ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE,
+                                     index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente))
 
-        id_telegram = st.text_input(
-            "ID Telegram (opzionale)", 
-            value=e.get("Id telegram", ""),
-            key=f"telegram_ut_{chiave}",
-            help="Verrà usato in futuro per l'invio di notifiche."
-        )
+        id_telegram = st.text_input("ID Telegram (opzionale)", value=e.get("Id telegram", ""),
+                                    help="Verrà usato in futuro per l'invio di notifiche.")
 
         col_salva, col_annulla, col_elimina = st.columns(3)
         with col_salva:
-            invia = st.button("✔ Salva", key=f"btn_salva_{chiave}", type="primary", use_container_width=True)
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
         with col_annulla:
-            annulla = st.button("✖ Annulla", key=f"btn_annulla_{chiave}", use_container_width=True)
+            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
         with col_elimina:
-            elimina = st.button(
-                "🗑️ Elimina", 
-                key=f"btn_elimina_{chiave}", 
-                use_container_width=True,
-                disabled=(modo != "modifica")
-            )
+            elimina = st.form_submit_button("🗑️ Elimina", use_container_width=True,
+                                            disabled=(modo != "modifica"))
 
     if annulla:
         st.session_state.utenti_editor = None
         st.rerun()
 
     if elimina and modo == "modifica":
-        dialog_elimina_utente(editor)
+        st.session_state.utenti_conferma_elimina = editor
+        st.rerun()
 
     if invia:
         nome_pulito = nome_utente.strip()
+        email_pulita = email_utente.strip().lower()
 
         email_gia_presenti = set()
         if not df_utenti.empty and "Indirizzo" in df_utenti.columns:
@@ -5026,13 +4904,13 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
 
         if not nome_pulito or not email_pulita:
             st.error("Nome e indirizzo email sono obbligatori.")
-        elif not email_valida:
-            st.error("Impossibile salvare: correggi l'indirizzo email.")
+        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
+            st.error("L'indirizzo email non sembra valido.")
         elif email_pulita in email_gia_presenti:
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
             valori = {
-                "ID": id_valore,
+                "ID": e.get("ID") or str(prossimo_id_anagrafica(df_utenti)),
                 "Utente": nome_pulito,
                 "Indirizzo": email_pulita,
                 "Ruolo": ruolo_scelto,
@@ -5050,17 +4928,34 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
             else:
                 st.error(err_salva)
 
+    conferma = st.session_state.get("utenti_conferma_elimina")
+    if conferma and modo == "modifica" and conferma.get("numero_riga_foglio") == editor.get("numero_riga_foglio"):
+        st.warning(f"Confermi l'eliminazione dell'accesso di «{e.get('Utente', '')}»? "
+                   "L'operazione non è reversibile: la persona non potrà più accedere all'app.")
+        col_si, col_no = st.columns(2)
+        with col_si:
+            if st.button("✔ Sì, elimina", key="utenti_conf_si", type="primary", use_container_width=True):
+                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI,
+                                                    editor["numero_riga_foglio"])
+                if ok:
+                    st.cache_data.clear()
+                    st.session_state.utenti_editor = None
+                    st.session_state.utenti_conferma_elimina = None
+                    st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
+                    st.success("✔ Accesso eliminato.")
+                    st.rerun()
+                else:
+                    st.error(err_elim)
+        with col_no:
+            if st.button("No, annulla", key="utenti_conf_no", use_container_width=True):
+                st.session_state.utenti_conferma_elimina = None
+                st.rerun()
+
 
 def mostra_gestione_utenti():
     st.title("🔐 Accessi")
-
-    # Callback per resettare lo stato del form prima di tornare in Home
-    def _torna_home_e_chiudi_form():
-        st.session_state.utenti_editor = None
-        vai_a("home")
-
     st.button("🏠 Torna alla Home", key="home_da_utenti", use_container_width=True,
-              on_click=_torna_home_e_chiudi_form)
+              on_click=vai_a, args=("home",))
 
     if st.session_state.get("ruolo") != "amministratore":
         st.warning("⚠️ Questa pagina è riservata agli amministratori.")
@@ -5111,6 +5006,7 @@ def mostra_gestione_utenti():
         with col_agg:
             if st.button("➕ Aggiungi nuovo accesso", key="utenti_apri_nuovo", use_container_width=True):
                 st.session_state.utenti_editor = {"modo": "nuovo"}
+                st.session_state.utenti_conferma_elimina = None
         with col_mod:
             if idx_sel is not None:
                 if st.button("✏️ Modifica Accesso", key="utenti_apri_modifica", use_container_width=True):
@@ -5120,10 +5016,12 @@ def mostra_gestione_utenti():
                         "riga": df_utenti_reset.loc[idx_sel].to_dict(),
                         "numero_riga_foglio": numero_riga_foglio,
                     }
+                    st.session_state.utenti_conferma_elimina = None
 
         editor = st.session_state.get("utenti_editor")
         if editor:
             _form_utente(editor, df_utenti)
+
 
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
