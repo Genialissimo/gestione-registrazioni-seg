@@ -56,9 +56,9 @@ if not st.user.is_logged_in:
             
     st.stop()
 
-# ─────────────────────────────────────────────────────────────────
-# COSTANTI E CONNESSIONE A GOOGLE SHEETS
-# ─────────────────────────────────────────────────────────────────
+# ==============================================================================
+# 3. CONFIGURAZIONE CONNESSIONE FOGLIO E VERIFICA UTENTE
+# ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
 SCOPES = [
@@ -92,9 +92,6 @@ def apri_foglio_dati():
         return None, f"Errore durante il collegamento: {e}"
 
 
-# ==============================================================================
-# 3. VERIFICA UTENTE E CONTROLLO ACCESSO NEL FOGLIO
-# ==============================================================================
 def verifica_utente_foglio(email_cercata):
     """Verifica l'utente nel foglio Google 'Utenti'."""
     wb, err = apri_foglio_dati()
@@ -119,7 +116,7 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
-# Esegue la verifica dei permessi associati all'email loggata tramite st.user
+# Verifica autorizzazione basata sull'utente loggato nativamente
 email_logged = st.user.email.strip().lower()
 
 if "ruolo" not in st.session_state or st.session_state.get("email_logged") != email_logged:
