@@ -124,6 +124,56 @@ def verifica_utente_foglio(email_cercata):
         pass
     return False, None
 
+
+# ─────────────────────────────────────────────────────────────────
+# COOKIE DI SESSIONE — resta collegato fino a 30 giorni senza rifare il login
+# ─────────────────────────────────────────────────────────────────
+COOKIE_NOME_SESSIONE = "seg_auth_email"
+GIORNI_DURATA_COOKIE = 30
+
+
+@st.cache_resource(show_spinner=False)
+def get_cookie_manager():
+    return stx.CookieManager(key="cookie_manager_seg")
+
+
+cookie_manager = get_cookie_manager()
+
+
+def _imposta_cookie_sessione(email: str):
+    """Salva l'email nel browser per ripristinare il login automaticamente la prossima volta."""
+    try:
+        scadenza = datetime.now() + timedelta(days=GIORNI_DURATA_COOKIE)
+        cookie_manager.set(COOKIE_NOME_SESSIONE, email, expires_at=scadenza, key="set_cookie_login")
+    except Exception:
+        pass
+
+
+def _elimina_cookie_sessione():
+    """Rimuove il cookie di sessione salvato nel browser (logout o accesso revocato)."""
+    try:
+        cookie_manager.delete(COOKIE_NOME_SESSIONE, key="del_cookie_logout")
+    except Exception:
+        pass
+
+
+# Se non risulto ancora autenticato in questa sessione, provo a recuperare l'accesso
+# da un cookie salvato in precedenza nel browser (valido fino a 30 giorni dal login).
+if not st.session_state.utente_autenticato:
+    email_da_cookie = cookie_manager.get(COOKIE_NOME_SESSIONE)
+    if email_da_cookie:
+        email_da_cookie = email_da_cookie.strip().lower()
+        autorizzato_cookie, ruolo_da_cookie = verifica_utente_foglio(email_da_cookie)
+        if autorizzato_cookie:
+            st.session_state.utente_autenticato = True
+            st.session_state.email_logged = email_da_cookie
+            st.session_state.ruolo = ruolo_da_cookie.lower()
+            if st.session_state.ruolo == "presenze":
+                st.session_state.pagina = "presenze"
+        else:
+            # L'accesso non è più valido (es. rimosso dal foglio Utenti): tolgo il cookie.
+            _elimina_cookie_sessione()
+
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
@@ -163,6 +213,7 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.session_state.ruolo = ruolo_trovato.lower()
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
+                _imposta_cookie_sessione(email_logged)
                 # Pulisce i parametri dall'URL
                 st.query_params.clear()
                 st.rerun()
@@ -228,6 +279,8 @@ with st.sidebar:
     st.divider()  # Linea di separazione visiva
     
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
+        # Rimuove il cookie di sessione salvato nel browser
+        _elimina_cookie_sessione()
         # Resetta lo stato locale
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
@@ -364,6 +417,7 @@ OPZIONI_ATTIVI_INATTIVI = ["A", "I", "TR"]
 
 RIGA_INTESTAZIONE_UTENTI = 1
 OPZIONI_RUOLO_UTENTE = ["Amministratore", "Utente", "Presenze"]
+REGEX_EMAIL_VALIDA = re.compile(r"^[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+$")
 ETICHETTE_ATTIVI_INATTIVI = {"A": "Attivo", "I": "Inattivo", "TR": "Trasferito"}
 
 
@@ -4857,10 +4911,15 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
 
     if modo == "modifica":
         st.markdown(f"#### ✏️ Modifica accesso — {e.get('Utente', '')}")
+        id_mostrato = e.get("ID", "") or "—"
     else:
         st.markdown("#### ➕ Nuovo accesso")
+        id_mostrato = str(prossimo_id_anagrafica(df_utenti))
 
     with st.form(f"form_utente_{chiave}", clear_on_submit=False):
+        st.text_input("ID", value=id_mostrato, disabled=True,
+                      help="Assegnato automaticamente, non modificabile.")
+
         nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
         email_utente = st.text_input(
             "Indirizzo email (Google) *", value=e.get("Indirizzo", ""),
@@ -4904,13 +4963,13 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
 
         if not nome_pulito or not email_pulita:
             st.error("Nome e indirizzo email sono obbligatori.")
-        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
-            st.error("L'indirizzo email non sembra valido.")
+        elif not REGEX_EMAIL_VALIDA.match(email_pulita):
+            st.error("L'indirizzo email non è in un formato valido (es. nome.cognome@gmail.com).")
         elif email_pulita in email_gia_presenti:
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
             valori = {
-                "ID": e.get("ID") or str(prossimo_id_anagrafica(df_utenti)),
+                "ID": id_mostrato,
                 "Utente": nome_pulito,
                 "Indirizzo": email_pulita,
                 "Ruolo": ruolo_scelto,
