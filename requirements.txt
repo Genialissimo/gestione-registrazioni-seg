@@ -10,4 +10,4 @@ streamlit-google-auth
 pdfplumber
 streamlit-keyup
 extra-streamlit-components
-Authlib>=1.3.2
+
