@@ -114,14 +114,19 @@ def verifica_utente_foglio(email_cercata):
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
+        
+        # Iteriamo su tutte le righe escludendo eventualmente solo l'intestazione (valori[1:])
         for riga in valori[1:]:
+            # Verifichiamo che la riga abbia almeno 4 colonne (indice 0, 1, 2, 3)
             if len(riga) >= 4:
                 email_foglio = riga[2].strip().lower()
                 ruolo_foglio = riga[3].strip()
+                
                 if email_foglio == email_cercata:
                     return True, ruolo_foglio
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"Errore durante la lettura del foglio Utenti: {e}")
+        
     return False, None
 
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
