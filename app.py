@@ -108,42 +108,20 @@ def sola_lettura() -> bool:
 
 # Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
-    email_cercata = str(email_cercata).strip().lower()
-    
-    # Sblocco immediato e prioritario per il tuo account amministratore
-    if email_cercata == "putrino.fabrizio@gmail.com":
-        return True, "amministratore"
-
     wb, err = apri_foglio_dati()
     if err:
-        st.error(err)
         return False, None
-    
     try:
-        # Mostra l'elenco delle schede disponibili per controllo visivo
-        nomi_fogli = [f.title for f in wb.worksheets()]
-        
-        if NOME_FOGLIO_UTENTI not in nomi_fogli:
-            st.error(f"⚠️ Attenzione: La scheda '{NOME_FOGLIO_UTENTI}' non esiste nel file Google Sheets! Schede trovate: {nomi_fogli}")
-            return False, None
-            
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
-        
         for riga in valori[1:]:
-            for i, cella in enumerate(riga):
-                cella_str = str(cella).strip().lower().replace('\u200b', '')
-                if cella_str == email_cercata:
-                    ruolo_foglio = "amministratore"
-                    if len(riga) > i + 1 and str(riga[i + 1]).strip():
-                        ruolo_foglio = str(riga[i + 1]).strip()
-                    elif len(riga) >= 4 and str(riga[3]).strip():
-                        ruolo_foglio = str(riga[3]).strip()
+            if len(riga) >= 4:
+                email_foglio = riga[2].strip().lower()
+                ruolo_foglio = riga[3].strip()
+                if email_foglio == email_cercata:
                     return True, ruolo_foglio
-                    
-    except Exception as e:
-        st.error(f"Errore tecnico durante la lettura del foglio Utenti: {e}")
-        
+    except Exception:
+        pass
     return False, None
 
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
