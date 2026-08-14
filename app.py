@@ -4891,6 +4891,42 @@ def dialog_elimina_utente(editor: dict):
             st.rerun()
 
 
+import re
+import pandas as pd
+import streamlit as st
+
+# Regex per il controllo formale della sintassi dell'email
+REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+
+# ─────────────────────────────────────────────────────────────────
+# POPOUT / DIALOG DI CONFERMA ELIMINAZIONE
+# ─────────────────────────────────────────────────────────────────
+@st.dialog("⚠️ Conferma Eliminazione")
+def dialog_elimina_utente(editor: dict):
+    riga = editor.get("riga", {})
+    nome_utente = riga.get("Utente", "questo utente")
+    
+    st.write(f"Sei veramente sicuro di voler eliminare l'accesso di **«{nome_utente}»**?")
+    st.caption("L'operazione non è reversibile: la persona non potrà più accedere all'applicazione.")
+    
+    col_si, col_no = st.columns(2)
+    with col_si:
+        if st.button("✔ Sì, elimina", key="popout_conf_si", type="primary", use_container_width=True):
+            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI, editor["numero_riga_foglio"])
+            if ok:
+                st.cache_data.clear()
+                st.session_state.utenti_editor = None
+                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
+                st.success("✔ Accesso eliminato con successo.")
+                st.rerun()
+            else:
+                st.error(err_elim)
+    with col_no:
+        if st.button("✖ No, annulla", key="popout_conf_no", use_container_width=True):
+            st.rerun()
+
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
 # ─────────────────────────────────────────────────────────────────
@@ -4910,51 +4946,79 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
     else:
         st.markdown("#### ➕ Nuovo accesso")
 
-    with st.form(f"form_utente_{chiave}", clear_on_submit=False):
+    # Usiamo st.container() per consentire la verifica in tempo reale (on blur)
+    with st.container():
         # Campo ID automatico e non modificabile
         st.text_input(
             "ID Utente", 
             value=id_valore, 
             disabled=True, 
+            key=f"id_ut_{chiave}",
             help="ID progressivo generato automaticamente dal sistema."
         )
 
-        nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
+        nome_utente = st.text_input(
+            "Nome e Cognome *", 
+            value=e.get("Utente", ""), 
+            key=f"nome_ut_{chiave}"
+        )
+        
         email_utente = st.text_input(
             "Indirizzo email (Google) *", 
             value=e.get("Indirizzo", ""),
+            key=f"email_ut_{chiave}",
             placeholder="esempio@gmail.com",
-            help="Il controllo di validità viene effettuato al momento del salvataggio.")
+            help="Inserisci l'indirizzo email con cui l'utente farà l'accesso."
+        )
+
+        # Controllo IMMEDIATO dell'email appena si esce dalla casella di testo
+        email_pulita = email_utente.strip().lower()
+        email_valida = True
+        if email_pulita:
+            if not re.match(REGEX_EMAIL, email_pulita):
+                st.error("⚠️ L'indirizzo email inserito non ha un formato valido (es. nome@dominio.com).")
+                email_valida = False
 
         ruolo_corrente = e.get("Ruolo", "") or OPZIONI_RUOLO_UTENTE[0]
         if ruolo_corrente not in OPZIONI_RUOLO_UTENTE:
             ruolo_corrente = OPZIONI_RUOLO_UTENTE[0]
-        ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE,
-                                    index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente))
+            
+        ruolo_scelto = st.selectbox(
+            "Ruolo", 
+            OPZIONI_RUOLO_UTENTE,
+            index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente),
+            key=f"ruolo_ut_{chiave}"
+        )
 
-        id_telegram = st.text_input("ID Telegram (opzionale)", value=e.get("Id telegram", ""),
-                                    help="Verrà usato in futuro per l'invio di notifiche.")
+        id_telegram = st.text_input(
+            "ID Telegram (opzionale)", 
+            value=e.get("Id telegram", ""),
+            key=f"telegram_ut_{chiave}",
+            help="Verrà usato in futuro per l'invio di notifiche."
+        )
 
         col_salva, col_annulla, col_elimina = st.columns(3)
         with col_salva:
-            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+            invia = st.button("✔ Salva", key=f"btn_salva_{chiave}", type="primary", use_container_width=True)
         with col_annulla:
-            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
+            annulla = st.button("✖ Annulla", key=f"btn_annulla_{chiave}", use_container_width=True)
         with col_elimina:
-            elimina = st.form_submit_button("🗑️ Elimina", use_container_width=True,
-                                            disabled=(modo != "modifica"))
+            elimina = st.button(
+                "🗑️ Elimina", 
+                key=f"btn_elimina_{chiave}", 
+                use_container_width=True,
+                disabled=(modo != "modifica")
+            )
 
     if annulla:
         st.session_state.utenti_editor = None
         st.rerun()
 
-    # Se si preme elimina, si apre la finestra Popout
     if elimina and modo == "modifica":
         dialog_elimina_utente(editor)
 
     if invia:
         nome_pulito = nome_utente.strip()
-        email_pulita = email_utente.strip().lower()
 
         email_gia_presenti = set()
         if not df_utenti.empty and "Indirizzo" in df_utenti.columns:
@@ -4962,11 +5026,10 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
         if modo == "modifica":
             email_gia_presenti.discard((e.get("Indirizzo", "") or "").strip().lower())
 
-        # Controlli di validità sui campi al Submit del Form
         if not nome_pulito or not email_pulita:
             st.error("Nome e indirizzo email sono obbligatori.")
-        elif not re.match(REGEX_EMAIL, email_pulita):
-            st.error("⚠️ L'indirizzo email inserito non è valido. Inserisci un formato corretto (es. nome@domain.com).")
+        elif not email_valida:
+            st.error("Impossibile salvare: correggi l'indirizzo email.")
         elif email_pulita in email_gia_presenti:
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
