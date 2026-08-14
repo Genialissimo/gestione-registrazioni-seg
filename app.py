@@ -38,14 +38,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-import time
-import extra_streamlit_components as stx
-from streamlit_google_auth import Authenticate
+
 from urllib.parse import urlencode
 import requests
+import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ==============================================================================
-# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA
+# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA & CONNESSIONE FOGLIO
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
@@ -53,10 +54,6 @@ GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
 GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
-# ─────────────────────────────────────────────────────────────────
-# SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER OAUTH
-# (Devono esistere prima che l'OAuth venga eseguito a riga 3)
-# ─────────────────────────────────────────────────────────────────
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -86,7 +83,6 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
-# ─────────────────────────────────────────────────────────────────
 
 
 # ==============================================================================
@@ -106,8 +102,8 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
+    """Verifica l'utente nel foglio Google 'Utenti'."""
     wb, err = apri_foglio_dati()
     if err:
         return False, None
@@ -124,12 +120,12 @@ def verifica_utente_foglio(email_cercata):
         pass
     return False, None
 
+
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
     code = query_params["code"]
     
-    # Scambia il codice con il token di accesso
     token_url = "https://oauth2.googleapis.com/token"
     data = {
         "code": code,
@@ -144,7 +140,6 @@ if "code" in query_params and not st.session_state.utente_autenticato:
         token_info = response.json()
         access_token = token_info.get("access_token")
         
-        # Recupera le informazioni del profilo utente da Google
         user_info_res = requests.get(
             "https://www.googleapis.com/oauth2/v1/userinfo",
             headers={"Authorization": f"Bearer {access_token}"}
@@ -154,7 +149,6 @@ if "code" in query_params and not st.session_state.utente_autenticato:
             user_data = user_info_res.json()
             email_logged = user_data.get("email", "").strip().lower()
             
-            # Verifica se l'email è abilitata nel foglio "Utenti"
             autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
             
             if autorizzato:
@@ -163,7 +157,6 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.session_state.ruolo = ruolo_trovato.lower()
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
-                # Pulisce i parametri dall'URL
                 st.query_params.clear()
                 st.rerun()
             else:
@@ -178,10 +171,8 @@ if not st.session_state.utente_autenticato:
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
         
-        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
         st.markdown("""
             <style>
-            /* Seleziona il link button specifico di Google e lo colora di rosso */
             a[kind="secondary"] {
                 background-color: #DB4437 !important;
                 color: white !important;
@@ -197,12 +188,12 @@ if not st.session_state.utente_autenticato:
             </style>
         """, unsafe_allow_html=True)
 
-        # Costruisce il link ufficiale di login Google OAuth
         google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
             "client_id": GOOGLE_CLIENT_ID,
             "redirect_uri": REDIRECT_URI,
             "response_type": "code",
             "scope": "openid email profile",
+            "access_type": "offline",
             "prompt": "select_account"
         })
         
