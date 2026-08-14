@@ -106,7 +106,7 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti"
+# Funzione per verificare l'utente nel foglio Google "Utenti" (versione robusta con pulizia caratteri)
 def verifica_utente_foglio(email_cercata):
     wb, err = apri_foglio_dati()
     if err:
@@ -115,17 +115,16 @@ def verifica_utente_foglio(email_cercata):
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
         
-        # Iteriamo su tutte le righe escludendo eventualmente solo l'intestazione (valori[1:])
         for riga in valori[1:]:
-            # Verifichiamo che la riga abbia almeno 4 colonne (indice 0, 1, 2, 3)
             if len(riga) >= 4:
-                email_foglio = riga[2].strip().lower()
-                ruolo_foglio = riga[3].strip()
+                # Pulisce l'email del foglio da spazi, maiuscole e caratteri invisibili
+                email_foglio = str(riga[2]).strip().lower().replace('\u200b', '')
+                ruolo_foglio = str(riga[3]).strip()
                 
-                if email_foglio == email_cercata:
+                if email_foglio == email_cercata.strip().lower():
                     return True, ruolo_foglio
     except Exception as e:
-        st.error(f"Errore durante la lettura del foglio Utenti: {e}")
+        st.error(f"Errore tecnico durante la lettura del foglio Utenti: {e}")
         
     return False, None
 
