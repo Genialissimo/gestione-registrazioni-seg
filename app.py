@@ -228,8 +228,6 @@ with st.sidebar:
     st.divider()  # Linea di separazione visiva
     
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
-        # Rimuove il cookie salvato nel browser
-        cookie_manager.delete(COOKIE_NAME)
         # Resetta lo stato locale
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
