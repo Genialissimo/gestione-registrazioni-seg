@@ -33,7 +33,7 @@ from openpyxl.utils import get_column_letter
 # ==============================================================================
 st.set_page_config(
     page_title="Gestione Registrazioni SEG",
-    page_icon="??",
+    page_icon="📒",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -53,10 +53,10 @@ GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
 GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER OAUTH
 # (Devono esistere prima che l'OAuth venga eseguito a riga 3)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -86,7 +86,7 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 
 
 # ==============================================================================
@@ -106,29 +106,24 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti" con sblocco diretto per l'admin
+# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
-    # Sblocco di emergenza immediato per il tuo account
-    if email_cercata.strip().lower() == "putrino.fabrizio@gmail.com":
-        return True, "amministratore"
-
     wb, err = apri_foglio_dati()
     if err:
         return False, None
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
-        
         for riga in valori[1:]:
-            for cella in riga:
-                cella_str = str(cella).strip().lower().replace('\u200b', '')
-                if cella_str == email_cercata.strip().lower():
-                    return True, "amministratore"
-    except Exception as e:
-        st.error(f"Errore tecnico: {e}")
-        
+            if len(riga) >= 4:
+                email_foglio = riga[2].strip().lower()
+                ruolo_foglio = riga[3].strip()
+                if email_foglio == email_cercata:
+                    return True, ruolo_foglio
+    except Exception:
+        pass
     return False, None
-    
+
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
@@ -172,14 +167,14 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.query_params.clear()
                 st.rerun()
             else:
-                st.error(f"?? L'account `{email_logged}` non è autorizzato ad accedere.")
+                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
                 st.stop()
 
 # Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.title("?? Accesso Riservato")
+        st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
         
@@ -211,7 +206,7 @@ if not st.session_state.utente_autenticato:
             "prompt": "select_account"
         })
         
-        st.link_button("?? Accedi con Google", google_auth_url, use_container_width=True)
+        st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
         
     st.stop()
 # ==============================================================================
@@ -220,28 +215,28 @@ if not st.session_state.utente_autenticato:
 
 # Barra laterale con dati utente e Logout
 with st.sidebar:
-    st.write("?? Utente connesso:")
-    st.write(f"?? `{st.session_state.email_logged}`")
+    st.write("👤 Utente connesso:")
+    st.write(f"📧 `{st.session_state.email_logged}`")
     
     # Recupera il ruolo salvato in sessione e lo mostra con l'iniziale maiuscola
     ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
-    st.write(f"??? **Ruolo:** `{ruolo_utente}`")
+    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
 
     if sola_lettura():
-        st.caption("?? Modalità sola lettura: puoi consultare i dati ma non modificarli.")
+        st.caption("🔒 Modalità sola lettura: puoi consultare i dati ma non modificarli.")
 
     st.divider()  # Linea di separazione visiva
     
-    if st.button("?? Logout", type="secondary", use_container_width=True):
+    if st.button("🚪 Logout", type="secondary", use_container_width=True):
         # Resetta lo stato locale
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
         st.rerun()
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # SCOPES è stato spostato in alto
 
 NOME_FOGLIO_RISPOSTE = "Risposte del modulo 9"
@@ -251,7 +246,7 @@ NOME_FOGLIO_PRESENZE = "Presenze Adunanze"
 RIGA_INTESTAZIONE_PRESENZE = 1
 TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 
-# -- Impostazioni configurabili (es. giorni in cui si tengono le adunanze) --
+# ── Impostazioni configurabili (es. giorni in cui si tengono le adunanze) ──
 NOME_FOGLIO_IMPOSTAZIONI = "Configurazioni"
 RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
 CHIAVE_GIORNI_PER_TIPO = {
@@ -432,9 +427,9 @@ S21_COLORE_ROSSO = (0.827, 0.125, 0.125)
 S21_COLORE_NERO = (0, 0, 0)
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # CONNESSIONE A GOOGLE
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # Le funzioni get_client() e apri_foglio_dati() sono state spostate in alto
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -803,11 +798,11 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         c.drawString(125 + larghezza_data_batt + 6, _s21_y_da_bottom(80.4, offset), f"({eta_batt})")
         c.setFillColorRGB(*S21_COLORE_NERO)
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # IMPORTAZIONE S-21 RICEVUTA (da altra congregazione)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 
-def _s21_ripFulisci_data(testo: str) -> str:
+def _s21_ripulisci_data(testo: str) -> str:
     return re.sub(r"\s*\([\d,\.]+\)\s*$", "", testo or "").strip()
 
 
@@ -1080,9 +1075,9 @@ def genera_zip_s21_completo(df: pd.DataFrame, df_tutti: pd.DataFrame, anno_corre
     return buf.getvalue()
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # Pagina: RIEPILOGO ATTIVITÀ (report libero per sorveglianti di gruppo/categoria)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 CATEGORIE_RIEPILOGO_ATTIVITA = {
     "Tutti": None,
     "Solo Proclamatori": "proclamatore",
@@ -1607,9 +1602,9 @@ def salva_riga_anagrafica(_workbook, valori: dict, riga_da_aggiornare: int = Non
                               valori, riga_da_aggiornare)
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # CONNESSIONE (navigazione tramite le card)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 if "pagina" not in st.session_state:
     st.session_state.pagina = "home"
 
@@ -1634,9 +1629,9 @@ workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 
 def _normalizza_data_report(valore) -> str:
     """Converte un valore di 'Mese/Anno' nel formato canonico 'AAAA-MM',
@@ -1844,16 +1839,16 @@ def calcola_stato_rapporti_completo(df_tutti: pd.DataFrame, df_anagrafica: pd.Da
 
     return totale_rapporti_presenti, totale_rapporti_dovuti, dettaglio_mancanti
 
-# -----------------------------------------------------------------
-# PAGINA: HOME (Tab "?? Home" con card promemoria responsive + card originali)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: HOME (Tab "🏠 Home" con card promemoria responsive + card originali)
+# ─────────────────────────────────────────────────────────────────
 
 def mostra_home():
     ora_ora = datetime.now().strftime('%d/%m/%Y %H:%M')
     st.markdown(
         f"""
         <div style="margin-bottom: 12px;">
-            <h3 style="font-size: 1.25rem; font-weight: 700; margin: 0; padding: 0;">?? Gestione Registrazioni SEG</h3>
+            <h3 style="font-size: 1.25rem; font-weight: 700; margin: 0; padding: 0;">📒 Gestione Registrazioni SEG</h3>
             <p style="font-size: 0.8rem; color: #6b7280; margin: 2px 0 0 0; padding: 0;">
                 Ultimo aggiornamento: {ora_ora}
             </p>
@@ -2198,10 +2193,10 @@ def mostra_home():
 
     promemoria = []
 
-    # -----------------------------------------------------------------
+    # ─────────────────────────────────────────────────────────────────
     # Segnalazione: Rapporto del mese corrente (da Anagrafica attivi + foglio
     # "Risposte del modulo 9", colonna B) — non ancora consegnato
-    # -----------------------------------------------------------------
+    # ─────────────────────────────────────────────────────────────────
     n_mancanti_mese = len(nomi_mancanti_rapporto_mese) if nomi_mancanti_rapporto_mese else 0
     if n_mancanti_mese > 0:
         dot_cls_mese = "dot-yellow" if n_mancanti_mese < 5 else "dot-red"
@@ -2212,9 +2207,9 @@ def mostra_home():
         promemoria.append((dot_cls_mese, testo_mese))
     # Se hanno consegnato tutti (o non ci sono proclamatori attivi), non si scrive nulla.
 
-    # -----------------------------------------------------------------
+    # ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
-    # -----------------------------------------------------------------
+    # ─────────────────────────────────────────────────────────────────
     n_consegnati_rapporti, n_dovuti_rapporti, mancanti_dettaglio = calcola_stato_rapporti_completo(
         df_tutti_home, df_anagrafica_home)
 
@@ -2252,7 +2247,7 @@ def mostra_home():
 
     postit_html = f"""
     <div class="postit-card">
-        <div class="postit-titolo">?? Promemoria e Segnalazioni</div>
+        <div class="postit-titolo">📌 Promemoria e Segnalazioni</div>
         <div class="postit-lista">
             {righe_html}
         </div>
@@ -2260,30 +2255,30 @@ def mostra_home():
     """
 
     lista_impostazioni = [
-        ("??", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
+        ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
     ]
     if st.session_state.get("ruolo") == "amministratore":
         lista_impostazioni.append(
-            ("??", "bg-purple", "Accessi", "Gestisci chi può accedere all'app e con quale ruolo.", "utenti", "")
+            ("🔐", "bg-purple", "Accessi", "Gestisci chi può accedere all'app e con quale ruolo.", "utenti", "")
         )
 
     sezioni = {
-        "?? Rapporti": [
-            ("??", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
-            ("??", "bg-blue",   "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
-            ("??", "bg-cyan",   "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
-            ("??", "bg-amber",  "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
-            ("??", "bg-blue",   "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
-            ("??", "bg-orange", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
+        "📖 Rapporti": [
+            ("📖", "bg-orange", "Rapporti consegnati", "Visualizza e modifica i rapporti di servizio consegnati.", "registrazioni", badge_rapporti),
+            ("📚", "bg-blue",   "Storico rapporti", "Storico dei rapporti di servizio per Proclamatore.", "storico", ""),
+            ("📇", "bg-cyan",   "Cartoline di registrazione", "Genera le cartoline S-21 per i Proclamatori scelti.", "cartoline", ""),
+            ("🏢", "bg-amber",  "Rapporto per la Filiale", "Dati statistici mensili (tipo modulo S-10).", "filiale", ""),
+            ("📊", "bg-blue",   "Riepilogo attività e statistiche", "Report su ore, studi e crediti per Proclamatore o per categoria.", "riepilogo_statistiche", ""),
+            ("📥", "bg-orange", "Importa da S-21", "Importa ore/studi da una S-21 ricevuta (Proclamatore trasferito).", "importa_s21", ""),
         ],
-        "??? Anagrafiche": [
-            ("???", "bg-green",  "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
-            ("??", "bg-purple", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
+        "🗂️ Anagrafiche": [
+            ("🗂️", "bg-green",  "Anagrafiche", "Gestisci i dati dei Proclamatori.", "anagrafiche", badge_anagrafica),
+            ("👥", "bg-purple", "Gruppi di servizio", "Abbina i Proclamatori a un sorvegliante di gruppo.", "gruppi", ""),
         ],
-        "?? Adunanze": [
-            ("??", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        "🙌 Adunanze": [
+            ("🙌", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
         ],
-        "?? Impostazioni": lista_impostazioni,
+        "⚙️ Impostazioni": lista_impostazioni,
     }
 
     def mostra_griglia_card(lista_card):
@@ -2311,7 +2306,7 @@ def mostra_home():
                         st.button(" ", key=f"nav_{pagina}", disabled=not collegato,
                                  on_click=vai_a, args=(pagina,), use_container_width=True)
 
-    nomi_tab = ["?? Home"] + list(sezioni.keys())
+    nomi_tab = ["🏠 Home"] + list(sezioni.keys())
     tabs = st.tabs(nomi_tab)
 
     with tabs[0]:
@@ -2321,9 +2316,9 @@ def mostra_home():
         with tab:
             mostra_griglia_card(lista_card)
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: int,
                     chiave: str, chiave_stato_modifica: str = None):
     e = riga_esistente
@@ -2362,7 +2357,7 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
-            invia = st.form_submit_button("? Salva", type="primary", use_container_width=True,
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True,
                                           disabled=bloccato)
         with col_btn2:
             annulla = st.form_submit_button("Annulla", use_container_width=True)
@@ -2395,7 +2390,7 @@ def _form_rapporto(df: pd.DataFrame, riga_esistente: dict, numero_riga_foglio: i
             st.cache_data.clear()
             if chiave_stato_modifica:
                 st.session_state[chiave_stato_modifica] = None
-            st.success("? Salvato correttamente.")
+            st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
             st.error(err)
@@ -2415,11 +2410,11 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 def mostra_registrazioni():
     st.title("Rapporti consegnati")
-    st.button("?? Torna alla Home", key="home_da_registrazioni", use_container_width=True,
+    st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True,
               on_click=vai_a, args=("home",))
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     if "rapporto_modifica_globale" not in st.session_state:
@@ -2446,7 +2441,7 @@ def mostra_registrazioni():
         st.info("Nessun Proclamatore trovato in Anagrafica.")
         return
 
-    ricerca = st_keyup("?? Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_dinamica")
+    ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_dinamica")
 
     def e_attivo(valore: str) -> bool:
         return (valore or "").strip().lower().startswith("a")
@@ -2489,14 +2484,14 @@ def mostra_registrazioni():
 
     filtro_stato_rapporto = st.radio(
         "Filtro rapporti",
-        ["Tutti", "?? Da consegnare", "?? Consegnati"],
+        ["Tutti", "🔴 Da consegnare", "🟢 Consegnati"],
         horizontal=True,
         label_visibility="collapsed",
         key="registrazioni_filtro_stato",
     )
-    if filtro_stato_rapporto == "?? Da consegnare":
+    if filtro_stato_rapporto == "🔴 Da consegnare":
         nomi = [n for n in nomi if conteggi.get(n, 0) == 0]
-    elif filtro_stato_rapporto == "?? Consegnati":
+    elif filtro_stato_rapporto == "🟢 Consegnati":
         nomi = [n for n in nomi if conteggi.get(n, 0) >= 1]
 
     if not nomi:
@@ -2512,7 +2507,7 @@ def mostra_registrazioni():
 
     def _riga_proclamatore_rapporto(nome: str):
         conteggio = conteggi.get(nome, 0)
-        pallino = "??" if conteggio == 1 else "??" if conteggio >= 2 else "??"
+        pallino = "🟢" if conteggio == 1 else "🟡" if conteggio >= 2 else "🔴"
 
         with st.expander(f"{pallino}  {nome}"):
             if "Cognome e Nome" not in df.columns:
@@ -2545,7 +2540,7 @@ def mostra_registrazioni():
 
             col_mod, col_elim = st.columns(2)
             with col_mod:
-                if st.button("?? Modifica riga selezionata", key=f"btn_mod_{nome}",
+                if st.button("✏️ Modifica riga selezionata", key=f"btn_mod_{nome}",
                             disabled=idx_originale is None, use_container_width=True):
                     numero_riga_foglio = RIGA_INTESTAZIONE_RISPOSTE + 1 + idx_originale
                     st.session_state.rapporto_modifica_globale = {
@@ -2556,7 +2551,7 @@ def mostra_registrazioni():
                     }
                     st.rerun()
             with col_elim:
-                if st.button("??? Elimina riga selezionata", key=f"btn_elim_{nome}",
+                if st.button("🗑️ Elimina riga selezionata", key=f"btn_elim_{nome}",
                             disabled=(idx_originale is None) or sola_lettura(), use_container_width=True):
                     st.session_state[chiave_conferma_elim] = True
                     st.rerun()
@@ -2566,13 +2561,13 @@ def mostra_registrazioni():
                 st.warning("Confermi l'eliminazione di questo rapporto? L'operazione non è reversibile.")
                 col_si, col_no = st.columns(2)
                 with col_si:
-                    if st.button("? Sì, elimina", key=f"btn_conf_si_{nome}",
+                    if st.button("✔ Sì, elimina", key=f"btn_conf_si_{nome}",
                                    type="primary", use_container_width=True):
                         ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_RISPOSTE, numero_riga_foglio)
                         if ok:
                             st.cache_data.clear()
                             st.session_state[chiave_conferma_elim] = False
-                            st.success("? Rapporto eliminato.")
+                            st.success("✔ Rapporto eliminato.")
                             st.rerun()
                         else:
                             st.error(err_elim)
@@ -2586,14 +2581,14 @@ def mostra_registrazioni():
 
     for gruppo in sorted(gruppi.keys()):
         if gruppi[gruppo]:
-            st.markdown(f"#### ?? {gruppo}")
+            st.markdown(f"#### 👤 {gruppo}")
             for nome in gruppi[gruppo]:
                 _riga_proclamatore_rapporto(nome)
             st.divider()
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: ANAGRAFICHE
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_foglio: int = None,
                       chiave: str = "nuovo", modo_nuovo: bool = False, chiave_expander: str = None):
     e = riga_esistente or {}
@@ -2660,26 +2655,26 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
         opzioni_gruppo = opzioni_da_colonna(df, "Gruppo")
         gruppo_corrente = e.get("Gruppo", "")
-        elenco_gruppo = opzioni_gruppo + ["? Nuovo…"]
+        elenco_gruppo = opzioni_gruppo + ["➕ Nuovo…"]
         if gruppo_corrente and gruppo_corrente not in elenco_gruppo:
             elenco_gruppo = [gruppo_corrente] + elenco_gruppo
-        scelta_gruppo = st.selectbox("Gruppo", elenco_gruppo or ["? Nuovo…"],
+        scelta_gruppo = st.selectbox("Gruppo", elenco_gruppo or ["➕ Nuovo…"],
                                       index=(elenco_gruppo.index(gruppo_corrente)
                                              if gruppo_corrente in elenco_gruppo else 0),
                                       key=f"gruppo_{chiave}", disabled=bloccato)
-        if scelta_gruppo == "? Nuovo…":
+        if scelta_gruppo == "➕ Nuovo…":
             scelta_gruppo = st.text_input("Nome del nuovo gruppo", key=f"gruppo_nuovo_{chiave}",
                                           disabled=bloccato)
 
         opzioni_au = opzioni_da_colonna(df, "A/U")
         au_corrente = e.get("A/U", "")
-        elenco_au = opzioni_au + ["? Nuovo…"]
+        elenco_au = opzioni_au + ["➕ Nuovo…"]
         if au_corrente and au_corrente not in elenco_au:
             elenco_au = [au_corrente] + elenco_au
-        scelta_au = st.selectbox("A/U", elenco_au or ["? Nuovo…"],
+        scelta_au = st.selectbox("A/U", elenco_au or ["➕ Nuovo…"],
                                   index=(elenco_au.index(au_corrente) if au_corrente in elenco_au else 0),
                                   key=f"au_{chiave}", disabled=bloccato)
-        if scelta_au == "? Nuovo…":
+        if scelta_au == "➕ Nuovo…":
             scelta_au = st.text_input("Nuovo valore A/U", key=f"au_nuovo_{chiave}", disabled=bloccato)
 
         note = st.text_area("Note", value=e.get("Note", ""), height=100, key=f"note_{chiave}",
@@ -2707,14 +2702,14 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
         opzioni_trasf = opzioni_da_colonna(df, "Trasf.")
         trasf_corrente = e.get("Trasf.", "")
-        elenco_trasf = opzioni_trasf + ["? Nuovo…"]
+        elenco_trasf = opzioni_trasf + ["➕ Nuovo…"]
         if trasf_corrente and trasf_corrente not in elenco_trasf:
             elenco_trasf = [trasf_corrente] + elenco_trasf
-        scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["? Nuovo…"],
+        scelta_trasf = st.selectbox("Trasf.", elenco_trasf or ["➕ Nuovo…"],
                                      index=(elenco_trasf.index(trasf_corrente)
                                             if trasf_corrente in elenco_trasf else 0),
                                      key=f"trasf_{chiave}", disabled=bloccato)
-        if scelta_trasf == "? Nuovo…":
+        if scelta_trasf == "➕ Nuovo…":
             scelta_trasf = st.text_input("Nuovo valore Trasf.", key=f"trasf_nuovo_{chiave}",
                                          disabled=bloccato)
 
@@ -2723,7 +2718,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
-            invia = st.form_submit_button("? Salva", use_container_width=True, type="primary",
+            invia = st.form_submit_button("✔ Salva", use_container_width=True, type="primary",
                                           disabled=bloccato)
         with col_btn2:
             annulla = st.form_submit_button("Annulla", use_container_width=True)
@@ -2772,7 +2767,7 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
                 st.session_state.anagrafica_nuovo = False
             if chiave_expander:
                 st.session_state[chiave_expander] = False
-            st.success("? Salvato correttamente.")
+            st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
             st.error(err)
@@ -2780,12 +2775,12 @@ def _form_anagrafica(df: pd.DataFrame, riga_esistente: dict = None, numero_riga_
 
 def mostra_anagrafiche():
     st.title("Anagrafiche")
-    st.button("?? Torna alla Home", key="home_da_anagrafiche", use_container_width=True,
+    st.button("🏠 Torna alla Home", key="home_da_anagrafiche", use_container_width=True,
               on_click=vai_a, args=("home",))
     st.caption(f"Dati letti dal foglio «{NOME_FOGLIO_ANAGRAFICA}».")
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     if "anagrafica_nuovo" not in st.session_state:
@@ -2797,15 +2792,15 @@ def mostra_anagrafiche():
         return
 
     if st.session_state.anagrafica_nuovo:
-        st.subheader("? Nuovo Proclamatore")
+        st.subheader("➕ Nuovo Proclamatore")
         _form_anagrafica(df, chiave="nuovo", modo_nuovo=True)
         return
 
-    if st.button("? Nuovo Proclamatore", use_container_width=True):
+    if st.button("➕ Nuovo Proclamatore", use_container_width=True):
         st.session_state.anagrafica_nuovo = True
         st.rerun()
 
-    ricerca = st.text_input("?? Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
+    ricerca = st.text_input("🔍 Cerca per nome, gruppo, tipo…", placeholder="Digita per filtrare…")
 
     if df.empty:
         st.info("Il foglio è collegato correttamente ma non contiene ancora Proclamatori.")
@@ -2844,10 +2839,10 @@ def mostra_anagrafiche():
     conteggio_inc = int(((categorie == "A") & (~df_mostrato["__completo"])).sum())
 
     opzioni_stato = [
-        f"?? Attivi ({conteggio_a})",
-        f"?? Anagrafica incompleta ({conteggio_inc})",
-        f"?? Inattivi ({conteggio_i})",
-        f"?? Trasferiti ({conteggio_tr})",
+        f"🟢 Attivi ({conteggio_a})",
+        f"🟡 Anagrafica incompleta ({conteggio_inc})",
+        f"🔺 Inattivi ({conteggio_i})",
+        f"↔️ Trasferiti ({conteggio_tr})",
     ]
 
     scelta_stato = st.radio("Stato", opzioni_stato, index=0, horizontal=True,
@@ -2886,9 +2881,9 @@ def mostra_anagrafiche():
         numero_riga_foglio = RIGA_INTESTAZIONE_ANAGRAFICA + 1 + idx
         chiave_persona = str(riga.get("ID") or idx)
         aperto = (st.session_state.anagrafica_aperto == chiave_persona)
-        freccia = "?" if aperto else "?"
+        freccia = "▼" if aperto else "▶"
 
-        badge_stato = " ??" if not riga.get("__completo", True) else ""
+        badge_stato = " 🟡" if not riga.get("__completo", True) else ""
 
         if st.button(f"{freccia}  {nome}{badge_stato}", key=f"btn_anagrafica_{chiave_persona}", use_container_width=True):
             st.session_state.anagrafica_aperto = None if aperto else chiave_persona
@@ -2900,17 +2895,17 @@ def mostra_anagrafiche():
                                   chiave=chiave_persona, modo_nuovo=False,
                                   chiave_expander="anagrafica_aperto")
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: RIEPILOGO ATTIVITÀ E STATISTICHE
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def mostra_riepilogo_attivita():
-    st.title("?? Riepilogo attività e statistiche")
+    st.title("📊 Riepilogo attività e statistiche")
 
-    st.button("??", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True,
+    st.button("🏠", key="home_da_riepilogo", help="Torna alla Home", use_container_width=True,
               on_click=vai_a_home_reset_riepilogo)
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
@@ -2930,10 +2925,10 @@ def mostra_riepilogo_attivita():
     anno_scelto = st.selectbox(
         "Seleziona anno teocratico",
         anni_presenti,
-        format_func=lambda a: f"{a} – {a + 1} (set {a} ? ago {a + 1})",
+        format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
-    with st.expander("?? Riepilogo attività", expanded=True, key="riepilogo_expander_aperto"):
+    with st.expander("📊 Riepilogo attività", expanded=True, key="riepilogo_expander_aperto"):
         st.caption("Report libero (non la scheda S-21): un elenco con mese, tipo di servizio, ore, "
                    "crediti, studi e note per ciascun Proclamatore, con totali e medie. Utile da "
                    "spedire ai sorveglianti di gruppo.")
@@ -2961,7 +2956,7 @@ def mostra_riepilogo_attivita():
             st.caption("Questa vista confronta tutti i gruppi in tutte le categorie: "
                        "Gruppo e Categoria scelti sopra vengono ignorati.")
 
-        if st.button("?? Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
+        if st.button("📄 Crea PDF", key="riepilogo_crea_pdf", use_container_width=True):
             with st.spinner("Genero il riepilogo…"):
                 etichetta_dati_periodo = _riepilogo_etichetta_dati_estratti(df_tutti, periodo_scelto)
                 if tipo_vista == "Sintetico compara gruppi":
@@ -3013,7 +3008,7 @@ def mostra_riepilogo_attivita():
                     st.session_state.pop(chiave, None)
 
             st.download_button(
-                "?? Scarica Riepilogo attività (PDF)",
+                "⬇️ Scarica Riepilogo attività (PDF)",
                 data=st.session_state.riepilogo_pdf_pronto,
                 file_name=nome_file,
                 mime="application/pdf",
@@ -3025,15 +3020,15 @@ def mostra_riepilogo_attivita():
     st.divider()
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: CARTOLINE DI REGISTRAZIONE (S-21)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def mostra_cartoline_registrazione():
-    st.title("?? Cartoline di registrazione")
+    st.title("📇 Cartoline di registrazione")
     contenitore_pulsanti = st.container()
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     if not os.path.exists(PERCORSO_MODULO_S21):
@@ -3057,7 +3052,7 @@ def mostra_cartoline_registrazione():
     anno_scelto = st.selectbox(
         "Seleziona anno teocratico",
         anni_presenti,
-        format_func=lambda a: f"{a} – {a + 1} (set {a} ? ago {a + 1})",
+        format_func=lambda a: f"{a} – {a + 1} (set {a} → ago {a + 1})",
     )
 
     df_lista = df.reset_index(drop=True)
@@ -3070,7 +3065,7 @@ def mostra_cartoline_registrazione():
         stato_per_nome = {}
     df_lista = df_lista[df_lista["Cognome e Nome"].astype(str).str.strip() != ""]
 
-    ricerca = st.text_input("Cerca per nome", placeholder="?? Cerca per nome…", label_visibility="collapsed")
+    ricerca = st.text_input("Cerca per nome", placeholder="🔍 Cerca per nome…", label_visibility="collapsed")
     df_mostrato = df_lista
     if ricerca:
         df_mostrato = df_mostrato[df_mostrato["Cognome e Nome"].astype(str).str.contains(ricerca, case=False, na=False)]
@@ -3083,7 +3078,7 @@ def mostra_cartoline_registrazione():
         return f"cb_cartolina_{nome}"
 
     for nome in nomi_visibili:
-        etichetta = f"?? {nome}" if stato_per_nome.get(nome) == "I" else nome
+        etichetta = f"🔺 {nome}" if stato_per_nome.get(nome) == "I" else nome
         st.checkbox(etichetta, key=_chiave_cb(nome))
 
     selezionati = [nome for nome in nomi_tutti if st.session_state.get(_chiave_cb(nome), False)]
@@ -3092,17 +3087,17 @@ def mostra_cartoline_registrazione():
     with contenitore_pulsanti:
         col_home, col_menu, col_vuota = st.columns([1, 1, 5])
         with col_home:
-            st.button("??", key="home_da_cartoline", use_container_width=True,
+            st.button("🏠", key="home_da_cartoline", use_container_width=True,
                       help="Torna alla Home", on_click=vai_a, args=("home",))
         with col_menu:
-            if st.button("?", key="toggle_menu_cartoline", use_container_width=True):
+            if st.button("⋯", key="toggle_menu_cartoline", use_container_width=True):
                 st.session_state.cartoline_menu_aperto = not st.session_state.get(
                     "cartoline_menu_aperto", False)
 
         genera_tutti = genera_sel = False
         if st.session_state.get("cartoline_menu_aperto"):
-            genera_tutti = st.button("??? Crea tutti i PDF delle registrazioni", use_container_width=True)
-            genera_sel = st.button(f"?? Genera cartoline selezionate ({n_sel})",
+            genera_tutti = st.button("🗂️ Crea tutti i PDF delle registrazioni", use_container_width=True)
+            genera_sel = st.button(f"📄 Genera cartoline selezionate ({n_sel})",
                                     use_container_width=True, disabled=n_sel == 0)
             if genera_tutti or genera_sel:
                 st.session_state.cartoline_menu_aperto = False
@@ -3125,7 +3120,7 @@ def mostra_cartoline_registrazione():
 
         if st.session_state.get("cartoline_pacchetto_completo"):
             st.download_button(
-                "?? Scarica il pacchetto completo (ZIP)",
+                "⬇️ Scarica il pacchetto completo (ZIP)",
                 data=st.session_state.cartoline_pacchetto_completo,
                 file_name=f"Registrazioni_Complete_{anno_scelto + 1}.zip",
                 mime="application/zip",
@@ -3138,13 +3133,13 @@ def mostra_cartoline_registrazione():
         if pronto:
             tipo, dati_file, extra = pronto
             if tipo == "pdf":
-                st.download_button("?? Scarica PDF", data=dati_file,
+                st.download_button("⬇️ Scarica PDF", data=dati_file,
                                     file_name=f"{_s21_nome_file_sicuro(extra)}.pdf",
                                     mime="application/pdf", key="download_cartolina_pdf",
                                     use_container_width=True,
                                     on_click=lambda: st.session_state.pop("cartoline_pronto", None))
             else:
-                st.download_button("?? Scarica ZIP", data=dati_file,
+                st.download_button("⬇️ Scarica ZIP", data=dati_file,
                                     file_name=f"Schede_S21_{extra + 1}.zip",
                                     mime="application/zip", key="download_cartolina_zip",
                                     use_container_width=True,
@@ -3153,10 +3148,10 @@ def mostra_cartoline_registrazione():
     st.divider()
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: GRUPPI DI SERVIZIO
-# -----------------------------------------------------------------
-ETICHETTE_STATO_GRUPPI = {"A": "?? Attivi", "I": "?? Inattivi", "TR": "?? Trasferiti"}
+# ─────────────────────────────────────────────────────────────────
+ETICHETTE_STATO_GRUPPI = {"A": "🟢 Attivi", "I": "🔺 Inattivi", "TR": "↔️ Trasferiti"}
 
 
 COLORI_GRUPPI = ["BDD7EE", "FBE0D0", "D8ECD2", "FCEDB6", "E4D6EC", "F5C6C6"]
@@ -3363,14 +3358,14 @@ def genera_pdf_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False)
 
 
 def mostra_gruppi_servizio():
-    st.title("?? Gruppi di servizio")
-    st.button("?? Torna alla Home", key="home_da_gruppi", use_container_width=True,
+    st.title("👥 Gruppi di servizio")
+    st.button("🏠 Torna alla Home", key="home_da_gruppi", use_container_width=True,
               on_click=vai_a, args=("home",))
     contenitore_associa = st.container()
     st.caption("Seleziona uno o più Proclamatori e abbinali a un sorvegliante di gruppo.")
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     df, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
@@ -3385,7 +3380,7 @@ def mostra_gruppi_servizio():
 
     formato_export = st.radio("Formato esportazione", ["Excel", "PDF", "PDF includi inattivi"],
                                horizontal=True, key="gruppi_formato_export")
-    if st.button(f"?? Esporta Gruppi di servizio ({formato_export})", key="esporta_gruppi",
+    if st.button(f"📥 Esporta Gruppi di servizio ({formato_export})", key="esporta_gruppi",
                  use_container_width=True):
         if formato_export == "Excel":
             st.session_state.gruppi_export_pronto = ("xlsx", genera_excel_gruppi_servizio(df))
@@ -3399,7 +3394,7 @@ def mostra_gruppi_servizio():
         tipo_file, dati_file = st.session_state.gruppi_export_pronto
         if tipo_file == "xlsx":
             st.download_button(
-                "?? Scarica Gruppi di servizio.xlsx",
+                "⬇️ Scarica Gruppi di servizio.xlsx",
                 data=dati_file,
                 file_name="Gruppi_di_servizio.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3409,7 +3404,7 @@ def mostra_gruppi_servizio():
             )
         else:
             st.download_button(
-                "?? Scarica Gruppi di servizio.pdf",
+                "⬇️ Scarica Gruppi di servizio.pdf",
                 data=dati_file,
                 file_name="Gruppi_di_servizio.pdf",
                 mime="application/pdf",
@@ -3423,7 +3418,7 @@ def mostra_gruppi_servizio():
     else:
         categorie = pd.Series(["A"] * len(df), index=df.index)
 
-    stato_scelto = st.radio("Stato", ["?? Attivi", "?? Inattivi"], horizontal=True,
+    stato_scelto = st.radio("Stato", ["🟢 Attivi", "🔺 Inattivi"], horizontal=True,
                              key="gruppi_stato_filtro")
     codice_stato = {v: k for k, v in ETICHETTE_STATO_GRUPPI.items()}[stato_scelto]
 
@@ -3460,7 +3455,7 @@ def mostra_gruppi_servizio():
 
     for g in sorted(gruppi_vista.keys()):
         conteggi = conteggi_per_gruppo.get(g, {"A": 0, "I": 0})
-        st.markdown(f"#### ?? {g} (Attivi {conteggi['A']} - Inattivi {conteggi['I']})")
+        st.markdown(f"#### 👤 {g} (Attivi {conteggi['A']} - Inattivi {conteggi['I']})")
         for nome in sorted(gruppi_vista[g]):
             st.checkbox(nome, key=_chiave_cb(nome))
         st.divider()
@@ -3470,7 +3465,7 @@ def mostra_gruppi_servizio():
     n_sel = len(selezionati)
 
     with contenitore_associa:
-        if st.button(f"?? Associa al gruppo ({n_sel})", use_container_width=True,
+        if st.button(f"🔗 Associa al gruppo ({n_sel})", use_container_width=True,
                      disabled=(n_sel == 0 or sola_lettura())):
             st.session_state.gruppi_mostra_scelta = True
 
@@ -3479,21 +3474,21 @@ def mostra_gruppi_servizio():
                 st.caption(f"{n_sel} Proclamatori selezionati.")
                 gruppi_esistenti = sorted({g.strip() for g in df["Gruppo"].astype(str) if g.strip()}) \
                     if "Gruppo" in df.columns else []
-                opzioni = gruppi_esistenti + ["? Nuovo sorvegliante…"]
+                opzioni = gruppi_esistenti + ["➕ Nuovo sorvegliante…"]
                 scelta = st.selectbox("Sorvegliante di gruppo", opzioni, key="gruppi_scelta_sorvegliante")
                 nuovo_nome_gruppo = ""
-                if scelta == "? Nuovo sorvegliante…":
+                if scelta == "➕ Nuovo sorvegliante…":
                     nuovo_nome_gruppo = st.text_input("Nome del nuovo sorvegliante", key="gruppi_nuovo_nome")
 
                 col_abbina, col_annulla, col_elimina = st.columns(3)
                 with col_abbina:
-                    conferma_abbina = st.button("? Abbina", type="primary", use_container_width=True,
+                    conferma_abbina = st.button("✔ Abbina", type="primary", use_container_width=True,
                                                 key="gruppi_conferma_abbina")
                 with col_annulla:
-                    conferma_annulla = st.button("? Annulla", use_container_width=True,
+                    conferma_annulla = st.button("✖ Annulla", use_container_width=True,
                                                  key="gruppi_conferma_annulla")
                 with col_elimina:
-                    conferma_elimina = st.button("??? Elimina", use_container_width=True,
+                    conferma_elimina = st.button("🗑️ Elimina", use_container_width=True,
                                                  key="gruppi_conferma_elimina")
 
                 if conferma_annulla:
@@ -3524,10 +3519,10 @@ def mostra_gruppi_servizio():
                     else:
                         st.cache_data.clear()
                         st.session_state.gruppi_mostra_scelta = False
-                        st.success(f"? Gruppo rimosso per {n_sel} Proclamatori.")
+                        st.success(f"✔ Gruppo rimosso per {n_sel} Proclamatori.")
 
                 if conferma_abbina:
-                    nome_gruppo_finale = nuovo_nome_gruppo.strip() if scelta == "? Nuovo sorvegliante…" else scelta
+                    nome_gruppo_finale = nuovo_nome_gruppo.strip() if scelta == "➕ Nuovo sorvegliante…" else scelta
                     if not nome_gruppo_finale:
                         st.error("Indica il nome del sorvegliante di gruppo.")
                     else:
@@ -3554,11 +3549,11 @@ def mostra_gruppi_servizio():
                             for nome in selezionati:
                                 st.session_state.pop(_chiave_cb(nome), None)
                             st.session_state.gruppi_mostra_scelta = False
-                            st.success(f"? {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
+                            st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: Presenti alle adunanze
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 S88_CAMPI_RECT = {
     "1-Attendance_1": (161.84, 694.2, 221.65, 713.04),
     "1-Attendance_10": (161.84, 515.52, 221.65, 534.36),
@@ -3803,7 +3798,7 @@ def genera_pdf_s88(df_presenze: pd.DataFrame) -> bytes:
     return out.getvalue()
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
                          presenza_default: int, zoom_default: int, giorni_per_tipo: dict,
                          disabled: bool = False):
@@ -3833,7 +3828,7 @@ def _presenze_campi_form(chiave_prefix: str, data_default, tipo_default: str,
     data_scelta = st.date_input("Data", format="DD/MM/YYYY", key=chiave_data, disabled=disabled)
 
     if not data_valida and not giorni_validi:
-        st.warning("Nessun giorno di adunanza configurato — impostalo nella card ?? Impostazioni "
+        st.warning("Nessun giorno di adunanza configurato — impostalo nella card ⚙️ Impostazioni "
                    "in Home per attivare il controllo sulla data.")
 
     tipo_adunanza = st.selectbox("Tipo di adunanza", TIPI_ADUNANZA, key=chiave_tipo, disabled=disabled)
@@ -3856,7 +3851,7 @@ def _form_modifica_presenza(dati_selezione: dict):
     riga = dati_selezione["riga"]
     numero_riga_foglio = dati_selezione["numero_riga_foglio"]
 
-    st.markdown("#### ?? Modifica presenza")
+    st.markdown("#### ✏️ Modifica presenza")
 
     try:
         data_default = datetime.strptime(str(riga.get("Data", "")), "%d/%m/%Y").date()
@@ -3873,10 +3868,10 @@ def _form_modifica_presenza(dati_selezione: dict):
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        invia = st.button("? Salva", type="primary", use_container_width=True,
+        invia = st.button("✔ Salva", type="primary", use_container_width=True,
                           disabled=(not data_valida) or sola_lettura(), key=f"{chiave_prefix}_salva")
     with col_btn2:
-        annulla = st.button("? Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
+        annulla = st.button("✖ Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
 
     if annulla:
         st.session_state.presenze_modifica = None
@@ -3899,14 +3894,14 @@ def _form_modifica_presenza(dati_selezione: dict):
             st.cache_data.clear()
             st.session_state.presenze_modifica = None
             st.session_state.presenze_tabella_versione = st.session_state.get("presenze_tabella_versione", 0) + 1
-            st.success("? Modificato correttamente.")
+            st.success("✔ Modificato correttamente.")
             st.rerun()
         else:
             st.error(err_salva)
 
 
 def _form_nuova_presenza():
-    st.markdown("#### ? Nuova presenza")
+    st.markdown("#### ➕ Nuova presenza")
 
     giorni_per_tipo = leggi_giorni_adunanze_per_tipo(workbook)
     chiave_prefix = "presenze_nuovo"
@@ -3917,10 +3912,10 @@ def _form_nuova_presenza():
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        invia = st.button("? Salva", type="primary", use_container_width=True,
+        invia = st.button("✔ Salva", type="primary", use_container_width=True,
                           disabled=(not data_valida) or sola_lettura(), key=f"{chiave_prefix}_salva")
     with col_btn2:
-        annulla = st.button("? Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
+        annulla = st.button("✖ Annulla", use_container_width=True, key=f"{chiave_prefix}_annulla")
 
     if annulla:
         st.session_state.presenze_form_nuovo_aperto = False
@@ -3944,29 +3939,29 @@ def _form_nuova_presenza():
             st.session_state.presenze_form_nuovo_aperto = False
             for suffisso in ("_data", "_tipo", "_presenza", "_zoom", "_ultima_data_vista"):
                 st.session_state.pop(f"{chiave_prefix}{suffisso}", None)
-            st.success("? Presenza inserita correttamente.")
+            st.success("✔ Presenza inserita correttamente.")
             st.rerun()
         else:
             st.error(err_salva)
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # FUNZIONE PRINCIPALE PAGINA PRESENZE
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def mostra_presenze_adunanze():
-    st.title("?? Presenti alle adunanze")
+    st.title("🙌 Presenti alle adunanze")
 
     is_modalita_ristretta = (st.query_params.get("page") == "presenze" or st.query_params.get("modalita") == "presenze")
 
     if not is_modalita_ristretta:
-        st.button("?? Torna alla Home", key="home_da_presenze", use_container_width=True,
+        st.button("🏠 Torna alla Home", key="home_da_presenze", use_container_width=True,
                   on_click=vai_a, args=("home",))
 
     if not collegato:
-        st.warning("?? Nessun foglio dati collegato.")
+        st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
-    if st.button("? Inserisci presenti alle adunanze", key="apri_nuova_presenza", use_container_width=True):
+    if st.button("➕ Inserisci presenti alle adunanze", key="apri_nuova_presenza", use_container_width=True):
         st.session_state.presenze_form_nuovo_aperto = not st.session_state.get(
             "presenze_form_nuovo_aperto", False)
         st.session_state.presenze_modifica = None
@@ -3989,13 +3984,13 @@ def mostra_presenze_adunanze():
         st.warning("Modulo S-88 non trovato: metti il file «S-88_I.pdf» nella stessa cartella di app.py "
                    "per poterlo generare.")
     else:
-        if st.button("?? Genera modulo S-88", key="genera_s88", use_container_width=True):
+        if st.button("📄 Genera modulo S-88", key="genera_s88", use_container_width=True):
             with st.spinner("Genero il modulo S-88…"):
                 st.session_state.s88_pdf_pronto = genera_pdf_s88(df)
 
         if st.session_state.get("s88_pdf_pronto"):
             st.download_button(
-                "?? Scarica modulo S-88 (PDF)",
+                "⬇️ Scarica modulo S-88 (PDF)",
                 data=st.session_state.s88_pdf_pronto,
                 file_name="Modulo_S-88.pdf",
                 mime="application/pdf",
@@ -4016,7 +4011,7 @@ def mostra_presenze_adunanze():
         st.warning("Nessuna data valida trovata nel foglio.")
         return
 
-    st.markdown("### ?? Seleziona Mese/Anno")
+    st.markdown("### 📅 Seleziona Mese/Anno")
     mese_selezionato = st.selectbox(
         "Mese/Anno",
         options=mesi_disponibili,
@@ -4041,7 +4036,7 @@ def mostra_presenze_adunanze():
     else:
         df_mese["_totale_num"] = df_mese["_presenza_num"] + df_mese["_zoom_num"]
 
-    st.markdown("#### ?? Riepilogo")
+    st.markdown("#### 📊 Riepilogo")
 
     dati_riepilogo = []
     tipi_list = ["Infrasettimanale", "Fine settimana"]
@@ -4073,7 +4068,7 @@ def mostra_presenze_adunanze():
         use_container_width=True
     )
 
-    st.markdown(f"#### ?? Dettaglio adunanze per {mese_selezionato}")
+    st.markdown(f"#### 📋 Dettaglio adunanze per {mese_selezionato}")
 
     colonne_visibili = [c for c in df_mese.columns if not c.startswith("_")]
 
@@ -4103,7 +4098,7 @@ def mostra_presenze_adunanze():
 
         col_mod, col_elim = st.columns(2)
         with col_mod:
-            if st.button("?? Modifica riga selezionata", key="presenze_btn_mod", use_container_width=True):
+            if st.button("✏️ Modifica riga selezionata", key="presenze_btn_mod", use_container_width=True):
                 st.session_state.presenze_form_nuovo_aperto = False
                 st.session_state.presenze_modifica = {
                     "riga": riga_scelta.to_dict(),
@@ -4111,7 +4106,7 @@ def mostra_presenze_adunanze():
                 }
                 st.rerun()
         with col_elim:
-            if st.button("??? Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True,
+            if st.button("🗑️ Elimina riga selezionata", key="presenze_btn_elim", use_container_width=True,
                          disabled=sola_lettura()):
                 st.session_state.presenze_conferma_elimina = numero_riga_foglio
                 st.rerun()
@@ -4120,13 +4115,13 @@ def mostra_presenze_adunanze():
             st.warning("Sei sicuro di voler eliminare questa riga? L'operazione non è reversibile.")
             col_si, col_no = st.columns(2)
             with col_si:
-                if st.button("? Sì, elimina", key="presenze_conf_si", type="primary", use_container_width=True):
+                if st.button("✔ Sì, elimina", key="presenze_conf_si", type="primary", use_container_width=True):
                     ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PRESENZE, numero_riga_foglio)
                     if ok:
                         st.cache_data.clear()
                         st.session_state.presenze_conferma_elimina = None
                         st.session_state.presenze_tabella_versione += 1
-                        st.success("? Riga eliminata.")
+                        st.success("✔ Riga eliminata.")
                         st.rerun()
                     else:
                         st.error(err_elim)
@@ -4136,9 +4131,9 @@ def mostra_presenze_adunanze():
                     st.rerun()
     else:
         st.session_state.presenze_conferma_elimina = None
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21 (Proclamatore trasferito o nuovo)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 
 def normalizza_mese_anno(valore):
     """
@@ -4168,28 +4163,28 @@ def normalizza_mese_anno(valore):
     return valore_str
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPORTA DA S-21
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def mostra_importa_s21():
-    st.title("?? Importa da S-21")
+    st.title("📥 Importa da S-21")
 
     col_home, col_manuale = st.columns([1, 1])
     with col_home:
-        st.button("?? Torna alla Home", key="home_da_importa_s21", use_container_width=True,
+        st.button("🏠 Torna alla Home", key="home_da_importa_s21", use_container_width=True,
                   on_click=vai_a_home_reset_importa_s21)
 
     with col_manuale:
-        if st.button("? Inserisci storico manualmente", key="s21_apri_manuale", use_container_width=True, type="primary"):
+        if st.button("➕ Inserisci storico manualmente", key="s21_apri_manuale", use_container_width=True, type="primary"):
             st.session_state.s21_form_manuale_aperto = not st.session_state.get("s21_form_manuale_aperto", False)
 
     if not collegato:
-        st.warning("?? Nessun foglio dati collegato.")
+        st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
     if st.session_state.get("s21_form_manuale_aperto", False):
         st.markdown("---")
-        st.subheader("?? Inserimento/Modifica Storico S-21 Manuale")
+        st.subheader("📝 Inserimento/Modifica Storico S-21 Manuale")
 
         df_anagrafica, err_anag = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
         if err_anag:
@@ -4201,7 +4196,7 @@ def mostra_importa_s21():
             st.error(err_tutti)
             return
 
-        opzione_nuova = "? Nuova persona (non ancora in Anagrafica)"
+        opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
         opzioni_proclamatori = [""] + [opzione_nuova]
         mappa_nomi_reali = {}
         mappa_dati_anagrafici = {}
@@ -4213,11 +4208,11 @@ def mostra_importa_s21():
             stato_cod = str(riga.get("Attivi / Inattivi", "")).strip().upper()
 
             if stato_cod in ("I", "INATTIVO"):
-                etichetta = f"? {nome} (Inattivo)"
+                etichetta = f"⛔ {nome} (Inattivo)"
             elif stato_cod in ("TR", "TRASFERITO"):
-                etichetta = f"?? {nome} (Trasferito)"
+                etichetta = f"🚚 {nome} (Trasferito)"
             else:
-                etichetta = f"?? {nome}"
+                etichetta = f"🟢 {nome}"
 
             opzioni_proclamatori.append(etichetta)
             mappa_nomi_reali[etichetta] = nome
@@ -4273,12 +4268,12 @@ def mostra_importa_s21():
         )
 
         if not campi_compilati:
-            st.info("?? Per abilitare e compilare la griglia **Dati di Servizio**, completa prima tutti i campi sopra (Proclamatore, Tipo Servizio e Sorvegliante del gruppo).")
-            if st.button("? Annulla", use_container_width=True, key="s21_man_annulla_bloc"):
+            st.info("📌 Per abilitare e compilare la griglia **Dati di Servizio**, completa prima tutti i campi sopra (Proclamatore, Tipo Servizio e Sorvegliante del gruppo).")
+            if st.button("✖ Annulla", use_container_width=True, key="s21_man_annulla_bloc"):
                 st.session_state.s21_form_manuale_aperto = False
                 st.rerun()
         else:
-            st.markdown("##### ?? Dati di Servizio (Schema S-21)")
+            st.markdown("##### 📅 Dati di Servizio (Schema S-21)")
 
             anno_corrente = datetime.now().year
             anno_servizio = st.number_input("Anno di Servizio:", min_value=2000, max_value=2099, value=anno_corrente, step=1, key="s21_man_anno")
@@ -4374,10 +4369,10 @@ def mostra_importa_s21():
 
             col_salva, col_annulla = st.columns(2)
             with col_salva:
-                btn_salva = st.button("? Salva", type="primary", use_container_width=True,
+                btn_salva = st.button("✔ Salva", type="primary", use_container_width=True,
                                        key="s21_man_salva", disabled=sola_lettura())
             with col_annulla:
-                btn_annulla = st.button("? Annulla", use_container_width=True, key="s21_man_annulla")
+                btn_annulla = st.button("✖ Annulla", use_container_width=True, key="s21_man_annulla")
 
             if btn_annulla:
                 st.session_state.s21_form_manuale_aperto = False
@@ -4386,13 +4381,13 @@ def mostra_importa_s21():
             if btn_salva:
                 nome_pulito = nome_finale.strip()
                 if not nome_pulito:
-                    st.error("?? Inserisci o seleziona un proclamatore valido.")
+                    st.error("⚠️ Inserisci o seleziona un proclamatore valido.")
                 else:
                     nomi_esistenti_anag = [str(x).strip().lower() for x in df_anagrafica.get("Cognome e Nome", pd.Series(dtype=str)) if str(x).strip()]
 
                     if nuova_persona_flag or (nome_pulito.lower() not in nomi_esistenti_anag):
                         if nome_pulito.lower() in nomi_esistenti_anag:
-                            st.warning(f"?? **{nome_pulito}** è già presente in Anagrafica. Inserimento anagrafico saltato.")
+                            st.warning(f"⚠️ **{nome_pulito}** è già presente in Anagrafica. Inserimento anagrafico saltato.")
                         else:
                             id_massimo = 0
                             if "ID" in df_anagrafica.columns:
@@ -4479,7 +4474,7 @@ def mostra_importa_s21():
                                 inseriti += 1
 
                     st.cache_data.clear()
-                    st.success("?? S-21 Salvati correttamente")
+                    st.success("✔️ S-21 Salvati correttamente")
                     st.session_state.s21_form_manuale_aperto = False
                     st.rerun()
 
@@ -4511,13 +4506,13 @@ def mostra_importa_s21():
         return
 
     if not dati_estratti["testo_rilevato"]:
-        st.warning("?? Non ho trovato testo leggibile nelle caselle dati di questo PDF — probabilmente "
+        st.warning("⚠️ Non ho trovato testo leggibile nelle caselle dati di questo PDF — probabilmente "
                    "è una scansione o una foto di un modulo compilato a mano. Non tento la lettura "
                    "automatica della scrittura a mano (troppo rischiosa per dati ufficiali di servizio): "
                    "apri il PDF a fianco su un'altra finestra, leggi i valori a occhio e inseriscili "
                    "tu nella tabella qui sotto (puoi aggiungere righe con il tasto '+' in fondo).")
     else:
-        st.success("? Testo letto correttamente dal PDF. Controlla comunque ogni valore prima di "
+        st.success("✔ Testo letto correttamente dal PDF. Controlla comunque ogni valore prima di "
                    "confermare — soprattutto \"Tipo Servizio\", che è solo una proposta automatica.")
 
     st.subheader("1. Di chi è questa S-21?")
@@ -4534,7 +4529,7 @@ def mostra_importa_s21():
         return
 
     candidati = _importa_s21_cerca_persona(df_anagrafica, nome_suggerito)
-    opzione_nuova = "? Nuova persona (non ancora in Anagrafica)"
+    opzione_nuova = "➕ Nuova persona (non ancora in Anagrafica)"
     opzioni = [opzione_nuova] + candidati["Cognome e Nome"].tolist()
     if not df_anagrafica.empty:
         altri = [n for n in df_anagrafica["Cognome e Nome"].tolist() if n not in opzioni]
@@ -4590,7 +4585,7 @@ def mostra_importa_s21():
         stato_attuale = categoria_stato_proclamatore(riga_anagrafica_esistente.get("Attivi / Inattivi", ""))
         if stato_attuale in ("TR", "I"):
             etichetta_stato = "Trasferito" if stato_attuale == "TR" else "Inattivo"
-            st.info(f"?? **{nome_persona}** risulta attualmente **{etichetta_stato}** in Anagrafica. "
+            st.info(f"📌 **{nome_persona}** risulta attualmente **{etichetta_stato}** in Anagrafica. "
                     f"Importando questi dati, lo riporto **Attivo** e gli assegno il gruppo scelto qui sotto.")
             gruppo_attuale = (riga_anagrafica_esistente.get("Gruppo") or "").strip()
             indice_default = (gruppi_disponibili.index(gruppo_attuale)
@@ -4651,7 +4646,7 @@ def mostra_importa_s21():
     df_proposte = pd.DataFrame(righe_proposte)
     n_gia_presenti = int(df_proposte["gia_presente"].sum())
     if n_gia_presenti:
-        st.caption(f"?? {n_gia_presenti} mese/i già presenti in archivio sono stati esclusi in automatico "
+        st.caption(f"ℹ️ {n_gia_presenti} mese/i già presenti in archivio sono stati esclusi in automatico "
                    "(casella 'Importa' deselezionata) — puoi comunque riattivarli se necessario.")
 
     colonne_editor = ["Importa", "Mese/Anno", "Tipo Servizio", "Ha partecipato al ministero",
@@ -4689,7 +4684,7 @@ def mostra_importa_s21():
     righe_da_importare = righe_da_importare[righe_da_importare["Mese/Anno"].astype(str).str.strip() != ""]
     st.caption(f"Righe selezionate per l'importazione: **{len(righe_da_importare)}**")
 
-    if st.button(f"? Importa {len(righe_da_importare)} mese/i per {nome_persona}",
+    if st.button(f"✅ Importa {len(righe_da_importare)} mese/i per {nome_persona}",
                  use_container_width=True,
                  disabled=(righe_da_importare.empty or sola_lettura())):
         errori = []
@@ -4755,7 +4750,7 @@ def mostra_importa_s21():
         st.cache_data.clear()
 
         if importate > 0:
-            st.success(f"?? Importati correttamente {importate} mese/i per {nome_persona}!")
+            st.success(f"✔️ Importati correttamente {importate} mese/i per {nome_persona}!")
         if errori:
             st.warning("Alcune note o errori durante l'importazione:\n- " + "\n- ".join(errori))
 
@@ -4764,19 +4759,19 @@ def mostra_importa_s21():
         st.rerun()
 import streamlit.components.v1 as components
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: IMPOSTAZIONI
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def mostra_impostazioni():
-    st.title("?? Impostazioni")
-    st.button("?? Torna alla Home", key="home_da_impostazioni", use_container_width=True,
+    st.title("⚙️ Impostazioni")
+    st.button("🏠 Torna alla Home", key="home_da_impostazioni", use_container_width=True,
               on_click=vai_a, args=("home",))
 
     if not collegato:
-        st.warning("?? Nessun foglio dati collegato.")
+        st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
-    st.subheader("?? Giorni delle adunanze")
+    st.subheader("📅 Giorni delle adunanze")
     st.caption("Usati in «Presenti alle adunanze» per controllare la data inserita e proporre in automatico "
                "il tipo di adunanza giusto per quel giorno. Se cambiano in futuro, aggiornali qui — non "
                "serve toccare il codice del programma. Puoi scegliere anche più giorni per tipo.")
@@ -4790,12 +4785,12 @@ def mostra_impostazioni():
                                              disabled=sola_lettura())
 
     tutti_vuoti = not any(giorni_scelti.values())
-    if st.button("? Salva impostazione", type="primary", use_container_width=True,
+    if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
                  disabled=tutti_vuoti or sola_lettura()):
         ok, err_salva = salva_giorni_adunanze_per_tipo(workbook, giorni_scelti)
         if ok:
             st.cache_data.clear()
-            st.success("? Giorni delle adunanze aggiornati.")
+            st.success("✔ Giorni delle adunanze aggiornati.")
         else:
             st.error(err_salva)
 
@@ -4804,7 +4799,7 @@ def mostra_impostazioni():
 
     st.markdown("---")
 
-    st.subheader("?? Link di Accesso Rapido Presenze")
+    st.subheader("🔗 Link di Accesso Rapido Presenze")
     st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
 
     url_app = "https://gestioneseg.streamlit.app/?page=presenze"
@@ -4827,10 +4822,10 @@ def mostra_impostazioni():
             align-items: center;
             gap: 6px;
         ">
-            ?? Copia link
+            📋 Copia link
         </button>
         <div id="messaggioCopiato" style="display: none; color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-weight: 600;">
-            ? Il link è stato copiato negli appunti!
+            ✅ Il link è stato copiato negli appunti!
         </div>
     </div>
 
@@ -4852,178 +4847,54 @@ def mostra_impostazioni():
     components.html(html_copia_link, height=140)
 
 
-import re
-import pandas as pd
-import streamlit as st
-
-# Regex per il controllo formale della sintassi dell'email
-REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-
-import re
-import pandas as pd
-import streamlit as st
-
-# Regex per il controllo formale della sintassi dell'email
-REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-
-# -----------------------------------------------------------------
-# POPOUT / DIALOG DI CONFERMA ELIMINAZIONE
-# -----------------------------------------------------------------
-@st.dialog("?? Conferma Eliminazione")
-def dialog_elimina_utente(editor: dict):
-    riga = editor.get("riga", {})
-    nome_utente = riga.get("Utente", "questo utente")
-    
-    st.write(f"Sei veramente sicuro di voler eliminare l'accesso di **«{nome_utente}»**?")
-    st.caption("L'operazione non è reversibile: la persona non potrà più accedere all'applicazione.")
-    
-    col_si, col_no = st.columns(2)
-    with col_si:
-        if st.button("? Sì, elimina", key="popout_conf_si", type="primary", use_container_width=True):
-            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI, editor["numero_riga_foglio"])
-            if ok:
-                st.cache_data.clear()
-                st.session_state.utenti_editor = None
-                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
-                st.success("? Accesso eliminato con successo.")
-                st.rerun()
-            else:
-                st.error(err_elim)
-    with col_no:
-        if st.button("? No, annulla", key="popout_conf_no", use_container_width=True):
-            st.rerun()
-
-
-import re
-import pandas as pd
-import streamlit as st
-
-# Regex per il controllo formale della sintassi dell'email
-REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-
-# -----------------------------------------------------------------
-# POPOUT / DIALOG DI CONFERMA ELIMINAZIONE
-# -----------------------------------------------------------------
-@st.dialog("?? Conferma Eliminazione")
-def dialog_elimina_utente(editor: dict):
-    riga = editor.get("riga", {})
-    nome_utente = riga.get("Utente", "questo utente")
-    
-    st.write(f"Sei veramente sicuro di voler eliminare l'accesso di **«{nome_utente}»**?")
-    st.caption("L'operazione non è reversibile: la persona non potrà più accedere all'applicazione.")
-    
-    col_si, col_no = st.columns(2)
-    with col_si:
-        if st.button("? Sì, elimina", key="popout_conf_si", type="primary", use_container_width=True):
-            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI, editor["numero_riga_foglio"])
-            if ok:
-                st.cache_data.clear()
-                st.session_state.utenti_editor = None
-                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
-                st.success("? Accesso eliminato con successo.")
-                st.rerun()
-            else:
-                st.error(err_elim)
-    with col_no:
-        if st.button("? No, annulla", key="popout_conf_no", use_container_width=True):
-            st.rerun()
-
-
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def _form_utente(editor: dict, df_utenti: pd.DataFrame):
     modo = editor.get("modo")
     e = editor.get("riga", {}) if modo == "modifica" else {}
     chiave = editor.get("numero_riga_foglio", "nuovo")
 
-    # Determinazione automatica dell'ID progressivo
     if modo == "modifica":
-        id_valore = str(e.get("ID", ""))
+        st.markdown(f"#### ✏️ Modifica accesso — {e.get('Utente', '')}")
     else:
-        id_valore = str(prossimo_id_anagrafica(df_utenti))
+        st.markdown("#### ➕ Nuovo accesso")
 
-    if modo == "modifica":
-        st.markdown(f"#### ?? Modifica accesso — {e.get('Utente', '')}")
-    else:
-        st.markdown("#### ? Nuovo accesso")
-
-    # Usiamo st.container() per consentire la verifica in tempo reale (on blur)
-    with st.container():
-        # Campo ID automatico e non modificabile
-        st.text_input(
-            "ID Utente", 
-            value=id_valore, 
-            disabled=True, 
-            key=f"id_ut_{chiave}",
-            help="ID progressivo generato automaticamente dal sistema."
-        )
-
-        nome_utente = st.text_input(
-            "Nome e Cognome *", 
-            value=e.get("Utente", ""), 
-            key=f"nome_ut_{chiave}"
-        )
-        
+    with st.form(f"form_utente_{chiave}", clear_on_submit=False):
+        nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
         email_utente = st.text_input(
-            "Indirizzo email (Google) *", 
-            value=e.get("Indirizzo", ""),
-            key=f"email_ut_{chiave}",
-            placeholder="esempio@gmail.com",
-            help="Inserisci l'indirizzo email con cui l'utente farà l'accesso."
-        )
-
-        # Controllo IMMEDIATO dell'email appena si esce dalla casella di testo
-        email_pulita = email_utente.strip().lower()
-        email_valida = True
-        if email_pulita:
-            if not re.match(REGEX_EMAIL, email_pulita):
-                st.error("?? L'indirizzo email inserito non ha un formato valido (es. nome@dominio.com).")
-                email_valida = False
+            "Indirizzo email (Google) *", value=e.get("Indirizzo", ""),
+            help="Deve corrispondere esattamente all'account Google con cui la persona farà l'accesso.")
 
         ruolo_corrente = e.get("Ruolo", "") or OPZIONI_RUOLO_UTENTE[0]
         if ruolo_corrente not in OPZIONI_RUOLO_UTENTE:
             ruolo_corrente = OPZIONI_RUOLO_UTENTE[0]
-            
-        ruolo_scelto = st.selectbox(
-            "Ruolo", 
-            OPZIONI_RUOLO_UTENTE,
-            index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente),
-            key=f"ruolo_ut_{chiave}"
-        )
+        ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE,
+                                     index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente))
 
-        id_telegram = st.text_input(
-            "ID Telegram (opzionale)", 
-            value=e.get("Id telegram", ""),
-            key=f"telegram_ut_{chiave}",
-            help="Verrà usato in futuro per l'invio di notifiche."
-        )
+        id_telegram = st.text_input("ID Telegram (opzionale)", value=e.get("Id telegram", ""),
+                                    help="Verrà usato in futuro per l'invio di notifiche.")
 
         col_salva, col_annulla, col_elimina = st.columns(3)
         with col_salva:
-            invia = st.button("? Salva", key=f"btn_salva_{chiave}", type="primary", use_container_width=True)
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
         with col_annulla:
-            annulla = st.button("? Annulla", key=f"btn_annulla_{chiave}", use_container_width=True)
+            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
         with col_elimina:
-            elimina = st.button(
-                "??? Elimina", 
-                key=f"btn_elimina_{chiave}", 
-                use_container_width=True,
-                disabled=(modo != "modifica")
-            )
+            elimina = st.form_submit_button("🗑️ Elimina", use_container_width=True,
+                                            disabled=(modo != "modifica"))
 
     if annulla:
         st.session_state.utenti_editor = None
         st.rerun()
 
     if elimina and modo == "modifica":
-        dialog_elimina_utente(editor)
+        st.session_state.utenti_conferma_elimina = editor
+        st.rerun()
 
     if invia:
         nome_pulito = nome_utente.strip()
+        email_pulita = email_utente.strip().lower()
 
         email_gia_presenti = set()
         if not df_utenti.empty and "Indirizzo" in df_utenti.columns:
@@ -5033,13 +4904,13 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
 
         if not nome_pulito or not email_pulita:
             st.error("Nome e indirizzo email sono obbligatori.")
-        elif not email_valida:
-            st.error("Impossibile salvare: correggi l'indirizzo email.")
+        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
+            st.error("L'indirizzo email non sembra valido.")
         elif email_pulita in email_gia_presenti:
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
             valori = {
-                "ID": id_valore,
+                "ID": e.get("ID") or str(prossimo_id_anagrafica(df_utenti)),
                 "Utente": nome_pulito,
                 "Indirizzo": email_pulita,
                 "Ruolo": ruolo_scelto,
@@ -5052,29 +4923,46 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
                 st.cache_data.clear()
                 st.session_state.utenti_editor = None
                 st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
-                st.success(f"? «{nome_pulito}» salvato correttamente.")
+                st.success(f"✔ «{nome_pulito}» salvato correttamente.")
                 st.rerun()
             else:
                 st.error(err_salva)
 
+    conferma = st.session_state.get("utenti_conferma_elimina")
+    if conferma and modo == "modifica" and conferma.get("numero_riga_foglio") == editor.get("numero_riga_foglio"):
+        st.warning(f"Confermi l'eliminazione dell'accesso di «{e.get('Utente', '')}»? "
+                   "L'operazione non è reversibile: la persona non potrà più accedere all'app.")
+        col_si, col_no = st.columns(2)
+        with col_si:
+            if st.button("✔ Sì, elimina", key="utenti_conf_si", type="primary", use_container_width=True):
+                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI,
+                                                    editor["numero_riga_foglio"])
+                if ok:
+                    st.cache_data.clear()
+                    st.session_state.utenti_editor = None
+                    st.session_state.utenti_conferma_elimina = None
+                    st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
+                    st.success("✔ Accesso eliminato.")
+                    st.rerun()
+                else:
+                    st.error(err_elim)
+        with col_no:
+            if st.button("No, annulla", key="utenti_conf_no", use_container_width=True):
+                st.session_state.utenti_conferma_elimina = None
+                st.rerun()
+
 
 def mostra_gestione_utenti():
-    st.title("?? Accessi")
-
-    # Callback per resettare lo stato del form prima di tornare in Home
-    def _torna_home_e_chiudi_form():
-        st.session_state.utenti_editor = None
-        vai_a("home")
-
-    st.button("?? Torna alla Home", key="home_da_utenti", use_container_width=True,
-              on_click=_torna_home_e_chiudi_form)
+    st.title("🔐 Accessi")
+    st.button("🏠 Torna alla Home", key="home_da_utenti", use_container_width=True,
+              on_click=vai_a, args=("home",))
 
     if st.session_state.get("ruolo") != "amministratore":
-        st.warning("?? Questa pagina è riservata agli amministratori.")
+        st.warning("⚠️ Questa pagina è riservata agli amministratori.")
         return
 
     if not collegato:
-        st.warning("?? Nessun foglio dati collegato.")
+        st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
     if "utenti_tabella_versione" not in st.session_state:
@@ -5116,25 +5004,28 @@ def mostra_gestione_utenti():
     with contenitore_azioni:
         col_agg, col_mod = st.columns(2)
         with col_agg:
-            if st.button("? Aggiungi nuovo accesso", key="utenti_apri_nuovo", use_container_width=True):
+            if st.button("➕ Aggiungi nuovo accesso", key="utenti_apri_nuovo", use_container_width=True):
                 st.session_state.utenti_editor = {"modo": "nuovo"}
+                st.session_state.utenti_conferma_elimina = None
         with col_mod:
             if idx_sel is not None:
-                if st.button("?? Modifica Accesso", key="utenti_apri_modifica", use_container_width=True):
+                if st.button("✏️ Modifica Accesso", key="utenti_apri_modifica", use_container_width=True):
                     numero_riga_foglio = RIGA_INTESTAZIONE_UTENTI + 1 + idx_sel
                     st.session_state.utenti_editor = {
                         "modo": "modifica",
                         "riga": df_utenti_reset.loc[idx_sel].to_dict(),
                         "numero_riga_foglio": numero_riga_foglio,
                     }
+                    st.session_state.utenti_conferma_elimina = None
 
         editor = st.session_state.get("utenti_editor")
         if editor:
             _form_utente(editor, df_utenti)
 
-# -----------------------------------------------------------------
+
+# ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTO PER LA FILIALE
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 CATEGORIE_FILIALE = [
     ("Proclamatore", "proclamatore"),
     ("Pioniere Ausiliario", "pioniere ausiliario"),
@@ -5197,13 +5088,13 @@ def _filiale_calcola_dati(df_tutti: pd.DataFrame, anno: int, mese: int):
 
 
 def mostra_rapporto_filiale():
-    st.title("?? Rapporto per la Filiale")
-    st.button("?? Torna alla Home", key="home_da_filiale", use_container_width=True,
+    st.title("🏢 Rapporto per la Filiale")
+    st.button("🏠 Torna alla Home", key="home_da_filiale", use_container_width=True,
               on_click=vai_a, args=("home",))
     st.caption("Dati statistici mensili (tipo modulo S-10), calcolati dal foglio Tutti.")
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     df_tutti, err_tutti = leggi_foglio_tutti(workbook)
@@ -5321,7 +5212,7 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
-            invia = st.form_submit_button("? Salva", type="primary", use_container_width=True,
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True,
                                           disabled=bloccato)
         with col_btn2:
             annulla = st.form_submit_button("Annulla", use_container_width=True)
@@ -5344,23 +5235,23 @@ def _form_modifica_rapporto_tutti(dati_selezione: dict):
         if ok:
             st.cache_data.clear()
             st.session_state.storico_modifica = None
-            st.success("? Salvato correttamente.")
+            st.success("✔ Salvato correttamente.")
             st.rerun()
         else:
             st.error(err)
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # Pagina: Storico rapporti consegnati
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 def mostra_storico_proclamatori():
     st.title("Storico rapporti consegnati")
-    st.button("?? Torna alla Home", key="home_da_storico", use_container_width=True,
+    st.button("🏠 Torna alla Home", key="home_da_storico", use_container_width=True,
               on_click=vai_a, args=("home",))
     st.caption(f"Rapporti storici letti dal foglio «{NOME_FOGLIO_TUTTI}» "
                f"(intestazione riga {RIGA_INTESTAZIONE_TUTTI}).")
 
     if not collegato:
-        st.warning("??  Nessun foglio dati collegato.")
+        st.warning("⚠️  Nessun foglio dati collegato.")
         return
 
     if "storico_modifica" not in st.session_state:
@@ -5386,7 +5277,7 @@ def mostra_storico_proclamatori():
     def formatta_anno_teocratico(valore):
         try:
             val = int(float(valore))
-            return f"{val} – {val + 1} (set {val} ? ago {val + 1})"
+            return f"{val} – {val + 1} (set {val} → ago {val + 1})"
         except (ValueError, TypeError):
             return str(valore)
 
@@ -5398,7 +5289,7 @@ def mostra_storico_proclamatori():
             format_func=formatta_anno_teocratico,
         )
     with col_ricerca:
-        ricerca = st_keyup("?? Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_storico_proclamatori")
+        ricerca = st_keyup("🔍 Cerca per nome", placeholder="Digita per filtrare…", key="ricerca_storico_proclamatori")
 
     if df_anagrafica.empty or "Cognome e Nome" not in df_anagrafica.columns:
         st.info("Nessun Proclamatore trovato in Anagrafica.")
@@ -5475,10 +5366,10 @@ def mostra_storico_proclamatori():
         "Filtra per stato:",
         options=["Tutti", "Attivi", "Inattivi", "Irregolari"],
         format_func=lambda op: {
-            "Tutti": f"?? Tutti ({len(nomi)})",
-            "Attivi": f"?? Attivi ({tot_attivi})",
-            "Inattivi": f"?? Inattivi ({tot_inattivi})",
-            "Irregolari": f"?? Irregolari ({tot_irregolari})"
+            "Tutti": f"👥 Tutti ({len(nomi)})",
+            "Attivi": f"🟢 Attivi ({tot_attivi})",
+            "Inattivi": f"🔺 Inattivi ({tot_inattivi})",
+            "Irregolari": f"⚠️ Irregolari ({tot_irregolari})"
         }[op],
         horizontal=True,
         key="filtro_stato_radio_storico"
@@ -5504,7 +5395,7 @@ def mostra_storico_proclamatori():
 
     def _riga_proclamatore(nome: str):
         st_proc = mappa_stati.get(nome, "attivo")
-        indicatore = "?? " if st_proc == "inattivo" else "?? " if st_proc == "irregolare" else "?? "
+        indicatore = "🔺 " if st_proc == "inattivo" else "⚠️ " if st_proc == "irregolare" else "🟢 "
         etichetta = f"{indicatore}{nome}"
 
         with st.expander(etichetta):
@@ -5559,7 +5450,7 @@ def mostra_storico_proclamatori():
                         idx_originale = righe_persona.index[posizione]
                         riga_dati = df_tutti.loc[idx_originale]
                         mese_leggibile = riga_dati["Anno di servizio"]
-                        if st.button(f"?? Modifica «{mese_leggibile}»", key=f"storico_modifica_btn_{nome}_{posizione}"):
+                        if st.button(f"✏️ Modifica «{mese_leggibile}»", key=f"storico_modifica_btn_{nome}_{posizione}"):
                             st.session_state.storico_modifica = {
                                 "nome": nome,
                                 "mese_leggibile": mese_leggibile,
@@ -5574,7 +5465,7 @@ def mostra_storico_proclamatori():
                 st.markdown(
                     """
                     <div style="display: flex; align-items: center; gap: 10px; margin: 15px 0 10px 0;">
-                        <span style="background-color: #f0f2f6; padding: 6px 12px; border-radius: 8px; font-size: 1.2rem;">??</span>
+                        <span style="background-color: #f0f2f6; padding: 6px 12px; border-radius: 8px; font-size: 1.2rem;">📂</span>
                         <h4 style="margin: 0; color: #555;">Senza gruppo</h4>
                     </div>
                     """,
@@ -5595,7 +5486,7 @@ def mostra_storico_proclamatori():
                         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
                     ">
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <span style="background: rgba(255, 255, 255, 0.15); padding: 6px 10px; border-radius: 8px; font-size: 1.1rem;">?????</span>
+                            <span style="background: rgba(255, 255, 255, 0.15); padding: 6px 10px; border-radius: 8px; font-size: 1.1rem;">👨‍💼</span>
                             <span style="font-size: 1.15rem; font-weight: 600; letter-spacing: 0.3px;">Gruppo: {gruppo}</span>
                         </div>
                         <span style="background: rgba(255, 255, 255, 0.2); padding: 3px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 500;">
@@ -5610,9 +5501,9 @@ def mostra_storico_proclamatori():
                 _riga_proclamatore(nome)
             st.divider()
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # CONTROLLO ACCESSO RISTRETTO (DA RUOLO O LINK DIRETTO)
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 query_params = st.query_params
 modalita_solo_presenze = (
     st.session_state.get("ruolo") == "presenze" or
@@ -5625,9 +5516,9 @@ if modalita_solo_presenze:
     st.stop()
 
 
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 # ROUTING COMPLETO — Accessibile solo per Amministratori
-# -----------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────
 if st.session_state.pagina == "registrazioni":
     mostra_registrazioni()
 elif st.session_state.pagina == "anagrafiche":
