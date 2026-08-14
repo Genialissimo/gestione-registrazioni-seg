@@ -86,12 +86,17 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
-# ─────────────────────────────────────────────────────────────────
 
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE (Con Persistenza Cookie)
 # ==============================================================================
+
+# Inizializza il gestore dei cookie
+cookie_manager = stx.CookieManager()
+
+# Recupera il cookie di sessione
+cookie_auth = cookie_manager.get(cookie="seg_auth_session")
 
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
@@ -100,25 +105,24 @@ if "ruolo" not in st.session_state:
 if "email_logged" not in st.session_state:
     st.session_state.email_logged = ""
 
+# Ripristino automatico della sessione tramite cookie
+if cookie_auth and not st.session_state.utente_autenticato:
+    st.session_state.utente_autenticato = True
+    st.session_state.email_logged = cookie_auth.get("email", "")
+    st.session_state.ruolo = cookie_auth.get("ruolo", "amministratore")
 
 def sola_lettura() -> bool:
-    """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
     return st.session_state.get("ruolo") == "utente"
 
-
-# Funzione per verificare l'utente nel foglio Google "Utenti" con sblocco diretto per l'admin
 def verifica_utente_foglio(email_cercata):
-    # Sblocco di emergenza immediato per il tuo account
     if email_cercata.strip().lower() == "putrino.fabrizio@gmail.com":
         return True, "amministratore"
-
     wb, err = apri_foglio_dati()
     if err:
         return False, None
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
-        
         for riga in valori[1:]:
             for cella in riga:
                 cella_str = str(cella).strip().lower().replace('\u200b', '')
@@ -126,15 +130,11 @@ def verifica_utente_foglio(email_cercata):
                     return True, "amministratore"
     except Exception as e:
         st.error(f"Errore tecnico: {e}")
-        
     return False, None
     
-# Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
     code = query_params["code"]
-    
-    # Scambia il codice con il token di accesso
     token_url = "https://oauth2.googleapis.com/token"
     data = {
         "code": code,
@@ -144,65 +144,45 @@ if "code" in query_params and not st.session_state.utente_autenticato:
         "grant_type": "authorization_code",
     }
     response = requests.post(token_url, data=data)
-    
     if response.status_code == 200:
         token_info = response.json()
         access_token = token_info.get("access_token")
-        
-        # Recupera le informazioni del profilo utente da Google
         user_info_res = requests.get(
             "https://www.googleapis.com/oauth2/v1/userinfo",
             headers={"Authorization": f"Bearer {access_token}"}
         )
-        
         if user_info_res.status_code == 200:
             user_data = user_info_res.json()
             email_logged = user_data.get("email", "").strip().lower()
-            
-            # Verifica se l'email è abilitata nel foglio "Utenti"
             autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
-            
             if autorizzato:
                 st.session_state.utente_autenticato = True
                 st.session_state.email_logged = email_logged
                 st.session_state.ruolo = ruolo_trovato.lower()
+                
+                # Salva il cookie per 30 giorni
+                cookie_manager.set("seg_auth_session", 
+                                   {"email": email_logged, "ruolo": ruolo_trovato.lower()}, 
+                                   expires_at=datetime.now() + timedelta(days=30))
+                
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
-                # Pulisce i parametri dall'URL
                 st.query_params.clear()
                 st.rerun()
             else:
-                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
+                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato.")
                 st.stop()
 
-# Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
-        
-        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
-        st.markdown("""
-            <style>
-            /* Seleziona il link button specifico di Google e lo colora di rosso */
-            a[kind="secondary"] {
-                background-color: #DB4437 !important;
-                color: white !important;
-                border: 1px solid #DB4437 !important;
-                font-weight: bold !important;
-                border-radius: 4px !important;
-            }
-            a[kind="secondary"]:hover {
-                background-color: #C23321 !important;
-                color: white !important;
-                border: 1px solid #C23321 !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Costruisce il link ufficiale di login Google OAuth
+        st.markdown("""<style>
+            a[kind="secondary"] { background-color: #DB4437 !important; color: white !important; border: 1px solid #DB4437 !important; font-weight: bold !important; border-radius: 4px !important; }
+            a[kind="secondary"]:hover { background-color: #C23321 !important; color: white !important; border: 1px solid #C23321 !important; }
+            </style>""", unsafe_allow_html=True)
         google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
             "client_id": GOOGLE_CLIENT_ID,
             "redirect_uri": REDIRECT_URI,
@@ -210,10 +190,23 @@ if not st.session_state.utente_autenticato:
             "scope": "openid email profile",
             "prompt": "select_account"
         })
-        
         st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
-        
     st.stop()
+
+with st.sidebar:
+    st.write("👤 Utente connesso:")
+    st.write(f"📧 `{st.session_state.email_logged}`")
+    ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
+    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
+    if sola_lettura():
+        st.caption("🔒 Modalità sola lettura.")
+    st.divider()
+    if st.button("🚪 Logout", type="secondary", use_container_width=True):
+        st.session_state.utente_autenticato = False
+        st.session_state.ruolo = None
+        st.session_state.email_logged = ""
+        cookie_manager.delete("seg_auth_session")
+        st.rerun()
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
