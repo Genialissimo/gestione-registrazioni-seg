@@ -53,6 +53,10 @@ GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
 GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
+# ─────────────────────────────────────────────────────────────────
+# SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER OAUTH
+# (Devono esistere prima che l'OAuth venga eseguito a riga 3)
+# ─────────────────────────────────────────────────────────────────
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -82,14 +86,12 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
+# ─────────────────────────────────────────────────────────────────
 
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE E GESTIONE SESSIONE VIA COOKIE
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
 # ==============================================================================
-
-# Gestore dei cookie per mantenere la sessione aperta dopo la chiusura del browser
-cookie_manager = stx.CookieManager(key="auth_cookies")
 
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
@@ -104,8 +106,8 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
+# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
-    """Verifica se l'email esiste ed è abilitata nel foglio Google 'Utenti'."""
     wb, err = apri_foglio_dati()
     if err:
         return False, None
@@ -122,26 +124,12 @@ def verifica_utente_foglio(email_cercata):
         pass
     return False, None
 
-
-# --- 3A. RIPRISTINO SESSIONE DA COOKIE (Se l'utente ha già fatto il login in passato) ---
-if not st.session_state.utente_autenticato:
-    auth_cookie = cookie_manager.get(cookie="auth_email")
-    if auth_cookie:
-        email_salvata = auth_cookie.strip().lower()
-        autorizzato, ruolo_trovato = verifica_utente_foglio(email_salvata)
-        if autorizzato:
-            st.session_state.utente_autenticato = True
-            st.session_state.email_logged = email_salvata
-            st.session_state.ruolo = ruolo_trovato.lower()
-            if st.session_state.ruolo == "presenze":
-                st.session_state.pagina = "presenze"
-
-
-# --- 3B. ELABORAZIONE DIRETTA LOGIN GOOGLE OAUTH ---
+# Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
     code = query_params["code"]
     
+    # Scambia il codice con il token di accesso
     token_url = "https://oauth2.googleapis.com/token"
     data = {
         "code": code,
@@ -156,6 +144,7 @@ if "code" in query_params and not st.session_state.utente_autenticato:
         token_info = response.json()
         access_token = token_info.get("access_token")
         
+        # Recupera le informazioni del profilo utente da Google
         user_info_res = requests.get(
             "https://www.googleapis.com/oauth2/v1/userinfo",
             headers={"Authorization": f"Bearer {access_token}"}
@@ -165,6 +154,7 @@ if "code" in query_params and not st.session_state.utente_autenticato:
             user_data = user_info_res.json()
             email_logged = user_data.get("email", "").strip().lower()
             
+            # Verifica se l'email è abilitata nel foglio "Utenti"
             autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
             
             if autorizzato:
@@ -173,19 +163,14 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.session_state.ruolo = ruolo_trovato.lower()
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
-                
-                # Salva il cookie per mantenere il login attivo per 30 giorni
-                scadenza = datetime.now() + timedelta(days=30)
-                cookie_manager.set("auth_email", email_logged, expires_at=scadenza)
-                
+                # Pulisce i parametri dall'URL
                 st.query_params.clear()
                 st.rerun()
             else:
                 st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
                 st.stop()
 
-
-# --- 3C. INTERFACCIA DI LOGIN (Se non autenticato e senza cookie valido) ---
+# Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -193,8 +178,10 @@ if not st.session_state.utente_autenticato:
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
         
+        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
         st.markdown("""
             <style>
+            /* Seleziona il link button specifico di Google e lo colora di rosso */
             a[kind="secondary"] {
                 background-color: #DB4437 !important;
                 color: white !important;
@@ -210,6 +197,7 @@ if not st.session_state.utente_autenticato:
             </style>
         """, unsafe_allow_html=True)
 
+        # Costruisce il link ufficiale di login Google OAuth
         google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
             "client_id": GOOGLE_CLIENT_ID,
             "redirect_uri": REDIRECT_URI,
@@ -221,7 +209,6 @@ if not st.session_state.utente_autenticato:
         st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
         
     st.stop()
-
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
@@ -231,19 +218,17 @@ with st.sidebar:
     st.write("👤 Utente connesso:")
     st.write(f"📧 `{st.session_state.email_logged}`")
     
+    # Recupera il ruolo salvato in sessione e lo mostra con l'iniziale maiuscola
     ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
     st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
 
     if sola_lettura():
         st.caption("🔒 Modalità sola lettura: puoi consultare i dati ma non modificarli.")
 
-    st.divider()
+    st.divider()  # Linea di separazione visiva
     
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
-        # Elimina il cookie dal browser
-        cookie_manager.delete("auth_email")
-        
-        # Resetta lo stato in sessione
+        # Resetta lo stato locale
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
@@ -252,6 +237,7 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
 # ─────────────────────────────────────────────────────────────────
+# SCOPES è stato spostato in alto
 
 NOME_FOGLIO_RISPOSTE = "Risposte del modulo 9"
 RIGA_INTESTAZIONE_RISPOSTE = 9
@@ -260,6 +246,7 @@ NOME_FOGLIO_PRESENZE = "Presenze Adunanze"
 RIGA_INTESTAZIONE_PRESENZE = 1
 TIPI_ADUNANZA = ["Infrasettimanale", "Fine settimana"]
 
+# ── Impostazioni configurabili (es. giorni in cui si tengono le adunanze) ──
 NOME_FOGLIO_IMPOSTAZIONI = "Configurazioni"
 RIGA_INTESTAZIONE_IMPOSTAZIONI = 1
 CHIAVE_GIORNI_PER_TIPO = {
@@ -272,7 +259,8 @@ GIORNI_ADUNANZE_DEFAULT = {"Infrasettimanale": ["Giovedì"], "Fine settimana": [
 
 @st.cache_data(ttl=300, show_spinner=False)
 def leggi_giorni_adunanze_per_tipo(_workbook) -> dict:
-    """Legge dal foglio 'Configurazioni' i giorni della settimana per ciascun tipo di adunanza."""
+    """Legge dal foglio 'Configurazioni' i giorni della settimana per
+    ciasccun tipo di adunanza (Infrasettimanale/Fine settimana)."""
     risultato = {tipo: list(giorni) for tipo, giorni in GIORNI_ADUNANZE_DEFAULT.items()}
     if _workbook is None:
         return risultato
@@ -438,6 +426,11 @@ S21_FONT_ETA = 8.5
 S21_COLORE_ROSSO = (0.827, 0.125, 0.125)
 S21_COLORE_NERO = (0, 0, 0)
 
+
+# ─────────────────────────────────────────────────────────────────
+# CONNESSIONE A GOOGLE
+# ─────────────────────────────────────────────────────────────────
+# Le funzioni get_client() e apri_foglio_dati() sono state spostate in alto
 
 @st.cache_data(ttl=60, show_spinner=False)
 def leggi_foglio_come_df(_workbook, nome_foglio: str, riga_intestazione: int = 1):
