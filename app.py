@@ -4855,6 +4855,42 @@ import streamlit as st
 REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
 
+import re
+import pandas as pd
+import streamlit as st
+
+# Regex per il controllo formale della sintassi dell'email
+REGEX_EMAIL = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+
+# ─────────────────────────────────────────────────────────────────
+# POPOUT / DIALOG DI CONFERMA ELIMINAZIONE
+# ─────────────────────────────────────────────────────────────────
+@st.dialog("⚠️ Conferma Eliminazione")
+def dialog_elimina_utente(editor: dict):
+    riga = editor.get("riga", {})
+    nome_utente = riga.get("Utente", "questo utente")
+    
+    st.write(f"Sei veramente sicuro di voler eliminare l'accesso di **«{nome_utente}»**?")
+    st.caption("L'operazione non è reversibile: la persona non potrà più accedere all'applicazione.")
+    
+    col_si, col_no = st.columns(2)
+    with col_si:
+        if st.button("✔ Sì, elimina", key="popout_conf_si", type="primary", use_container_width=True):
+            ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI, editor["numero_riga_foglio"])
+            if ok:
+                st.cache_data.clear()
+                st.session_state.utenti_editor = None
+                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
+                st.success("✔ Accesso eliminato con successo.")
+                st.rerun()
+            else:
+                st.error(err_elim)
+    with col_no:
+        if st.button("✖ No, annulla", key="popout_conf_no", use_container_width=True):
+            st.rerun()
+
+
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
 # ─────────────────────────────────────────────────────────────────
@@ -4885,8 +4921,10 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
 
         nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
         email_utente = st.text_input(
-            "Indirizzo email (Google) *", value=e.get("Indirizzo", ""),
-            help="Deve corrispondere esattamente all'account Google con cui la persona farà l'accesso.")
+            "Indirizzo email (Google) *", 
+            value=e.get("Indirizzo", ""),
+            placeholder="esempio@gmail.com",
+            help="Il controllo di validità viene effettuato al momento del salvataggio.")
 
         ruolo_corrente = e.get("Ruolo", "") or OPZIONI_RUOLO_UTENTE[0]
         if ruolo_corrente not in OPZIONI_RUOLO_UTENTE:
@@ -4910,9 +4948,9 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
         st.session_state.utenti_editor = None
         st.rerun()
 
+    # Se si preme elimina, si apre la finestra Popout
     if elimina and modo == "modifica":
-        st.session_state.utenti_conferma_elimina = editor
-        st.rerun()
+        dialog_elimina_utente(editor)
 
     if invia:
         nome_pulito = nome_utente.strip()
@@ -4924,11 +4962,11 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
         if modo == "modifica":
             email_gia_presenti.discard((e.get("Indirizzo", "") or "").strip().lower())
 
-        # Controlli sui campi
+        # Controlli di validità sui campi al Submit del Form
         if not nome_pulito or not email_pulita:
             st.error("Nome e indirizzo email sono obbligatori.")
         elif not re.match(REGEX_EMAIL, email_pulita):
-            st.error("L'indirizzo email inserito non ha un formato valido (es. nome@gmail.com).")
+            st.error("⚠️ L'indirizzo email inserito non è valido. Inserisci un formato corretto (es. nome@domain.com).")
         elif email_pulita in email_gia_presenti:
             st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
         else:
@@ -4951,34 +4989,17 @@ def _form_utente(editor: dict, df_utenti: pd.DataFrame):
             else:
                 st.error(err_salva)
 
-    conferma = st.session_state.get("utenti_conferma_elimina")
-    if conferma and modo == "modifica" and conferma.get("numero_riga_foglio") == editor.get("numero_riga_foglio"):
-        st.warning(f"Confermi l'eliminazione dell'accesso di «{e.get('Utente', '')}»? "
-                   "L'operazione non è reversibile: la persona non potrà più accedere all'app.")
-        col_si, col_no = st.columns(2)
-        with col_si:
-            if st.button("✔ Sì, elimina", key="utenti_conf_si", type="primary", use_container_width=True):
-                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI,
-                                                   editor["numero_riga_foglio"])
-                if ok:
-                    st.cache_data.clear()
-                    st.session_state.utenti_editor = None
-                    st.session_state.utenti_conferma_elimina = None
-                    st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
-                    st.success("✔ Accesso eliminato.")
-                    st.rerun()
-                else:
-                    st.error(err_elim)
-        with col_no:
-            if st.button("No, annulla", key="utenti_conf_no", use_container_width=True):
-                st.session_state.utenti_conferma_elimina = None
-                st.rerun()
-
 
 def mostra_gestione_utenti():
     st.title("🔐 Accessi")
+
+    # Callback per resettare lo stato del form prima di tornare in Home
+    def _torna_home_e_chiudi_form():
+        st.session_state.utenti_editor = None
+        vai_a("home")
+
     st.button("🏠 Torna alla Home", key="home_da_utenti", use_container_width=True,
-              on_click=vai_a, args=("home",))
+              on_click=_torna_home_e_chiudi_form)
 
     if st.session_state.get("ruolo") != "amministratore":
         st.warning("⚠️ Questa pagina è riservata agli amministratori.")
@@ -5029,7 +5050,6 @@ def mostra_gestione_utenti():
         with col_agg:
             if st.button("➕ Aggiungi nuovo accesso", key="utenti_apri_nuovo", use_container_width=True):
                 st.session_state.utenti_editor = {"modo": "nuovo"}
-                st.session_state.utenti_conferma_elimina = None
         with col_mod:
             if idx_sel is not None:
                 if st.button("✏️ Modifica Accesso", key="utenti_apri_modifica", use_container_width=True):
@@ -5039,7 +5059,6 @@ def mostra_gestione_utenti():
                         "riga": df_utenti_reset.loc[idx_sel].to_dict(),
                         "numero_riga_foglio": numero_riga_foglio,
                     }
-                    st.session_state.utenti_conferma_elimina = None
 
         editor = st.session_state.get("utenti_editor")
         if editor:
