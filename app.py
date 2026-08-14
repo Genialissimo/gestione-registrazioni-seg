@@ -4850,6 +4850,108 @@ def mostra_impostazioni():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
 # ─────────────────────────────────────────────────────────────────
+def _form_utente(editor: dict, df_utenti: pd.DataFrame):
+    modo = editor.get("modo")
+    e = editor.get("riga", {}) if modo == "modifica" else {}
+    chiave = editor.get("numero_riga_foglio", "nuovo")
+
+    if modo == "modifica":
+        st.markdown(f"#### ✏️ Modifica accesso — {e.get('Utente', '')}")
+    else:
+        st.markdown("#### ➕ Nuovo accesso")
+
+    with st.form(f"form_utente_{chiave}", clear_on_submit=False):
+        nome_utente = st.text_input("Nome e Cognome *", value=e.get("Utente", ""))
+        email_utente = st.text_input(
+            "Indirizzo email (Google) *", value=e.get("Indirizzo", ""),
+            help="Deve corrispondere esattamente all'account Google con cui la persona farà l'accesso.")
+
+        ruolo_corrente = e.get("Ruolo", "") or OPZIONI_RUOLO_UTENTE[0]
+        if ruolo_corrente not in OPZIONI_RUOLO_UTENTE:
+            ruolo_corrente = OPZIONI_RUOLO_UTENTE[0]
+        ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE,
+                                     index=OPZIONI_RUOLO_UTENTE.index(ruolo_corrente))
+
+        id_telegram = st.text_input("ID Telegram (opzionale)", value=e.get("Id telegram", ""),
+                                    help="Verrà usato in futuro per l'invio di notifiche.")
+
+        col_salva, col_annulla, col_elimina = st.columns(3)
+        with col_salva:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True)
+        with col_annulla:
+            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
+        with col_elimina:
+            elimina = st.form_submit_button("🗑️ Elimina", use_container_width=True,
+                                            disabled=(modo != "modifica"))
+
+    if annulla:
+        st.session_state.utenti_editor = None
+        st.rerun()
+
+    if elimina and modo == "modifica":
+        st.session_state.utenti_conferma_elimina = editor
+        st.rerun()
+
+    if invia:
+        nome_pulito = nome_utente.strip()
+        email_pulita = email_utente.strip().lower()
+
+        email_gia_presenti = set()
+        if not df_utenti.empty and "Indirizzo" in df_utenti.columns:
+            email_gia_presenti = set(df_utenti["Indirizzo"].astype(str).str.strip().str.lower())
+        if modo == "modifica":
+            email_gia_presenti.discard((e.get("Indirizzo", "") or "").strip().lower())
+
+        if not nome_pulito or not email_pulita:
+            st.error("Nome e indirizzo email sono obbligatori.")
+        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
+            st.error("L'indirizzo email non sembra valido.")
+        elif email_pulita in email_gia_presenti:
+            st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
+        else:
+            valori = {
+                "ID": e.get("ID") or str(prossimo_id_anagrafica(df_utenti)),
+                "Utente": nome_pulito,
+                "Indirizzo": email_pulita,
+                "Ruolo": ruolo_scelto,
+                "Id telegram": id_telegram.strip(),
+            }
+            numero_riga = editor.get("numero_riga_foglio") if modo == "modifica" else None
+            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_UTENTI, RIGA_INTESTAZIONE_UTENTI,
+                                               valori, riga_da_aggiornare=numero_riga)
+            if ok:
+                st.cache_data.clear()
+                st.session_state.utenti_editor = None
+                st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
+                st.success(f"✔ «{nome_pulito}» salvato correttamente.")
+                st.rerun()
+            else:
+                st.error(err_salva)
+
+    conferma = st.session_state.get("utenti_conferma_elimina")
+    if conferma and modo == "modifica" and conferma.get("numero_riga_foglio") == editor.get("numero_riga_foglio"):
+        st.warning(f"Confermi l'eliminazione dell'accesso di «{e.get('Utente', '')}»? "
+                   "L'operazione non è reversibile: la persona non potrà più accedere all'app.")
+        col_si, col_no = st.columns(2)
+        with col_si:
+            if st.button("✔ Sì, elimina", key="utenti_conf_si", type="primary", use_container_width=True):
+                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_UTENTI,
+                                                    editor["numero_riga_foglio"])
+                if ok:
+                    st.cache_data.clear()
+                    st.session_state.utenti_editor = None
+                    st.session_state.utenti_conferma_elimina = None
+                    st.session_state.utenti_tabella_versione = st.session_state.get("utenti_tabella_versione", 0) + 1
+                    st.success("✔ Accesso eliminato.")
+                    st.rerun()
+                else:
+                    st.error(err_elim)
+        with col_no:
+            if st.button("No, annulla", key="utenti_conf_no", use_container_width=True):
+                st.session_state.utenti_conferma_elimina = None
+                st.rerun()
+
+
 def mostra_gestione_utenti():
     st.title("🔐 Accessi")
     st.button("🏠 Torna alla Home", key="home_da_utenti", use_container_width=True,
@@ -4863,6 +4965,11 @@ def mostra_gestione_utenti():
         st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
+    if "utenti_tabella_versione" not in st.session_state:
+        st.session_state.utenti_tabella_versione = 0
+
+    contenitore_azioni = st.container()
+
     df_utenti, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_UTENTI, RIGA_INTESTAZIONE_UTENTI)
     if err:
         st.error(err)
@@ -4871,58 +4978,49 @@ def mostra_gestione_utenti():
     st.caption(f"Persone abilitate ad accedere all'app (foglio «{NOME_FOGLIO_UTENTI}»). "
                "Il ruolo stabilisce cosa possono vedere e modificare: Amministratore (accesso "
                "completo), Utente (sola lettura su tutte le pagine), Presenze (solo la pagina "
-               "Presenti alle adunanze, con permessi pieni lì).")
+               "Presenti alle adunanze, con permessi pieni lì). Tocca una riga per selezionarla.")
 
-    if not df_utenti.empty:
-        colonne_mostrate = [c for c in ["ID", "Utente", "Indirizzo", "Ruolo", "Id telegram"]
-                             if c in df_utenti.columns]
-        st.dataframe(df_utenti[colonne_mostrate] if colonne_mostrate else df_utenti,
-                     hide_index=True, use_container_width=True)
-    else:
+    df_utenti_reset = df_utenti.reset_index(drop=True)
+    idx_sel = None
+
+    if df_utenti_reset.empty:
         st.info("Nessun utente presente ancora nel foglio.")
+    else:
+        colonne_mostrate = [c for c in ["ID", "Utente", "Indirizzo", "Ruolo", "Id telegram"]
+                             if c in df_utenti_reset.columns]
+        chiave_tabella = f"utenti_tabella_{st.session_state.utenti_tabella_versione}"
+        evento = st.dataframe(
+            df_utenti_reset[colonne_mostrate] if colonne_mostrate else df_utenti_reset,
+            hide_index=True,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key=chiave_tabella,
+        )
+        righe_sel = evento.selection.rows if evento and evento.selection else []
+        if righe_sel and righe_sel[0] < len(df_utenti_reset):
+            idx_sel = righe_sel[0]
 
-    st.divider()
-    st.subheader("➕ Aggiungi nuovo accesso")
+    with contenitore_azioni:
+        col_agg, col_mod = st.columns(2)
+        with col_agg:
+            if st.button("➕ Aggiungi nuovo accesso", key="utenti_apri_nuovo", use_container_width=True):
+                st.session_state.utenti_editor = {"modo": "nuovo"}
+                st.session_state.utenti_conferma_elimina = None
+        with col_mod:
+            if idx_sel is not None:
+                if st.button("✏️ Modifica Accesso", key="utenti_apri_modifica", use_container_width=True):
+                    numero_riga_foglio = RIGA_INTESTAZIONE_UTENTI + 1 + idx_sel
+                    st.session_state.utenti_editor = {
+                        "modo": "modifica",
+                        "riga": df_utenti_reset.loc[idx_sel].to_dict(),
+                        "numero_riga_foglio": numero_riga_foglio,
+                    }
+                    st.session_state.utenti_conferma_elimina = None
 
-    with st.form("form_nuovo_utente", clear_on_submit=True):
-        nome_utente = st.text_input("Nome e Cognome *")
-        email_utente = st.text_input("Indirizzo email (Google) *",
-                                     help="Deve corrispondere esattamente all'account Google con cui la persona farà l'accesso.")
-        ruolo_scelto = st.selectbox("Ruolo", OPZIONI_RUOLO_UTENTE)
-        id_telegram = st.text_input("ID Telegram (opzionale)",
-                                    help="Verrà usato in futuro per l'invio di notifiche.")
-
-        invia = st.form_submit_button("✔ Aggiungi utente", type="primary", use_container_width=True)
-
-    if invia:
-        nome_pulito = nome_utente.strip()
-        email_pulita = email_utente.strip().lower()
-
-        email_gia_presenti = set()
-        if not df_utenti.empty and "Indirizzo" in df_utenti.columns:
-            email_gia_presenti = set(df_utenti["Indirizzo"].astype(str).str.strip().str.lower())
-
-        if not nome_pulito or not email_pulita:
-            st.error("Nome e indirizzo email sono obbligatori.")
-        elif "@" not in email_pulita or "." not in email_pulita.split("@")[-1]:
-            st.error("L'indirizzo email non sembra valido.")
-        elif email_pulita in email_gia_presenti:
-            st.error(f"Esiste già un utente con l'indirizzo «{email_pulita}».")
-        else:
-            valori = {
-                "ID": str(prossimo_id_anagrafica(df_utenti)),
-                "Utente": nome_pulito,
-                "Indirizzo": email_pulita,
-                "Ruolo": ruolo_scelto,
-                "Id telegram": id_telegram.strip(),
-            }
-            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_UTENTI, RIGA_INTESTAZIONE_UTENTI, valori)
-            if ok:
-                st.cache_data.clear()
-                st.success(f"✔ «{nome_pulito}» aggiunto correttamente con ruolo «{ruolo_scelto}».")
-                st.rerun()
-            else:
-                st.error(err_salva)
+        editor = st.session_state.get("utenti_editor")
+        if editor:
+            _form_utente(editor, df_utenti)
 
 
 # ─────────────────────────────────────────────────────────────────
