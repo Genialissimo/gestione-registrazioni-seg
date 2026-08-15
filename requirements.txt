@@ -1,4 +1,4 @@
-streamlit
+streamlit>=1.58.0
 st-gsheets-connection
 pandas
 gspread
@@ -6,8 +6,5 @@ google-auth
 pypdf
 reportlab
 openpyxl
-streamlit-google-auth
 pdfplumber
 streamlit-keyup
-extra-streamlit-components
-
