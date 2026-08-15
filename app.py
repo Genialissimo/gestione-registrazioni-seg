@@ -178,6 +178,9 @@ if not st.session_state.utente_autenticato:
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
     code = query_params["code"]
+    
+    # PULIZIA IMMEDIATA: rimuove subito il 'code' dall'URL per evitare doppi utilizzi
+    st.query_params.clear()
 
     # Scambia il codice con il token di accesso
     token_url = "https://oauth2.googleapis.com/token"
@@ -214,33 +217,20 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
                 _imposta_cookie_sessione(email_logged)
-                # Pulisce i parametri dall'URL
-                st.query_params.clear()
                 st.rerun()
             elif errore_verifica:
-                st.query_params.clear()
                 st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
-                st.info("Non è detto che l'account non sia autorizzato: potrebbe essere un problema "
-                        "temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
             else:
-                st.query_params.clear()
                 st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
         else:
-            # Fallita la lettura del profilo utente da Google: mostra il motivo
-            st.query_params.clear()
             st.error(f"⚠️ Errore nel recupero del profilo Google (HTTP {user_info_res.status_code}).")
-            st.code(user_info_res.text[:800])
     else:
-        # Fallito lo scambio del 'code' con il token
-        st.query_params.clear()
+        # Se si tratta di un invalid_grant (es. doppio loop asincrono), riavvia in modo pulito
         if "invalid_grant" in response.text:
-            st.warning("⚠️ Il link di accesso Google è già stato utilizzato o è scaduto.")
-            if st.button("🔄 Riprova il login"):
-                st.rerun()
+            st.rerun()
         else:
-            st.error(f"⚠️ Errore nello scambio del codice OAuth (HTTP {response.status_code}).")
+            st.error(f"⚠️ Errore durante l'autenticazione (HTTP {response.status_code}).")
             st.code(response.text[:800])
-            st.caption("Cause tipiche: redirect_uri diverso da quello registrato su Google Cloud o client_secret errato.")
 
 # Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
@@ -309,6 +299,7 @@ with st.sidebar:
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
         st.rerun()
+
 
 
 # ─────────────────────────────────────────────────────────────────
