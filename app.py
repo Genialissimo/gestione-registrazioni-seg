@@ -113,7 +113,93 @@ if not st.session_state.utente_autenticato:
                             st.error(f"⚠️ {errore}")
                         else:
                             st.error(f"❌ L'indirizzo `{email_input}` non è autorizzato all'accesso.")
+    st.stop()# ==============================================================================
+# 3. AUTENTICAZIONE — Login con Google e riscontro su foglio "Utenti"
+# ==============================================================================
+NOME_FOGLIO_UTENTI = "Utenti"
+
+if "utente_autenticato" not in st.session_state:
+    st.session_state.utente_autenticato = False
+if "ruolo" not in st.session_state:
+    st.session_state.ruolo = ""
+if "email_logged" not in st.session_state:
+    st.session_state.email_logged = ""
+
+# Funzione per cercare l'email nel foglio Google "Utenti" (colonna C = Indirizzo, colonna D = Ruolo)
+def verifica_utente_nel_foglio(email_cercata):
+    wb, err = apri_foglio_dati()
+    if err:
+        return False, None, err
+    try:
+        ws = wb.worksheet(NOME_FOGLIO_UTENTI)
+        righe = ws.get_all_values()
+        # Ipotizziamo intestazione alla riga 1, scorriamo dalla riga 2 (indice 1)
+        for riga in righe[1:]:
+            # Controlliamo che la riga abbia almeno colonne A, B, C, D (indice 2 e 3)
+            if len(riga) >= 4:
+                email_foglio = riga[2].strip().lower()
+                ruolo_foglio = riga[3].strip()
+                if email_foglio == email_cercata:
+                    return True, ruolo_foglio, None
+    except Exception as e:
+        return False, None, str(e)
+    return False, None, None
+
+# Controllo se l'utente ha eseguito il login con Google
+try:
+    is_logged = st.user.is_logged_in if hasattr(st.user, "is_logged_in") else bool(st.user)
+except Exception:
+    is_logged = False
+
+if not is_logged or not st.user:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔒 Accesso Riservato")
+        st.write("Accedi con il tuo account Google aziendale o autorizzato.")
+        st.login()
     st.stop()
+
+# Estrazione sicura dell'email dall'utente Google loggato
+email_utente = ""
+try:
+    if hasattr(st.user, "email"):
+        email_utente = st.user.email
+    elif isinstance(st.user, dict):
+        email_utente = st.user.get("email", "")
+    else:
+        email_utente = str(dict(st.user).get("email", ""))
+except Exception:
+    email_utente = ""
+
+email_utente = email_utente.strip().lower()
+
+if not email_utente:
+    st.error("⚠️ Impossibile leggere l'indirizzo email dall'account Google.")
+    if st.button("🚪 Esci"):
+        st.logout()
+    st.stop()
+
+# Se non è ancora validato in sessione, controlliamo sul foglio Google
+if not st.session_state.utente_autenticato:
+    autorizzato, ruolo_trovato, errore = verifica_utente_nel_foglio(email_utente)
+    
+    if errore:
+        st.error(f"⚠️ Errore di comunicazione con il foglio Google: {errore}")
+        st.stop()
+        
+    if not autorizzato:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.error(f"⛔ L'account Google `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
+            st.write("Verifica che la tua email sia inserita correttamente nella tabella 'Utenti' del foglio Google.")
+            if st.button("🚪 Esci / Cambia account", use_container_width=True):
+                st.logout()
+        st.stop()
+        
+    # Se autorizzato, salviamo i dati in sessione
+    st.session_state.utente_autenticato = True
+    st.session_state.email_logged = email_utente
+    st.session_state.ruolo = (ruolo_trovato or "Utente").lower()
 # ==============================================================================
 # 4. BARRA LATERALE
 # ==============================================================================
