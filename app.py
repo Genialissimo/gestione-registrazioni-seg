@@ -8,10 +8,6 @@ import io
 import os
 import re
 import zipfile
-import base64
-import hashlib
-import hmac
-
 
 import pandas as pd
 import streamlit as st
@@ -42,29 +38,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-import time
-import extra_streamlit_components as stx
-from streamlit_google_auth import Authenticate
-from urllib.parse import urlencode
-import requests
-
 # ==============================================================================
-# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA
+# 2. CONFIGURAZIONE — connessione a Google Sheets (serve prima dell'autenticazione)
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
-GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
-GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
-REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
-
-# ─────────────────────────────────────────────────────────────────
-# SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER OAUTH
-# (Devono esistere prima che l'OAuth venga eseguito a riga 3)
-# ─────────────────────────────────────────────────────────────────
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
+
 
 @st.cache_resource(show_spinner=False)
 def get_client() -> gspread.Client:
@@ -90,13 +73,11 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
-# ─────────────────────────────────────────────────────────────────
 
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
+# 3. AUTENTICAZIONE — login nativo Streamlit (stesso meccanismo di Gestione Programmi)
 # ==============================================================================
-
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
 if "ruolo" not in st.session_state:
@@ -110,7 +91,6 @@ def sola_lettura() -> bool:
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
     """Ritorna (autorizzato, ruolo, errore). 'errore' è valorizzato solo se la
     lettura del foglio Utenti è fallita (non se l'email semplicemente non c'è)."""
@@ -130,175 +110,57 @@ def verifica_utente_foglio(email_cercata):
         return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
     return False, None, None
 
-# ─────────────────────────────────────────────────────────────────
-# SESSIONE VIA URL (query params) — resta collegato fino a 30 giorni
-# senza rifare il login. A differenza dei cookie del CookieManager,
-# funziona anche dentro l'iframe di Streamlit Cloud.
-# ─────────────────────────────────────────────────────────────────
-PARAM_SESSIONE = "sess"
-GIORNI_DURATA_SESSIONE = 30
-CHIAVE_FIRMA_SESSIONE = st.secrets["auth"]["cookie_secret"]  # riuso la chiave già esistente
 
-
-def _firma(payload: str) -> str:
-    return hmac.new(CHIAVE_FIRMA_SESSIONE.encode(), payload.encode(), hashlib.sha256).hexdigest()
-
-
-def _crea_token_sessione(email: str) -> str:
-    scadenza = (datetime.now() + timedelta(days=GIORNI_DURATA_SESSIONE)).isoformat()
-    payload = f"{email}|{scadenza}"
-    dati = f"{payload}|{_firma(payload)}"
-    return base64.urlsafe_b64encode(dati.encode()).decode()
-
-
-def _leggi_token_sessione(token: str):
-    """Ritorna l'email se il token è valido e non scaduto, altrimenti None."""
-    try:
-        email, scadenza_str, firma = base64.urlsafe_b64decode(token.encode()).decode().split("|")
-        if not hmac.compare_digest(firma, _firma(f"{email}|{scadenza_str}")):
-            return None
-        if datetime.now() > datetime.fromisoformat(scadenza_str):
-            return None
-        return email
-    except Exception:
-        return None
-
-
-def _imposta_sessione_url(email: str):
-    """Salva un token firmato nell'URL per ripristinare il login automaticamente la prossima volta."""
-    st.query_params[PARAM_SESSIONE] = _crea_token_sessione(email)
-
-
-def _elimina_sessione_url():
-    """Rimuove il token di sessione dall'URL (logout o accesso revocato)."""
-    if PARAM_SESSIONE in st.query_params:
-        del st.query_params[PARAM_SESSIONE]
-
-
-# Se non risulto ancora autenticato in questa sessione, provo a recuperare
-# l'accesso da un token salvato in precedenza nell'URL (valido fino a 30
-# giorni dal login).
-if not st.session_state.utente_autenticato:
-    token_sessione = st.query_params.get(PARAM_SESSIONE)
-    if token_sessione:
-        email_da_sessione = _leggi_token_sessione(token_sessione)
-        if email_da_sessione:
-            autorizzato_sess, ruolo_da_sessione, errore_verifica_sess = verifica_utente_foglio(email_da_sessione)
-            if autorizzato_sess:
-                st.session_state.utente_autenticato = True
-                st.session_state.email_logged = email_da_sessione
-                st.session_state.ruolo = ruolo_da_sessione.lower()
-                if st.session_state.ruolo == "presenze":
-                    st.session_state.pagina = "presenze"
-            elif not errore_verifica_sess:
-                _elimina_sessione_url()
-            # Se invece c'è stato un errore di connessione al foglio, non tocco
-            # il token: potrebbe essere un problema temporaneo, l'utente vedrà
-            # solo la schermata di login e potrà riprovare senza perdere l'accesso.
-        else:
-            _elimina_sessione_url()
-
-# Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
-query_params = st.query_params
-if "code" in query_params and not st.session_state.utente_autenticato:
-    code = query_params["code"]
-    
-    # Scambia il codice con il token di accesso
-    token_url = "https://oauth2.googleapis.com/token"
-    data = {
-        "code": code,
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code",
-    }
-    response = requests.post(token_url, data=data)
-    
-    if response.status_code == 200:
-        token_info = response.json()
-        access_token = token_info.get("access_token")
-        
-        # Recupera le informazioni del profilo utente da Google
-        user_info_res = requests.get(
-            "https://www.googleapis.com/oauth2/v1/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
-        )
-        
-        if user_info_res.status_code == 200:
-            user_data = user_info_res.json()
-            email_logged = user_data.get("email", "").strip().lower()
-            
-            # Verifica se l'email è abilitata nel foglio "Utenti"
-            autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_logged)
-            
-            if autorizzato:
-                st.session_state.utente_autenticato = True
-                st.session_state.email_logged = email_logged
-                st.session_state.ruolo = ruolo_trovato.lower()
-                if st.session_state.ruolo == "presenze":
-                    st.session_state.pagina = "presenze"
-                # Pulisce i parametri dall'URL (incluso "code") e SOLO DOPO
-                # imposta il token di sessione, altrimenti clear() lo cancellerebbe
-                st.query_params.clear()
-                _imposta_sessione_url(email_logged)
-                st.rerun()
-            elif errore_verifica:
-                st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
-                st.info("Non è detto che l'account non sia autorizzato: potrebbe essere un problema "
-                        "temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
-            else:
-                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
-                st.stop()
-
-# Se non è autenticato, mostra il pulsante di accesso con Google
-if not st.session_state.utente_autenticato:
+if not st.user.is_logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
-        st.write("Accedi utilizzando il tuo account Google autorizzato.")
-        
-        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
-        st.markdown("""
-            <style>
-            /* Seleziona il link button specifico di Google e lo colora di rosso */
-            a[kind="secondary"] {
-                background-color: #DB4437 !important;
-                color: white !important;
-                border: 1px solid #DB4437 !important;
-                font-weight: bold !important;
-                border-radius: 4px !important;
-            }
-            a[kind="secondary"]:hover {
-                background-color: #C23321 !important;
-                color: white !important;
-                border: 1px solid #C23321 !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Costruisce il link ufficiale di login Google OAuth
-        google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
-            "client_id": GOOGLE_CLIENT_ID,
-            "redirect_uri": REDIRECT_URI,
-            "response_type": "code",
-            "scope": "openid email profile",
-            "prompt": "select_account"
-        })
-        
-        st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
-        
+        st.write("Accedi con il tuo account Google autorizzato.")
+        st.login()
     st.stop()
 
+# Loggato con Google: verifico se è autorizzato nel foglio "Utenti" e con quale ruolo
+if not st.session_state.utente_autenticato or st.session_state.email_logged != st.user.email.strip().lower():
+    autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(st.user.email.strip().lower())
 
-if st.button("🚪 Logout", type="secondary", use_container_width=True):
-        # Rimuove il token di sessione dall'URL
-        _elimina_sessione_url()
-        # Resetta lo stato locale
+    if not autorizzato:
+        if errore_verifica:
+            st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
+            st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
+        else:
+            st.error(f"⚠️ L'account `{st.user.email}` non è autorizzato ad accedere a questa applicazione.")
+        if st.button("🚪 Esci", use_container_width=True):
+            st.logout()
+        st.stop()
+
+    st.session_state.utente_autenticato = True
+    st.session_state.email_logged = st.user.email.strip().lower()
+    st.session_state.ruolo = ruolo_trovato.lower()
+    if st.session_state.ruolo == "presenze":
+        st.session_state.pagina = "presenze"
+
+# ==============================================================================
+# 4. BARRA LATERALE — dati utente e Logout
+# ==============================================================================
+with st.sidebar:
+    st.write("👤 Utente connesso:")
+    st.write(f"📧 `{st.session_state.email_logged}`")
+
+    ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
+    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
+
+    if sola_lettura():
+        st.caption("🔒 Modalità sola lettura: puoi consultare i dati ma non modificarli.")
+
+    st.divider()
+
+    if st.button("🚪 Logout", type="secondary", use_container_width=True):
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
-        st.rerun()
+        st.logout()
+
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
 # ─────────────────────────────────────────────────────────────────
