@@ -321,10 +321,11 @@ with st.sidebar:
 
     st.divider()  # Linea di separazione visiva
     
-        if st.button("🚪 Logout", type="secondary", use_container_width=True):
+    if st.button("🚪 Logout", type="secondary", use_container_width=True):
         st.session_state.pop("ruolo", None)
         st.session_state.pop("email_logged", None)
         st.logout()
+
 
 
 # ─────────────────────────────────────────────────────────────────
