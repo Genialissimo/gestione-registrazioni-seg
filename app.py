@@ -156,8 +156,27 @@ def _elimina_cookie_sessione():
 
 # Se non risulto ancora autenticato in questa sessione, provo a recuperare l'accesso
 # da un cookie salvato in precedenza nel browser (valido fino a 30 giorni dal login).
+#
+# Il CookieManager legge i cookie in modo asincrono: al primissimo giro di
+# esecuzione dopo l'apertura del browser il componente potrebbe non aver ancora
+# risposto, e get() restituisce None anche se il cookie esiste davvero.
+# Per questo diamo al componente qualche tentativo in più prima di arrenderci
+# e mostrare la schermata di login.
 if not st.session_state.utente_autenticato:
-    email_da_cookie = cookie_manager.get(COOKIE_NOME_SESSIONE)
+    if "cookie_tentativi_lettura" not in st.session_state:
+        st.session_state.cookie_tentativi_lettura = 0
+
+    tutti_i_cookie = cookie_manager.get_all()
+
+    if tutti_i_cookie == {} and st.session_state.cookie_tentativi_lettura < 4:
+        # Il componente non ha ancora risposto: aspetto un attimo e riprovo,
+        # invece di concludere subito che non c'è nessun cookie salvato.
+        st.session_state.cookie_tentativi_lettura += 1
+        time.sleep(0.35)
+        st.rerun()
+
+    email_da_cookie = (tutti_i_cookie or {}).get(COOKIE_NOME_SESSIONE)
+
     if email_da_cookie:
         email_da_cookie = email_da_cookie.strip().lower()
         autorizzato_cookie, ruolo_da_cookie, errore_verifica_cookie = verifica_utente_foglio(email_da_cookie)
@@ -168,9 +187,8 @@ if not st.session_state.utente_autenticato:
             if st.session_state.ruolo == "presenze":
                 st.session_state.pagina = "presenze"
         elif not errore_verifica_cookie:
-            # Verifica riuscita ma l'email non c'è più nel foglio (es. accesso
-            # revocato): il cookie non è più valido, lo tolgo.
             _elimina_cookie_sessione()
+            
         # Se invece c'è stato un errore di connessione al foglio, non tocco il
         # cookie: potrebbe essere un problema temporaneo, l'utente vedrà solo
         # la schermata di login e potrà riprovare senza perdere l'accesso salvato.
