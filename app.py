@@ -60,75 +60,60 @@ def apri_foglio_dati():
         return None, f"Errore di connessione a Google Sheets: {e}"
 
 # ==============================================================================
-# 3. AUTENTICAZIONE
+# 3. AUTENTICAZIONE — Login sicuro via Google Sheet (Senza st.login())
 # ==============================================================================
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
-
-# Controllo autenticazione nativa
-try:
-    is_logged = st.user.is_logged_in if hasattr(st.user, "is_logged_in") else bool(st.user)
-except Exception:
-    is_logged = False
-
-if not is_logged or not st.user:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.title("🔒 Accesso Riservato")
-        st.write("Accedi con il tuo account Google autorizzato.")
-        st.login()
-    st.stop()
-
-# Recupero sicuro dell'email indipendentemente dalla struttura dell'oggetto utente
-email_utente = ""
-try:
-    if hasattr(st.user, "email"):
-        email_utente = st.user.email
-    elif isinstance(st.user, dict):
-        email_utente = st.user.get("email", "")
-    else:
-        email_utente = getattr(st.user, "get", lambda k: "")("email", "")
-except Exception:
-    email_utente = ""
-
-if not email_utente:
-    # Fallback estremo se l'attributo è strutturato diversamente
-    try:
-        email_utente = str(dict(st.user).get("email", ""))
-    except Exception:
-        pass
-
-email_utente = email_utente.strip().lower()
-
-if not email_utente:
-    st.error("⚠️ Impossibile recuperare l'indirizzo email dall'autenticazione Google.")
-    if st.button("🚪 Esci"):
-        st.logout()
-    st.stop()
+if "ruolo" not in st.session_state:
+    st.session_state.ruolo = None
+if "email_logged" not in st.session_state:
+    st.session_state.email_logged = ""
 
 def verifica_utente_foglio(email_cercata):
     wb, err = apri_foglio_dati()
-    if err: return False, None, err
+    if err:
+        return False, None, err
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
-        for riga in ws.get_all_values()[1:]:
-            if len(riga) >= 4 and riga[2].strip().lower() == email_cercata:
-                return True, riga[3].strip(), None
+        valori = ws.get_all_values()
+        for riga in valori[1:]:
+            if len(riga) >= 4:
+                email_foglio = riga[2].strip().lower()
+                ruolo_foglio = riga[3].strip()
+                if email_foglio == email_cercata:
+                    return True, ruolo_foglio, None
     except Exception as e:
-        return False, None, str(e)
+        return False, None, f"Errore durante la lettura del foglio: {e}"
     return False, None, None
 
+# Se non è autenticato, mostra la schermata di login personalizzata
 if not st.session_state.utente_autenticato:
-    autorizzato, ruolo, errore = verifica_utente_foglio(email_utente)
-    if not autorizzato:
-        st.error(f"L'account `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
-        if st.button("🚪 Esci"): 
-            st.logout()
-        st.stop()
-    st.session_state.utente_autenticato = True
-    st.session_state.ruolo = (ruolo or "utente").lower()
-    st.session_state.email_logged = email_utente
-
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔒 Accesso Riservato")
+        st.subheader("Gestione Registrazioni SEG")
+        st.write("Inserisci la tua email autorizzata per accedere:")
+        
+        with st.form("form_login"):
+            email_input = st.text_input("Indirizzo Email").strip().lower()
+            submit_login = st.form_submit_button("Accedi", use_container_width=True)
+            
+            if submit_login:
+                if not email_input:
+                    st.warning("⚠️ Inserisci un'email valida.")
+                else:
+                    autorizzato, ruolo_trovato, errore = verifica_utente_foglio(email_input)
+                    if autorizzato:
+                        st.session_state.utente_autenticato = True
+                        st.session_state.email_logged = email_input
+                        st.session_state.ruolo = (ruolo_trovato or "utente").lower()
+                        st.rerun()
+                    else:
+                        if errore:
+                            st.error(f"⚠️ {errore}")
+                        else:
+                            st.error(f"❌ L'indirizzo `{email_input}` non è autorizzato all'accesso.")
+    st.stop()
 # ==============================================================================
 # 4. BARRA LATERALE
 # ==============================================================================
