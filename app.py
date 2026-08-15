@@ -8,6 +8,10 @@ import io
 import os
 import re
 import zipfile
+import base64
+import hashlib
+import hmac
+
 
 import pandas as pd
 import streamlit as st
@@ -126,72 +130,73 @@ def verifica_utente_foglio(email_cercata):
         return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
     return False, None, None
 
-
 # ─────────────────────────────────────────────────────────────────
-# COOKIE DI SESSIONE — resta collegato fino a 30 giorni senza rifare il login
+# SESSIONE VIA URL (query params) — resta collegato fino a 30 giorni
+# senza rifare il login. A differenza dei cookie del CookieManager,
+# funziona anche dentro l'iframe di Streamlit Cloud.
 # ─────────────────────────────────────────────────────────────────
-COOKIE_NOME_SESSIONE = "seg_auth_email"
-GIORNI_DURATA_COOKIE = 30
+PARAM_SESSIONE = "sess"
+GIORNI_DURATA_SESSIONE = 30
+CHIAVE_FIRMA_SESSIONE = st.secrets["auth"]["cookie_secret"]  # riuso la chiave già esistente
 
 
-cookie_manager = stx.CookieManager(key="cookie_manager_seg")
+def _firma(payload: str) -> str:
+    return hmac.new(CHIAVE_FIRMA_SESSIONE.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
-def _imposta_cookie_sessione(email: str):
-    """Salva l'email nel browser per ripristinare il login automaticamente la prossima volta."""
+def _crea_token_sessione(email: str) -> str:
+    scadenza = (datetime.now() + timedelta(days=GIORNI_DURATA_SESSIONE)).isoformat()
+    payload = f"{email}|{scadenza}"
+    dati = f"{payload}|{_firma(payload)}"
+    return base64.urlsafe_b64encode(dati.encode()).decode()
+
+
+def _leggi_token_sessione(token: str):
+    """Ritorna l'email se il token è valido e non scaduto, altrimenti None."""
     try:
-        scadenza = datetime.now() + timedelta(days=GIORNI_DURATA_COOKIE)
-        cookie_manager.set(COOKIE_NOME_SESSIONE, email, expires_at=scadenza, key="set_cookie_login")
+        email, scadenza_str, firma = base64.urlsafe_b64decode(token.encode()).decode().split("|")
+        if not hmac.compare_digest(firma, _firma(f"{email}|{scadenza_str}")):
+            return None
+        if datetime.now() > datetime.fromisoformat(scadenza_str):
+            return None
+        return email
     except Exception:
-        pass
+        return None
 
 
-def _elimina_cookie_sessione():
-    """Rimuove il cookie di sessione salvato nel browser (logout o accesso revocato)."""
-    try:
-        cookie_manager.delete(COOKIE_NOME_SESSIONE, key="del_cookie_logout")
-    except Exception:
-        pass
+def _imposta_sessione_url(email: str):
+    """Salva un token firmato nell'URL per ripristinare il login automaticamente la prossima volta."""
+    st.query_params[PARAM_SESSIONE] = _crea_token_sessione(email)
 
 
-# Se non risulto ancora autenticato in questa sessione, provo a recuperare l'accesso
-# da un cookie salvato in precedenza nel browser (valido fino a 30 giorni dal login).
-#
-# Il CookieManager legge i cookie in modo asincrono: al primissimo giro di
-# esecuzione dopo l'apertura del browser il componente potrebbe non aver ancora
-# risposto, e get() restituisce None anche se il cookie esiste davvero.
-# Per questo diamo al componente qualche tentativo in più prima di arrenderci
-# e mostrare la schermata di login.
+def _elimina_sessione_url():
+    """Rimuove il token di sessione dall'URL (logout o accesso revocato)."""
+    if PARAM_SESSIONE in st.query_params:
+        del st.query_params[PARAM_SESSIONE]
+
+
+# Se non risulto ancora autenticato in questa sessione, provo a recuperare
+# l'accesso da un token salvato in precedenza nell'URL (valido fino a 30
+# giorni dal login).
 if not st.session_state.utente_autenticato:
-    if "cookie_tentativi_lettura" not in st.session_state:
-        st.session_state.cookie_tentativi_lettura = 0
-
-    tutti_i_cookie = cookie_manager.get_all()
-
-    if tutti_i_cookie == {} and st.session_state.cookie_tentativi_lettura < 4:
-        # Il componente non ha ancora risposto: aspetto un attimo e riprovo,
-        # invece di concludere subito che non c'è nessun cookie salvato.
-        st.session_state.cookie_tentativi_lettura += 1
-        time.sleep(0.35)
-        st.rerun()
-
-    email_da_cookie = (tutti_i_cookie or {}).get(COOKIE_NOME_SESSIONE)
-
-    if email_da_cookie:
-        email_da_cookie = email_da_cookie.strip().lower()
-        autorizzato_cookie, ruolo_da_cookie, errore_verifica_cookie = verifica_utente_foglio(email_da_cookie)
-        if autorizzato_cookie:
-            st.session_state.utente_autenticato = True
-            st.session_state.email_logged = email_da_cookie
-            st.session_state.ruolo = ruolo_da_cookie.lower()
-            if st.session_state.ruolo == "presenze":
-                st.session_state.pagina = "presenze"
-        elif not errore_verifica_cookie:
-            _elimina_cookie_sessione()
-            
-        # Se invece c'è stato un errore di connessione al foglio, non tocco il
-        # cookie: potrebbe essere un problema temporaneo, l'utente vedrà solo
-        # la schermata di login e potrà riprovare senza perdere l'accesso salvato.
+    token_sessione = st.query_params.get(PARAM_SESSIONE)
+    if token_sessione:
+        email_da_sessione = _leggi_token_sessione(token_sessione)
+        if email_da_sessione:
+            autorizzato_sess, ruolo_da_sessione, errore_verifica_sess = verifica_utente_foglio(email_da_sessione)
+            if autorizzato_sess:
+                st.session_state.utente_autenticato = True
+                st.session_state.email_logged = email_da_sessione
+                st.session_state.ruolo = ruolo_da_sessione.lower()
+                if st.session_state.ruolo == "presenze":
+                    st.session_state.pagina = "presenze"
+            elif not errore_verifica_sess:
+                _elimina_sessione_url()
+            # Se invece c'è stato un errore di connessione al foglio, non tocco
+            # il token: potrebbe essere un problema temporaneo, l'utente vedrà
+            # solo la schermata di login e potrà riprovare senza perdere l'accesso.
+        else:
+            _elimina_sessione_url()
 
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
@@ -232,9 +237,10 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.session_state.ruolo = ruolo_trovato.lower()
                 if st.session_state.ruolo == "presenze":
                     st.session_state.pagina = "presenze"
-                _imposta_cookie_sessione(email_logged)
-                # Pulisce i parametri dall'URL
+                # Pulisce i parametri dall'URL (incluso "code") e SOLO DOPO
+                # imposta il token di sessione, altrimenti clear() lo cancellerebbe
                 st.query_params.clear()
+                _imposta_sessione_url(email_logged)
                 st.rerun()
             elif errore_verifica:
                 st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
@@ -283,6 +289,8 @@ if not st.session_state.utente_autenticato:
         st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
         
     st.stop()
+
+
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
