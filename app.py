@@ -76,7 +76,7 @@ def apri_foglio_dati():
 
 
 # ==============================================================================
-# 3. AUTENTICAZIONE — login nativo Streamlit (stesso meccanismo di Gestione Programmi)
+# 3. AUTENTICAZIONE — login nativo Streamlit
 # ==============================================================================
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
@@ -92,8 +92,6 @@ def sola_lettura() -> bool:
 
 
 def verifica_utente_foglio(email_cercata):
-    """Ritorna (autorizzato, ruolo, errore). 'errore' è valorizzato solo se la
-    lettura del foglio Utenti è fallita (non se l'email semplicemente non c'è)."""
     wb, err = apri_foglio_dati()
     if err:
         return False, None, err
@@ -111,7 +109,13 @@ def verifica_utente_foglio(email_cercata):
     return False, None, None
 
 
-if not st.user.is_logged_in:
+# Controllo preliminare di autenticazione Streamlit
+try:
+    is_logged = st.user.is_logged_in
+except Exception:
+    is_logged = False
+
+if not is_logged:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
@@ -120,23 +124,36 @@ if not st.user.is_logged_in:
         st.login()
     st.stop()
 
-# Loggato con Google: verifico se è autorizzato nel foglio "Utenti" e con quale ruolo
-if not st.session_state.utente_autenticato or st.session_state.email_logged != st.user.email.strip().lower():
-    autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(st.user.email.strip().lower())
+# Recupero sicuro dell'email dell'utente loggato
+try:
+    email_utente = getattr(st.user, "email", None) or st.user.get("email", "")
+    email_utente = email_utente.strip().lower()
+except Exception:
+    email_utente = ""
+
+if not email_utente:
+    st.error("⚠️ Impossibile recuperare l'indirizzo email dall'autenticazione Google.")
+    if st.button("🚪 Esci", use_container_width=True):
+        st.logout()
+    st.stop()
+
+# Verifico se è autorizzato nel foglio "Utenti" e con quale ruolo
+if not st.session_state.utente_autenticato or st.session_state.email_logged != email_utente:
+    autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_utente)
 
     if not autorizzato:
         if errore_verifica:
             st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
             st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
         else:
-            st.error(f"⚠️ L'account `{st.user.email}` non è autorizzato ad accedere a questa applicazione.")
+            st.error(f"⚠️ L'account `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
         if st.button("🚪 Esci", use_container_width=True):
             st.logout()
         st.stop()
 
     st.session_state.utente_autenticato = True
-    st.session_state.email_logged = st.user.email.strip().lower()
-    st.session_state.ruolo = ruolo_trovato.lower()
+    st.session_state.email_logged = email_utente
+    st.session_state.ruolo = (ruolo_trovato or "utente").lower()
     if st.session_state.ruolo == "presenze":
         st.session_state.pagina = "presenze"
 
