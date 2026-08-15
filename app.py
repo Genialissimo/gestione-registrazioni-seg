@@ -49,13 +49,8 @@ import requests
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
-GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
-GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
-REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
-
 # ─────────────────────────────────────────────────────────────────
-# SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER OAUTH
-# (Devono esistere prima che l'OAuth venga eseguito a riga 3)
+# SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER I FOGLI DATI
 # ─────────────────────────────────────────────────────────────────
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -90,23 +85,14 @@ def apri_foglio_dati():
 
 
 # ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE (st.login() nativo)
 # ==============================================================================
-
-if "utente_autenticato" not in st.session_state:
-    st.session_state.utente_autenticato = False
-if "ruolo" not in st.session_state:
-    st.session_state.ruolo = None
-if "email_logged" not in st.session_state:
-    st.session_state.email_logged = ""
-
 
 def sola_lettura() -> bool:
     """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
     """Ritorna (autorizzato, ruolo, errore). 'errore' è valorizzato solo se la
     lettura del foglio Utenti è fallita (non se l'email semplicemente non c'è)."""
@@ -125,6 +111,43 @@ def verifica_utente_foglio(email_cercata):
     except Exception as e:
         return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
     return False, None, None
+
+
+# Se l'utente non ha ancora effettuato il login con Google (st.login() gestisce
+# lui la sessione persistente, niente cookie manager manuale)
+if not st.user.is_logged_in:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔒 Accesso Riservato")
+        st.subheader("Gestione Registrazioni SEG")
+        st.write("Accedi utilizzando il tuo account Google autorizzato.")
+        if st.button("🔑 Accedi con Google", use_container_width=True, type="primary"):
+            st.login()
+    st.stop()
+
+# Da qui in poi st.user.email è affidabile (autenticato da Google)
+email_autenticata = (st.user.email or "").strip().lower()
+
+if st.session_state.get("email_logged") != email_autenticata:
+    autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_autenticata)
+    if autorizzato:
+        st.session_state.email_logged = email_autenticata
+        st.session_state.ruolo = ruolo_trovato.lower()
+        if st.session_state.ruolo == "presenze":
+            st.session_state.pagina = "presenze"
+    elif errore_verifica:
+        st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
+        st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. "
+                "Riprova tra qualche secondo.")
+        st.stop()
+    else:
+        st.error(f"⚠️ L'account `{email_autenticata}` non è autorizzato ad accedere.")
+        if st.button("🚪 Esci e riprova con un altro account"):
+            st.session_state.pop("email_logged", None)
+            st.session_state.pop("ruolo", None)
+            st.logout()
+        st.stop()
+
 
 # ─────────────────────────────────────────────────────────────────
 # COOKIE DI SESSIONE — resta collegato fino a 30 giorni senza rifare il login
@@ -298,14 +321,11 @@ with st.sidebar:
 
     st.divider()  # Linea di separazione visiva
     
-    if st.button("🚪 Logout", type="secondary", use_container_width=True):
-        # Rimuove il cookie di sessione salvato nel browser
-        _elimina_cookie_sessione()
-        # Resetta lo stato locale
-        st.session_state.utente_autenticato = False
-        st.session_state.ruolo = None
-        st.session_state.email_logged = ""
-        st.rerun()
+        if st.button("🚪 Logout", type="secondary", use_container_width=True):
+        st.session_state.pop("ruolo", None)
+        st.session_state.pop("email_logged", None)
+        st.logout()
+
 
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
