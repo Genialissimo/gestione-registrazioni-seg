@@ -12,25 +12,11 @@ import traceback
 
 import pandas as pd
 import streamlit as st
-from st_keyup import st_keyup
-from streamlit_gsheets import GSheetsConnection
-
 import gspread
 from google.oauth2.service_account import Credentials
-import pdfplumber
-from pypdf import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas as rl_canvas
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# 1. CONFIGURAZIONE PAGINA (Deve essere la prima istruzione Streamlit)
+# 1. CONFIGURAZIONE PAGINA
 # ==============================================================================
 try:
     st.set_page_config(
@@ -41,209 +27,89 @@ try:
     )
 except Exception as e:
     st.error(f"Errore nella configurazione della pagina: {e}")
-    st.text(traceback.format_exc())
     st.stop()
 
 # ==============================================================================
-# 2. CONFIGURAZIONE — connessione a Google Sheets
+# 2. CONFIGURAZIONE GOOGLE SHEETS
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
-
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
 
-try:
-    # Test rapido di presenza dei secret essenziali
-    _ = st.secrets["sheet_id"]
-    _ = st.secrets["gcp_service_account"]
-except Exception as e:
-    st.error("⚠️ Errore critico: mancano i parametri `sheet_id` o `gcp_service_account` nel file `secrets.toml` di Streamlit Cloud.")
-    st.exception(e)
+# Controllo preliminare secrets
+if "sheet_id" not in st.secrets or "gcp_service_account" not in st.secrets:
+    st.error("⚠️ Errore: mancano `sheet_id` o `gcp_service_account` nel file `secrets.toml`.")
     st.stop()
-
 
 @st.cache_resource(show_spinner=False)
 def get_client() -> gspread.Client:
-    """Autentica il programma verso Google tramite l'account di servizio."""
     credenziali = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"], scopes=SCOPES
     )
     return gspread.authorize(credenziali)
 
-
 @st.cache_resource(show_spinner=False)
 def apri_foglio_dati():
-    """Apre il foglio Google dati. Ritorna (workbook, errore)."""
     try:
         client = get_client()
         wb = client.open_by_key(st.secrets["sheet_id"])
         return wb, None
-    except gspread.exceptions.APIError as api_err:
-        email_sa = st.secrets["gcp_service_account"].get("client_email", "Sconosciuta")
-        return None, (
-            "Impossibile aprire il foglio dati (Errore API Google). "
-            f"Controlla che il foglio sia stato condiviso (come Editor) con:\n`{email_sa}`\n\nDettaglio: {api_err}"
-        )
     except Exception as e:
-        return None, f"Errore durante il collegamento: {e}"
+        return None, f"Errore di connessione a Google Sheets: {e}"
 
 # ==============================================================================
-# 2. CONFIGURAZIONE — connessione a Google Sheets (con controllo errori nei secrets)
+# 3. AUTENTICAZIONE
 # ==============================================================================
-NOME_FOGLIO_UTENTI = "Utenti"
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.readonly",
-]
-
-# Controllo preliminare dei secret necessari
-try:
-    _ = st.secrets["sheet_id"]
-    _ = st.secrets["gcp_service_account"]
-except Exception as e:
-    st.error("⚠️ Errore nel file `secrets.toml`: mancano le chiavi `sheet_id` o `gcp_service_account`.")
-    st.exception(e)
-    st.stop()
-
-
-@st.cache_resource(show_spinner=False)
-def get_client() -> gspread.Client:
-    """Autentica il programma verso Google tramite l'account di servizio."""
-    credenziali = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"], scopes=SCOPES
-    )
-    return gspread.authorize(credenziali)
-
-
-@st.cache_resource(show_spinner=False)
-def apri_foglio_dati():
-    """Apre il foglio Google dati. Ritorna (workbook, errore)."""
-    try:
-        client = get_client()
-        wb = client.open_by_key(st.secrets["sheet_id"])
-        return wb, None
-    except gspread.exceptions.APIError as api_err:
-        email_sa = st.secrets["gcp_service_account"].get("client_email", "Sconosciuta")
-        return None, (
-            "Impossibile aprire il foglio dati (Errore API Google). "
-            f"Controlla che il foglio sia stato condiviso (come Editor) con:\n`{email_sa}`\n\nDettaglio: {api_err}"
-        )
-    except Exception as e:
-        return None, f"Errore durante il collegamento a Google Sheets: {e}"
-
-
-# ==============================================================================
-# 3. AUTENTICAZIONE — login nativo Streamlit
-# ==============================================================================
+# Inizializzazione stati
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
-if "ruolo" not in st.session_state:
-    st.session_state.ruolo = None
-if "email_logged" not in st.session_state:
-    st.session_state.email_logged = ""
 
-
-def sola_lettura() -> bool:
-    """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
-    return st.session_state.get("ruolo") == "utente"
-
-
-def verifica_utente_foglio(email_cercata):
-    wb, err = apri_foglio_dati()
-    if err:
-        return False, None, err
-    try:
-        ws = wb.worksheet(NOME_FOGLIO_UTENTI)
-        valori = ws.get_all_values()
-        for riga in valori[1:]:
-            if len(riga) >= 4:
-                email_foglio = riga[2].strip().lower()
-                ruolo_foglio = riga[3].strip()
-                if email_foglio == email_cercata:
-                    return True, ruolo_foglio, None
-    except Exception as e:
-        return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
-    return False, None, None
-
-
-# Controllo preliminare di autenticazione Streamlit protetto da eccezione
-try:
-    is_logged = st.user.is_logged_in
-except Exception as e:
-    st.error("⚠️ Si è verificato un errore durante la verifica dello stato di login di Streamlit.")
-    st.exception(e)
-    is_logged = False
-
-if not is_logged:
+# Controllo autenticazione nativa
+if not st.user:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
-        st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi con il tuo account Google autorizzato.")
-        try:
-            st.login()
-        except Exception as login_err:
-            st.error("⚠️ Errore nell'avvio della schermata di login Google.")
-            st.exception(login_err)
+        st.login()
     st.stop()
 
-# Recupero sicuro dell'email dell'utente loggato
-try:
-    email_utente = getattr(st.user, "email", None) or st.user.get("email", "")
-    email_utente = email_utente.strip().lower()
-except Exception:
-    email_utente = ""
+email_utente = st.user.email.strip().lower()
 
-if not email_utente:
-    st.error("⚠️ Impossibile recuperare l'indirizzo email dall'autenticazione Google.")
-    if st.button("🚪 Esci", use_container_width=True):
-        st.logout()
-    st.stop()
+def verifica_utente_foglio(email_cercata):
+    wb, err = apri_foglio_dati()
+    if err: return False, None, err
+    try:
+        ws = wb.worksheet(NOME_FOGLIO_UTENTI)
+        for riga in ws.get_all_values()[1:]:
+            if len(riga) >= 4 and riga[2].strip().lower() == email_cercata:
+                return True, riga[3].strip(), None
+    except Exception as e:
+        return False, None, str(e)
+    return False, None, None
 
-# Verifico se è autorizzato nel foglio "Utenti" e con quale ruolo
-if not st.session_state.utente_autenticato or st.session_state.email_logged != email_utente:
-    autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_utente)
-
+if not st.session_state.utente_autenticato:
+    autorizzato, ruolo, errore = verifica_utente_foglio(email_utente)
     if not autorizzato:
-        if errore_verifica:
-            st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
-            st.info("Potrebbe essere un problema di permessi del Service Account sul foglio Google.")
-        else:
-            st.error(f"⚠️ L'account `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
-        if st.button("🚪 Esci", use_container_width=True):
-            st.logout()
+        st.error(f"L'account `{email_utente}` non è autorizzato.")
+        if st.button("🚪 Esci"): st.logout()
         st.stop()
-
     st.session_state.utente_autenticato = True
+    st.session_state.ruolo = (ruolo or "utente").lower()
     st.session_state.email_logged = email_utente
-    st.session_state.ruolo = (ruolo_trovato or "utente").lower()
-    if st.session_state.ruolo == "presenze":
-        st.session_state.pagina = "presenze"
 
 # ==============================================================================
-# 4. BARRA LATERALE — dati utente e Logout
+# 4. BARRA LATERALE
 # ==============================================================================
 with st.sidebar:
-    st.write("👤 Utente connesso:")
-    st.write(f"📧 `{st.session_state.email_logged}`")
-
-    ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
-    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
-
-    if sola_lettura():
-        st.caption("🔒 Modalità sola lettura: puoi consultare i dati ma non modificarli.")
-
-    st.divider()
-
-    if st.button("🚪 Logout", type="secondary", use_container_width=True):
+    st.write(f"👤 `{st.session_state.email_logged}`")
+    st.write(f"🏷️ Ruolo: `{st.session_state.ruolo.capitalize()}`")
+    if st.button("🚪 Logout"):
         st.session_state.utente_autenticato = False
-        st.session_state.ruolo = None
-        st.session_state.email_logged = ""
         st.logout()
 
+st.write("### Benvenuto nella piattaforma SEG")
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
 # ─────────────────────────────────────────────────────────────────
