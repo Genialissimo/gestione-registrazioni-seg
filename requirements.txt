@@ -10,3 +10,4 @@ openpyxl
 pdfplumber
 streamlit-keyup
 extra-streamlit-components
+streamlit-google-auth
