@@ -108,9 +108,11 @@ def sola_lettura() -> bool:
 
 # Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
+    """Ritorna (autorizzato, ruolo, errore). 'errore' è valorizzato solo se la
+    lettura del foglio Utenti è fallita (non se l'email semplicemente non c'è)."""
     wb, err = apri_foglio_dati()
     if err:
-        return False, None
+        return False, None, err
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         valori = ws.get_all_values()
@@ -119,10 +121,10 @@ def verifica_utente_foglio(email_cercata):
                 email_foglio = riga[2].strip().lower()
                 ruolo_foglio = riga[3].strip()
                 if email_foglio == email_cercata:
-                    return True, ruolo_foglio
-    except Exception:
-        pass
-    return False, None
+                    return True, ruolo_foglio, None
+    except Exception as e:
+        return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
+    return False, None, None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -158,16 +160,20 @@ if not st.session_state.utente_autenticato:
     email_da_cookie = cookie_manager.get(COOKIE_NOME_SESSIONE)
     if email_da_cookie:
         email_da_cookie = email_da_cookie.strip().lower()
-        autorizzato_cookie, ruolo_da_cookie = verifica_utente_foglio(email_da_cookie)
+        autorizzato_cookie, ruolo_da_cookie, errore_verifica_cookie = verifica_utente_foglio(email_da_cookie)
         if autorizzato_cookie:
             st.session_state.utente_autenticato = True
             st.session_state.email_logged = email_da_cookie
             st.session_state.ruolo = ruolo_da_cookie.lower()
             if st.session_state.ruolo == "presenze":
                 st.session_state.pagina = "presenze"
-        else:
-            # L'accesso non è più valido (es. rimosso dal foglio Utenti): tolgo il cookie.
+        elif not errore_verifica_cookie:
+            # Verifica riuscita ma l'email non c'è più nel foglio (es. accesso
+            # revocato): il cookie non è più valido, lo tolgo.
             _elimina_cookie_sessione()
+        # Se invece c'è stato un errore di connessione al foglio, non tocco il
+        # cookie: potrebbe essere un problema temporaneo, l'utente vedrà solo
+        # la schermata di login e potrà riprovare senza perdere l'accesso salvato.
 
 # Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
 query_params = st.query_params
@@ -200,7 +206,7 @@ if "code" in query_params and not st.session_state.utente_autenticato:
             email_logged = user_data.get("email", "").strip().lower()
             
             # Verifica se l'email è abilitata nel foglio "Utenti"
-            autorizzato, ruolo_trovato = verifica_utente_foglio(email_logged)
+            autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_logged)
             
             if autorizzato:
                 st.session_state.utente_autenticato = True
@@ -212,6 +218,10 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 # Pulisce i parametri dall'URL
                 st.query_params.clear()
                 st.rerun()
+            elif errore_verifica:
+                st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
+                st.info("Non è detto che l'account non sia autorizzato: potrebbe essere un problema "
+                        "temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
             else:
                 st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
                 st.stop()
