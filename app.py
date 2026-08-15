@@ -231,13 +231,16 @@ if "code" in query_params and not st.session_state.utente_autenticato:
             st.error(f"⚠️ Errore nel recupero del profilo Google (HTTP {user_info_res.status_code}).")
             st.code(user_info_res.text[:800])
     else:
-        # Fallito lo scambio del 'code' con il token: qui sta quasi sempre la causa reale
+        # Fallito lo scambio del 'code' con il token
         st.query_params.clear()
-        st.error(f"⚠️ Errore nello scambio del codice OAuth (HTTP {response.status_code}).")
-        st.code(response.text[:800])
-        st.caption("Cause tipiche: redirect_uri diverso da quello registrato su Google Cloud, "
-                   "client_id/client_secret non corrispondenti, o codice già usato (prova a "
-                   "rifare il login da capo, non ricaricare la pagina con lo stesso link).")
+        if "invalid_grant" in response.text:
+            st.warning("⚠️ Il link di accesso Google è già stato utilizzato o è scaduto.")
+            if st.button("🔄 Riprova il login"):
+                st.rerun()
+        else:
+            st.error(f"⚠️ Errore nello scambio del codice OAuth (HTTP {response.status_code}).")
+            st.code(response.text[:800])
+            st.caption("Cause tipiche: redirect_uri diverso da quello registrato su Google Cloud o client_secret errato.")
 
 # Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
@@ -306,6 +309,7 @@ with st.sidebar:
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
         st.rerun()
+
 
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
