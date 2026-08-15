@@ -60,61 +60,7 @@ def apri_foglio_dati():
         return None, f"Errore di connessione a Google Sheets: {e}"
 
 # ==============================================================================
-# 3. AUTENTICAZIONE — Login sicuro via Google Sheet (Senza st.login())
-# ==============================================================================
-if "utente_autenticato" not in st.session_state:
-    st.session_state.utente_autenticato = False
-if "ruolo" not in st.session_state:
-    st.session_state.ruolo = None
-if "email_logged" not in st.session_state:
-    st.session_state.email_logged = ""
-
-def verifica_utente_foglio(email_cercata):
-    wb, err = apri_foglio_dati()
-    if err:
-        return False, None, err
-    try:
-        ws = wb.worksheet(NOME_FOGLIO_UTENTI)
-        valori = ws.get_all_values()
-        for riga in valori[1:]:
-            if len(riga) >= 4:
-                email_foglio = riga[2].strip().lower()
-                ruolo_foglio = riga[3].strip()
-                if email_foglio == email_cercata:
-                    return True, ruolo_foglio, None
-    except Exception as e:
-        return False, None, f"Errore durante la lettura del foglio: {e}"
-    return False, None, None
-
-# Se non è autenticato, mostra la schermata di login personalizzata
-if not st.session_state.utente_autenticato:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.title("🔒 Accesso Riservato")
-        st.subheader("Gestione Registrazioni SEG")
-        st.write("Inserisci la tua email autorizzata per accedere:")
-        
-        with st.form("form_login"):
-            email_input = st.text_input("Indirizzo Email").strip().lower()
-            submit_login = st.form_submit_button("Accedi", use_container_width=True)
-            
-            if submit_login:
-                if not email_input:
-                    st.warning("⚠️ Inserisci un'email valida.")
-                else:
-                    autorizzato, ruolo_trovato, errore = verifica_utente_foglio(email_input)
-                    if autorizzato:
-                        st.session_state.utente_autenticato = True
-                        st.session_state.email_logged = email_input
-                        st.session_state.ruolo = (ruolo_trovato or "utente").lower()
-                        st.rerun()
-                    else:
-                        if errore:
-                            st.error(f"⚠️ {errore}")
-                        else:
-                            st.error(f"❌ L'indirizzo `{email_input}` non è autorizzato all'accesso.")
-    st.stop()# ==============================================================================
-# 3. AUTENTICAZIONE — Login con Google e riscontro su foglio "Utenti"
+# 3. AUTENTICAZIONE — Login nativo Google e controllo su foglio "Utenti"
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
@@ -125,7 +71,6 @@ if "ruolo" not in st.session_state:
 if "email_logged" not in st.session_state:
     st.session_state.email_logged = ""
 
-# Funzione per cercare l'email nel foglio Google "Utenti" (colonna C = Indirizzo, colonna D = Ruolo)
 def verifica_utente_nel_foglio(email_cercata):
     wb, err = apri_foglio_dati()
     if err:
@@ -133,9 +78,7 @@ def verifica_utente_nel_foglio(email_cercata):
     try:
         ws = wb.worksheet(NOME_FOGLIO_UTENTI)
         righe = ws.get_all_values()
-        # Ipotizziamo intestazione alla riga 1, scorriamo dalla riga 2 (indice 1)
         for riga in righe[1:]:
-            # Controlliamo che la riga abbia almeno colonne A, B, C, D (indice 2 e 3)
             if len(riga) >= 4:
                 email_foglio = riga[2].strip().lower()
                 ruolo_foglio = riga[3].strip()
@@ -145,7 +88,7 @@ def verifica_utente_nel_foglio(email_cercata):
         return False, None, str(e)
     return False, None, None
 
-# Controllo se l'utente ha eseguito il login con Google
+# Verifica se l'utente è loggato tramite il sistema nativo di Streamlit
 try:
     is_logged = st.user.is_logged_in if hasattr(st.user, "is_logged_in") else bool(st.user)
 except Exception:
@@ -155,11 +98,12 @@ if not is_logged or not st.user:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
-        st.write("Accedi con il tuo account Google aziendale o autorizzato.")
-        st.login()
+        st.write("Accedi con il tuo account Google autorizzato.")
+        # Questo genera il pulsante ufficiale di login di Google
+        st.login("google")
     st.stop()
 
-# Estrazione sicura dell'email dall'utente Google loggato
+# Estrazione dell'email dall'utente Google autenticato
 email_utente = ""
 try:
     if hasattr(st.user, "email"):
@@ -179,24 +123,23 @@ if not email_utente:
         st.logout()
     st.stop()
 
-# Se non è ancora validato in sessione, controlliamo sul foglio Google
+# Controllo dell'autorizzazione sul foglio Google "Utenti"
 if not st.session_state.utente_autenticato:
     autorizzato, ruolo_trovato, errore = verifica_utente_nel_foglio(email_utente)
     
     if errore:
-        st.error(f"⚠️ Errore di comunicazione con il foglio Google: {errore}")
+        st.error(f"⚠️ Errore di connessione al foglio Google: {errore}")
         st.stop()
         
     if not autorizzato:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.error(f"⛔ L'account Google `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
-            st.write("Verifica che la tua email sia inserita correttamente nella tabella 'Utenti' del foglio Google.")
+            st.error(f"⛔ L'account Google `{email_utente}` non è autorizzato.")
+            st.write("La tua email non è presente nella tabella 'Utenti' del foglio.")
             if st.button("🚪 Esci / Cambia account", use_container_width=True):
                 st.logout()
         st.stop()
         
-    # Se autorizzato, salviamo i dati in sessione
     st.session_state.utente_autenticato = True
     st.session_state.email_logged = email_utente
     st.session_state.ruolo = (ruolo_trovato or "Utente").lower()
