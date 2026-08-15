@@ -62,12 +62,16 @@ def apri_foglio_dati():
 # ==============================================================================
 # 3. AUTENTICAZIONE
 # ==============================================================================
-# Inizializzazione stati
 if "utente_autenticato" not in st.session_state:
     st.session_state.utente_autenticato = False
 
 # Controllo autenticazione nativa
-if not st.user:
+try:
+    is_logged = st.user.is_logged_in if hasattr(st.user, "is_logged_in") else bool(st.user)
+except Exception:
+    is_logged = False
+
+if not is_logged or not st.user:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
@@ -75,7 +79,32 @@ if not st.user:
         st.login()
     st.stop()
 
-email_utente = st.user.email.strip().lower()
+# Recupero sicuro dell'email indipendentemente dalla struttura dell'oggetto utente
+email_utente = ""
+try:
+    if hasattr(st.user, "email"):
+        email_utente = st.user.email
+    elif isinstance(st.user, dict):
+        email_utente = st.user.get("email", "")
+    else:
+        email_utente = getattr(st.user, "get", lambda k: "")("email", "")
+except Exception:
+    email_utente = ""
+
+if not email_utente:
+    # Fallback estremo se l'attributo è strutturato diversamente
+    try:
+        email_utente = str(dict(st.user).get("email", ""))
+    except Exception:
+        pass
+
+email_utente = email_utente.strip().lower()
+
+if not email_utente:
+    st.error("⚠️ Impossibile recuperare l'indirizzo email dall'autenticazione Google.")
+    if st.button("🚪 Esci"):
+        st.logout()
+    st.stop()
 
 def verifica_utente_foglio(email_cercata):
     wb, err = apri_foglio_dati()
@@ -92,8 +121,9 @@ def verifica_utente_foglio(email_cercata):
 if not st.session_state.utente_autenticato:
     autorizzato, ruolo, errore = verifica_utente_foglio(email_utente)
     if not autorizzato:
-        st.error(f"L'account `{email_utente}` non è autorizzato.")
-        if st.button("🚪 Esci"): st.logout()
+        st.error(f"L'account `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
+        if st.button("🚪 Esci"): 
+            st.logout()
         st.stop()
     st.session_state.utente_autenticato = True
     st.session_state.ruolo = (ruolo or "utente").lower()
