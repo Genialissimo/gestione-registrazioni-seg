@@ -291,33 +291,14 @@ if not st.session_state.utente_autenticato:
     st.stop()
 
 
-# ==============================================================================
-# 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
-# ==============================================================================
-
-# Barra laterale con dati utente e Logout
-with st.sidebar:
-    st.write("👤 Utente connesso:")
-    st.write(f"📧 `{st.session_state.email_logged}`")
-    
-    # Recupera il ruolo salvato in sessione e lo mostra con l'iniziale maiuscola
-    ruolo_utente = str(st.session_state.get("ruolo", "Non specificato")).capitalize()
-    st.write(f"🏷️ **Ruolo:** `{ruolo_utente}`")
-
-    if sola_lettura():
-        st.caption("🔒 Modalità sola lettura: puoi consultare i dati ma non modificarli.")
-
-    st.divider()  # Linea di separazione visiva
-    
-    if st.button("🚪 Logout", type="secondary", use_container_width=True):
-        # Rimuove il cookie di sessione salvato nel browser
-        _elimina_cookie_sessione()
+if st.button("🚪 Logout", type="secondary", use_container_width=True):
+        # Rimuove il token di sessione dall'URL
+        _elimina_sessione_url()
         # Resetta lo stato locale
         st.session_state.utente_autenticato = False
         st.session_state.ruolo = None
         st.session_state.email_logged = ""
         st.rerun()
-
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
 # ─────────────────────────────────────────────────────────────────
