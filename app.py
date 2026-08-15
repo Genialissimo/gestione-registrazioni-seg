@@ -28,18 +28,26 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
+
 # ==============================================================================
 # 1. CONFIGURAZIONE PAGINA (Deve essere la prima istruzione Streamlit)
 # ==============================================================================
-st.set_page_config(
-    page_title="Gestione Registrazioni SEG",
-    page_icon="📒",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+try:
+    st.set_page_config(
+        page_title="Gestione Registrazioni SEG",
+        page_icon="📒",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+except Exception as e:
+    st.error(f"Errore nella configurazione della pagina: {e}")
+    st.stop()
 
 # ==============================================================================
-# 2. CONFIGURAZIONE — connessione a Google Sheets (serve prima dell'autenticazione)
+# 2. CONFIGURAZIONE — connessione a Google Sheets (con controllo errori nei secrets)
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
@@ -47,6 +55,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
+
+# Controllo preliminare dei secret necessari
+try:
+    _ = st.secrets["sheet_id"]
+    _ = st.secrets["gcp_service_account"]
+except Exception as e:
+    st.error("⚠️ Errore nel file `secrets.toml`: mancano le chiavi `sheet_id` o `gcp_service_account`.")
+    st.exception(e)
+    st.stop()
 
 
 @st.cache_resource(show_spinner=False)
@@ -65,14 +82,14 @@ def apri_foglio_dati():
         client = get_client()
         wb = client.open_by_key(st.secrets["sheet_id"])
         return wb, None
-    except gspread.exceptions.APIError:
-        email_sa = st.secrets["gcp_service_account"]["client_email"]
+    except gspread.exceptions.APIError as api_err:
+        email_sa = st.secrets["gcp_service_account"].get("client_email", "Sconosciuta")
         return None, (
-            "Impossibile aprire il foglio dati. Controlla che sia stato "
-            f"condiviso (come Editor) con:\n`{email_sa}`"
+            "Impossibile aprire il foglio dati (Errore API Google). "
+            f"Controlla che il foglio sia stato condiviso (come Editor) con:\n`{email_sa}`\n\nDettaglio: {api_err}"
         )
     except Exception as e:
-        return None, f"Errore durante il collegamento: {e}"
+        return None, f"Errore durante il collegamento a Google Sheets: {e}"
 
 
 # ==============================================================================
@@ -109,10 +126,12 @@ def verifica_utente_foglio(email_cercata):
     return False, None, None
 
 
-# Controllo preliminare di autenticazione Streamlit
+# Controllo preliminare di autenticazione Streamlit protetto da eccezione
 try:
     is_logged = st.user.is_logged_in
-except Exception:
+except Exception as e:
+    st.error("⚠️ Si è verificato un errore durante la verifica dello stato di login di Streamlit.")
+    st.exception(e)
     is_logged = False
 
 if not is_logged:
@@ -121,7 +140,11 @@ if not is_logged:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi con il tuo account Google autorizzato.")
-        st.login()
+        try:
+            st.login()
+        except Exception as login_err:
+            st.error("⚠️ Errore nell'avvio della schermata di login Google.")
+            st.exception(login_err)
     st.stop()
 
 # Recupero sicuro dell'email dell'utente loggato
@@ -144,7 +167,7 @@ if not st.session_state.utente_autenticato or st.session_state.email_logged != e
     if not autorizzato:
         if errore_verifica:
             st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
-            st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
+            st.info("Potrebbe essere un problema di permessi del Service Account sul foglio Google.")
         else:
             st.error(f"⚠️ L'account `{email_utente}` non è autorizzato ad accedere a questa applicazione.")
         if st.button("🚪 Esci", use_container_width=True):
