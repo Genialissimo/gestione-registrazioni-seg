@@ -8,6 +8,7 @@ import io
 import os
 import re
 import zipfile
+import traceback
 
 import pandas as pd
 import streamlit as st
@@ -28,10 +29,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
-
 # ==============================================================================
 # 1. CONFIGURAZIONE PAGINA (Deve essere la prima istruzione Streamlit)
 # ==============================================================================
@@ -44,7 +41,53 @@ try:
     )
 except Exception as e:
     st.error(f"Errore nella configurazione della pagina: {e}")
+    st.text(traceback.format_exc())
     st.stop()
+
+# ==============================================================================
+# 2. CONFIGURAZIONE — connessione a Google Sheets
+# ==============================================================================
+NOME_FOGLIO_UTENTI = "Utenti"
+
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
+
+try:
+    # Test rapido di presenza dei secret essenziali
+    _ = st.secrets["sheet_id"]
+    _ = st.secrets["gcp_service_account"]
+except Exception as e:
+    st.error("⚠️ Errore critico: mancano i parametri `sheet_id` o `gcp_service_account` nel file `secrets.toml` di Streamlit Cloud.")
+    st.exception(e)
+    st.stop()
+
+
+@st.cache_resource(show_spinner=False)
+def get_client() -> gspread.Client:
+    """Autentica il programma verso Google tramite l'account di servizio."""
+    credenziali = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=SCOPES
+    )
+    return gspread.authorize(credenziali)
+
+
+@st.cache_resource(show_spinner=False)
+def apri_foglio_dati():
+    """Apre il foglio Google dati. Ritorna (workbook, errore)."""
+    try:
+        client = get_client()
+        wb = client.open_by_key(st.secrets["sheet_id"])
+        return wb, None
+    except gspread.exceptions.APIError as api_err:
+        email_sa = st.secrets["gcp_service_account"].get("client_email", "Sconosciuta")
+        return None, (
+            "Impossibile aprire il foglio dati (Errore API Google). "
+            f"Controlla che il foglio sia stato condiviso (come Editor) con:\n`{email_sa}`\n\nDettaglio: {api_err}"
+        )
+    except Exception as e:
+        return None, f"Errore durante il collegamento: {e}"
 
 # ==============================================================================
 # 2. CONFIGURAZIONE — connessione a Google Sheets (con controllo errori nei secrets)
