@@ -126,7 +126,6 @@ def verifica_utente_foglio(email_cercata):
         return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
     return False, None, None
 
-
 # ─────────────────────────────────────────────────────────────────
 # COOKIE DI SESSIONE — resta collegato fino a 30 giorni senza rifare il login
 # ─────────────────────────────────────────────────────────────────
@@ -179,7 +178,7 @@ if not st.session_state.utente_autenticato:
 query_params = st.query_params
 if "code" in query_params and not st.session_state.utente_autenticato:
     code = query_params["code"]
-    
+
     # Scambia il codice con il token di accesso
     token_url = "https://oauth2.googleapis.com/token"
     data = {
@@ -190,24 +189,24 @@ if "code" in query_params and not st.session_state.utente_autenticato:
         "grant_type": "authorization_code",
     }
     response = requests.post(token_url, data=data)
-    
+
     if response.status_code == 200:
         token_info = response.json()
         access_token = token_info.get("access_token")
-        
+
         # Recupera le informazioni del profilo utente da Google
         user_info_res = requests.get(
             "https://www.googleapis.com/oauth2/v1/userinfo",
             headers={"Authorization": f"Bearer {access_token}"}
         )
-        
+
         if user_info_res.status_code == 200:
             user_data = user_info_res.json()
             email_logged = user_data.get("email", "").strip().lower()
-            
+
             # Verifica se l'email è abilitata nel foglio "Utenti"
             autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_logged)
-            
+
             if autorizzato:
                 st.session_state.utente_autenticato = True
                 st.session_state.email_logged = email_logged
@@ -219,12 +218,26 @@ if "code" in query_params and not st.session_state.utente_autenticato:
                 st.query_params.clear()
                 st.rerun()
             elif errore_verifica:
+                st.query_params.clear()
                 st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
                 st.info("Non è detto che l'account non sia autorizzato: potrebbe essere un problema "
                         "temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
             else:
+                st.query_params.clear()
                 st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
-                st.stop()
+        else:
+            # Fallita la lettura del profilo utente da Google: mostra il motivo
+            st.query_params.clear()
+            st.error(f"⚠️ Errore nel recupero del profilo Google (HTTP {user_info_res.status_code}).")
+            st.code(user_info_res.text[:800])
+    else:
+        # Fallito lo scambio del 'code' con il token: qui sta quasi sempre la causa reale
+        st.query_params.clear()
+        st.error(f"⚠️ Errore nello scambio del codice OAuth (HTTP {response.status_code}).")
+        st.code(response.text[:800])
+        st.caption("Cause tipiche: redirect_uri diverso da quello registrato su Google Cloud, "
+                   "client_id/client_secret non corrispondenti, o codice già usato (prova a "
+                   "rifare il login da capo, non ricaricare la pagina con lo stesso link).")
 
 # Se non è autenticato, mostra il pulsante di accesso con Google
 if not st.session_state.utente_autenticato:
@@ -233,7 +246,7 @@ if not st.session_state.utente_autenticato:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
-        
+
         # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
         st.markdown("""
             <style>
@@ -261,10 +274,12 @@ if not st.session_state.utente_autenticato:
             "scope": "openid email profile",
             "prompt": "select_account"
         })
-        
+
         st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
-        
+
     st.stop()
+
+
 # ==============================================================================
 # 4. AREA RISERVATA (DISPONIBILE SOLO A UTENTI AUTORIZZATI)
 # ==============================================================================
