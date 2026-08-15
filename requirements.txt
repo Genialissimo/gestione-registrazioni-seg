@@ -9,3 +9,4 @@ reportlab
 openpyxl
 pdfplumber
 streamlit-keyup
+extra-streamlit-components
