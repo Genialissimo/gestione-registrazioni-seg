@@ -60,7 +60,7 @@ def apri_foglio_dati():
         return None, f"Errore di connessione a Google Sheets: {e}"
 
 # ==============================================================================
-# 3. AUTENTICAZIONE — Login nativo Google e controllo su foglio "Utenti"
+# 3. AUTENTICAZIONE — Login tramite verifica email sul foglio "Utenti"
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
@@ -88,61 +88,34 @@ def verifica_utente_nel_foglio(email_cercata):
         return False, None, str(e)
     return False, None, None
 
-# Verifica se l'utente è loggato tramite il sistema nativo di Streamlit
-try:
-    is_logged = st.user.is_logged_in if hasattr(st.user, "is_logged_in") else bool(st.user)
-except Exception:
-    is_logged = False
-
-if not is_logged or not st.user:
+# Schermata di login personalizzata (senza st.login() nativo che genera errori Cloud)
+if not st.session_state.utente_autenticato:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
-        st.write("Accedi con il tuo account Google autorizzato.")
-        # Questo genera il pulsante ufficiale di login di Google
-        st.login("google")
-    st.stop()
-
-# Estrazione dell'email dall'utente Google autenticato
-email_utente = ""
-try:
-    if hasattr(st.user, "email"):
-        email_utente = st.user.email
-    elif isinstance(st.user, dict):
-        email_utente = st.user.get("email", "")
-    else:
-        email_utente = str(dict(st.user).get("email", ""))
-except Exception:
-    email_utente = ""
-
-email_utente = email_utente.strip().lower()
-
-if not email_utente:
-    st.error("⚠️ Impossibile leggere l'indirizzo email dall'account Google.")
-    if st.button("🚪 Esci"):
-        st.logout()
-    st.stop()
-
-# Controllo dell'autorizzazione sul foglio Google "Utenti"
-if not st.session_state.utente_autenticato:
-    autorizzato, ruolo_trovato, errore = verifica_utente_nel_foglio(email_utente)
-    
-    if errore:
-        st.error(f"⚠️ Errore di connessione al foglio Google: {errore}")
-        st.stop()
+        st.subheader("Gestione Registrazioni SEG")
+        st.write("Inserisci la tua email autorizzata per accedere:")
         
-    if not autorizzato:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.error(f"⛔ L'account Google `{email_utente}` non è autorizzato.")
-            st.write("La tua email non è presente nella tabella 'Utenti' del foglio.")
-            if st.button("🚪 Esci / Cambia account", use_container_width=True):
-                st.logout()
-        st.stop()
-        
-    st.session_state.utente_autenticato = True
-    st.session_state.email_logged = email_utente
-    st.session_state.ruolo = (ruolo_trovato or "Utente").lower()
+        with st.form("form_login"):
+            email_input = st.text_input("Indirizzo Email").strip().lower()
+            submit_login = st.form_submit_button("Accedi", use_container_width=True)
+            
+            if submit_login:
+                if not email_input:
+                    st.warning("⚠️ Inserisci un'email valida.")
+                else:
+                    autorizzato, ruolo_trovato, errore = verifica_utente_nel_foglio(email_input)
+                    if autorizzato:
+                        st.session_state.utente_autenticato = True
+                        st.session_state.email_logged = email_input
+                        st.session_state.ruolo = (ruolo_trovato or "Utente").lower()
+                        st.rerun()
+                    else:
+                        if errore:
+                            st.error(f"⚠️ {errore}")
+                        else:
+                            st.error(f"❌ L'indirizzo `{email_input}` non è autorizzato all'accesso.")
+    st.stop()
 # ==============================================================================
 # 4. BARRA LATERALE
 # ==============================================================================
