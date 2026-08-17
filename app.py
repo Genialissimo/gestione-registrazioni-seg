@@ -728,6 +728,177 @@ def _s21_disegna_pannello(c: rl_canvas.Canvas, offset: float, dati: dict, righe_
         c.drawString(125 + larghezza_data_batt + 6, _s21_y_da_bottom(80.4, offset), f"({eta_batt})")
         c.setFillColorRGB(*S21_COLORE_NERO)
 
+    if dati.get("sesso") == "M":
+        _s21_centro_box(c, S21_BOX_SESSO_M, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+    elif dati.get("sesso") == "F":
+        _s21_centro_box(c, S21_BOX_SESSO_F, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+
+    classe_spirituale = (dati.get("classe_spirituale") or "").strip().upper()
+    if classe_spirituale in ("U", "UNTO"):
+        _s21_centro_box(c, S21_BOX_UNTO, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+    elif classe_spirituale in ("AP", "A", "ALTRE PECORE"):
+        _s21_centro_box(c, S21_BOX_ALTRE_PECORE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+
+    incarico = dati.get("incarico", "")
+    tipo = dati.get("tipo", "")
+    if incarico == "Anziano":
+        _s21_centro_box(c, S21_BOX_ANZIANO, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+    if incarico == "Servitore di ministero":
+        _s21_centro_box(c, S21_BOX_SERVITORE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+    if tipo == "Pioniere Regolare":
+        _s21_centro_box(c, S21_BOX_PIONIERE_REGOLARE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+    if tipo == "Pioniere speciale":
+        _s21_centro_box(c, S21_BOX_PIONIERE_SPECIALE, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+    if tipo == "Missionario sul campo":
+        _s21_centro_box(c, S21_BOX_MISSIONARIO, offset, font_size=S21_FONT_CHECK_HEADER, sposta=S21_SPOSTAMENTO_TESTATA)
+
+    c.setFillColorRGB(*S21_COLORE_NERO)
+
+    if anno_teocratico is not None:
+        etichetta_anno = f"{anno_teocratico}-{anno_teocratico + 1}"
+        c.setFont("Helvetica-Bold", S21_FONT_TABELLA)
+        largo_anno = c.stringWidth(etichetta_anno, "Helvetica-Bold", S21_FONT_TABELLA)
+        x0_col, x1_col = S21_COL_ANNO_SERVIZIO
+        x_anno = (x0_col + x1_col) / 2 - largo_anno / 2
+        c.drawString(x_anno, _s21_y_da_top(S21_ANNO_LABEL_TOP, offset, alza=S21_FONT_TABELLA * 0.36),
+                     etichetta_anno)
+
+    totale_ore = 0.0
+    totale_cred_ore = 0.0
+    for mese in S21_ORDINE_MESI:
+        riga = righe_anno.get(mese)
+        if not riga:
+            continue
+        top, bottom = S21_RIGHE[mese]
+        if riga.get("ha_partecipato") is True:
+            _s21_centro_box(c, (*S21_COL_MINISTERO, top, bottom), offset,
+                             font_size=S21_FONT_CHECK_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
+        if riga.get("pioniere_ausiliario") is True:
+            _s21_centro_box(c, (*S21_COL_AUSILIARIO, top, bottom), offset,
+                             font_size=S21_FONT_CHECK_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
+
+        studi_val = str(riga.get("studi") or "").strip()
+        if studi_val and studi_val != "0":
+            _s21_testo_centrato_colonna(c, studi_val, S21_COL_STUDI, top, bottom, offset,
+                                         font_size=S21_FONT_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
+
+        ore_val = str(riga.get("ore") or "").strip()
+        cred_ore_val = str(riga.get("cred_ore") or "").strip()
+        if ore_val and ore_val != "0":
+            _s21_testo_centrato_colonna(c, ore_val, S21_COL_ORE, top, bottom, offset,
+                                         font_size=S21_FONT_TABELLA, sposta=S21_SPOSTAMENTO_RIGHE)
+            totale_ore += a_float_it(ore_val)
+        if cred_ore_val and cred_ore_val != "0":
+            totale_cred_ore += a_float_it(cred_ore_val)
+
+        osservazioni_val = str(riga.get("osservazioni") or "").strip()
+        if osservazioni_val:
+            c.setFont("Helvetica", S21_FONT_TABELLA)
+            c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top + bottom) / 2, offset,
+                                                                 alza=S21_FONT_TABELLA * 0.36 + S21_SPOSTAMENTO_RIGHE),
+                         osservazioni_val[:44])
+
+    top_tot, bottom_tot = S21_TOTALE_RIGA
+    if totale_ore:
+        _s21_testo_centrato_colonna(c, formatta_numero_it(totale_ore), S21_COL_ORE, top_tot, bottom_tot, offset,
+                                     font_name="Helvetica-Bold", font_size=S21_FONT_TABELLA,
+                                     sposta=S21_SPOSTAMENTO_RIGHE)
+    if totale_cred_ore and mostra_equazione_crediti:
+        totale_finale = totale_ore + totale_cred_ore
+        testo_crediti = (f"{formatta_numero_it(totale_ore)} + ({formatta_numero_it(totale_cred_ore)}) "
+                          f"= {formatta_numero_it(totale_finale)}")
+        c.setFont("Helvetica", S21_FONT_TABELLA)
+        c.drawString(S21_COL_OSSERVAZIONI_X, _s21_y_da_top((top_tot + bottom_tot) / 2, offset,
+                                                             alza=S21_FONT_TABELLA * 0.36 + S21_SPOSTAMENTO_RIGHE),
+                     testo_crediti)
+
+
+def _s21_dati_da_riga_anagrafica(riga: dict) -> dict:
+    return {
+        "nome": riga.get("Cognome e Nome", ""),
+        "data_nascita": riga.get("Data Nascita", ""),
+        "data_battesimo": riga.get("Data Battesimo", ""),
+        "sesso": (riga.get("Sesso", "") or "").strip().upper()[:1],
+        "incarico": riga.get("Incarico", ""),
+        "tipo": riga.get("Tipo", ""),
+        "classe_spirituale": riga.get("A/U", ""),
+    }
+
+
+def genera_pdf_s21_singolo(riga_anagrafica: dict, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
+    nome = riga_anagrafica.get("Cognome e Nome", "")
+    dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
+
+    anno_precedente = anno_corrente - 1
+
+    righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
+    righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
+
+    nota_inattivo = _s21_nota_inattivo_dal(riga_anagrafica)
+    righe_corrente = _s21_con_nota_prima_riga(righe_corrente, nota_inattivo)
+    righe_precedente = _s21_con_nota_prima_riga(righe_precedente, nota_inattivo)
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
+    _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
+    _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente)
+    c.save()
+    buf.seek(0)
+
+    overlay_reader = PdfReader(buf)
+    template_reader = PdfReader(PERCORSO_MODULO_S21)
+    writer = PdfWriter()
+
+    pagina = template_reader.pages[0]
+    pagina.merge_page(overlay_reader.pages[0])
+    writer.add_page(pagina)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def genera_pdf_s21_multiplo(righe_anagrafica: list, df_tutti: pd.DataFrame, anno_corrente: int) -> bytes:
+    writer = PdfWriter()
+    template_reader = PdfReader(PERCORSO_MODULO_S21)
+
+    for riga_anagrafica in righe_anagrafica:
+        nome = riga_anagrafica.get("Cognome e Nome", "")
+        dati = _s21_dati_da_riga_anagrafica(riga_anagrafica)
+
+        anno_precedente = anno_corrente - 1
+
+        righe_corrente = _s21_righe_anno_per_nome(df_tutti, nome, anno_corrente)
+        righe_precedente = _s21_righe_anno_per_nome(df_tutti, nome, anno_precedente)
+
+        nota_inattivo = _s21_nota_inattivo_dal(riga_anagrafica)
+        righe_corrente = _s21_con_nota_prima_riga(righe_corrente, nota_inattivo)
+        righe_precedente = _s21_con_nota_prima_riga(righe_precedente, nota_inattivo)
+
+        buf = io.BytesIO()
+        c = rl_canvas.Canvas(buf, pagesize=(S21_PAGE_W, S21_PAGE_H))
+        _s21_disegna_pannello(c, 0.0, dati, righe_precedente, anno_teocratico=anno_precedente)
+        _s21_disegna_pannello(c, S21_OFFSET_PANNELLO, dati, righe_corrente, anno_teocratico=anno_corrente)
+        c.save()
+        buf.seek(0)
+
+        overlay_reader = PdfReader(buf)
+        pagina = template_reader.pages[0]
+        template_fresh = PdfReader(PERCORSO_MODULO_S21)
+        pagina_overlay = template_fresh.pages[0]
+        pagina_overlay.merge_page(overlay_reader.pages[0])
+        writer.add_page(pagina_overlay)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _s21_nome_file_sicuro(nome: str) -> str:
+    nome_pulito = "".join(c for c in nome if c not in '\\/:*?"<>|').strip()
+    return nome_pulito or "Senza_nome"
+
+
 # ─────────────────────────────────────────────────────────────────
 # IMPORTAZIONE S-21 RICEVUTA (da altra congregazione)
 # ─────────────────────────────────────────────────────────────────
