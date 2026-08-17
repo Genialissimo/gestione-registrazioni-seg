@@ -1,5 +1,6 @@
 streamlit
 Authlib>=1.3.2
+httpx
 st-gsheets-connection
 pandas
 gspread
@@ -9,5 +10,4 @@ reportlab
 openpyxl
 pdfplumber
 streamlit-keyup
-extra-streamlit-components
-streamlit-google-auth
+
