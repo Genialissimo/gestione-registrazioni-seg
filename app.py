@@ -38,25 +38,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-import time
-import extra_streamlit_components as stx
-from streamlit_google_auth import Authenticate
-from urllib.parse import urlencode
-import requests
-
 # ==============================================================================
-# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA
+# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA (st.login())
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
-GOOGLE_CLIENT_ID = st.secrets["auth"]["client_id"]
-GOOGLE_CLIENT_SECRET = st.secrets["auth"]["client_secret"]
-REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
-
-# ─────────────────────────────────────────────────────────────────
-# SPOSTAMENTO: COSTANTI E CONNESSIONE A GOOGLE PER OAUTH
-# (Devono esistere prima che l'OAuth venga eseguito a riga 3)
-# ─────────────────────────────────────────────────────────────────
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -93,20 +79,11 @@ def apri_foglio_dati():
 # 3. PANNELLO DI AUTENTICAZIONE GOOGLE
 # ==============================================================================
 
-if "utente_autenticato" not in st.session_state:
-    st.session_state.utente_autenticato = False
-if "ruolo" not in st.session_state:
-    st.session_state.ruolo = None
-if "email_logged" not in st.session_state:
-    st.session_state.email_logged = ""
-
-
 def sola_lettura() -> bool:
     """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
     return st.session_state.get("ruolo") == "utente"
 
 
-# Funzione per verificare l'utente nel foglio Google "Utenti"
 def verifica_utente_foglio(email_cercata):
     """Ritorna (autorizzato, ruolo, errore). 'errore' è valorizzato solo se la
     lettura del foglio Utenti è fallita (non se l'email semplicemente non c'è)."""
@@ -126,151 +103,41 @@ def verifica_utente_foglio(email_cercata):
         return False, None, f"Errore durante la lettura del foglio «{NOME_FOGLIO_UTENTI}»: {e}"
     return False, None, None
 
-# ─────────────────────────────────────────────────────────────────
-# COOKIE DI SESSIONE — resta collegato fino a 30 giorni senza rifare il login
-# ─────────────────────────────────────────────────────────────────
-COOKIE_NOME_SESSIONE = "seg_auth_email"
-GIORNI_DURATA_COOKIE = 30
 
-
-cookie_manager = stx.CookieManager(key="cookie_manager_seg")
-
-
-def _imposta_cookie_sessione(email: str):
-    """Salva l'email nel browser per ripristinare il login automaticamente la prossima volta."""
-    try:
-        scadenza = datetime.now() + timedelta(days=GIORNI_DURATA_COOKIE)
-        cookie_manager.set(COOKIE_NOME_SESSIONE, email, expires_at=scadenza, key="set_cookie_login")
-    except Exception:
-        pass
-
-
-def _elimina_cookie_sessione():
-    """Rimuove il cookie di sessione salvato nel browser (logout o accesso revocato)."""
-    try:
-        cookie_manager.delete(COOKIE_NOME_SESSIONE, key="del_cookie_logout")
-    except Exception:
-        pass
-
-
-# Se non risulto ancora autenticato in questa sessione, provo a recuperare l'accesso
-# da un cookie salvato in precedenza nel browser (valido fino a 30 giorni dal login).
-if not st.session_state.utente_autenticato:
-    email_da_cookie = cookie_manager.get(COOKIE_NOME_SESSIONE)
-    if email_da_cookie:
-        email_da_cookie = email_da_cookie.strip().lower()
-        autorizzato_cookie, ruolo_da_cookie, errore_verifica_cookie = verifica_utente_foglio(email_da_cookie)
-        if autorizzato_cookie:
-            st.session_state.utente_autenticato = True
-            st.session_state.email_logged = email_da_cookie
-            st.session_state.ruolo = ruolo_da_cookie.lower()
-            if st.session_state.ruolo == "presenze":
-                st.session_state.pagina = "presenze"
-        elif not errore_verifica_cookie:
-            # Verifica riuscita ma l'email non c'è più nel foglio (es. accesso
-            # revocato): il cookie non è più valido, lo tolgo.
-            _elimina_cookie_sessione()
-        # Se invece c'è stato un errore di connessione al foglio, non tocco il
-        # cookie: potrebbe essere un problema temporaneo, l'utente vedrà solo
-        # la schermata di login e potrà riprovare senza perdere l'accesso salvato.
-
-# Intercetta il codice di ritorno da Google OAuth nella barra degli indirizzi
-query_params = st.query_params
-if "code" in query_params and not st.session_state.utente_autenticato:
-    code = query_params["code"]
-    
-    # PULIZIA IMMEDIATA: rimuove subito il 'code' dall'URL per evitare doppi utilizzi
-    st.query_params.clear()
-
-    # Scambia il codice con il token di accesso
-    token_url = "https://oauth2.googleapis.com/token"
-    data = {
-        "code": code,
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code",
-    }
-    response = requests.post(token_url, data=data)
-
-    if response.status_code == 200:
-        token_info = response.json()
-        access_token = token_info.get("access_token")
-
-        # Recupera le informazioni del profilo utente da Google
-        user_info_res = requests.get(
-            "https://www.googleapis.com/oauth2/v1/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
-        )
-
-        if user_info_res.status_code == 200:
-            user_data = user_info_res.json()
-            email_logged = user_data.get("email", "").strip().lower()
-
-            # Verifica se l'email è abilitata nel foglio "Utenti"
-            autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_logged)
-
-            if autorizzato:
-                st.session_state.utente_autenticato = True
-                st.session_state.email_logged = email_logged
-                st.session_state.ruolo = ruolo_trovato.lower()
-                if st.session_state.ruolo == "presenze":
-                    st.session_state.pagina = "presenze"
-                _imposta_cookie_sessione(email_logged)
-                st.rerun()
-            elif errore_verifica:
-                st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
-            else:
-                st.error(f"⚠️ L'account `{email_logged}` non è autorizzato ad accedere.")
-        else:
-            st.error(f"⚠️ Errore nel recupero del profilo Google (HTTP {user_info_res.status_code}).")
-    else:
-        # Se si tratta di un invalid_grant (es. doppio loop asincrono), riavvia in modo pulito
-        if "invalid_grant" in response.text:
-            st.rerun()
-        else:
-            st.error(f"⚠️ Errore durante l'autenticazione (HTTP {response.status_code}).")
-            st.code(response.text[:800])
-
-# Se non è autenticato, mostra il pulsante di accesso con Google
-if not st.session_state.utente_autenticato:
+# Se l'utente non ha ancora effettuato il login con Google (st.login() gestisce
+# lui la sessione persistente per 30 giorni, niente cookie manager manuale)
+if not st.user.is_logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
         st.subheader("Gestione Registrazioni SEG")
         st.write("Accedi utilizzando il tuo account Google autorizzato.")
-
-        # Stile CSS personalizzato per rendere il link_button rosso e simile a Google
-        st.markdown("""
-            <style>
-            /* Seleziona il link button specifico di Google e lo colora di rosso */
-            a[kind="secondary"] {
-                background-color: #DB4437 !important;
-                color: white !important;
-                border: 1px solid #DB4437 !important;
-                font-weight: bold !important;
-                border-radius: 4px !important;
-            }
-            a[kind="secondary"]:hover {
-                background-color: #C23321 !important;
-                color: white !important;
-                border: 1px solid #C23321 !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Costruisce il link ufficiale di login Google OAuth
-        google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
-            "client_id": GOOGLE_CLIENT_ID,
-            "redirect_uri": REDIRECT_URI,
-            "response_type": "code",
-            "scope": "openid email profile",
-            "prompt": "select_account"
-        })
-
-        st.link_button("🔑 Accedi con Google", google_auth_url, use_container_width=True)
-
+        if st.button("🔑 Accedi con Google", use_container_width=True, type="primary"):
+            st.login()
     st.stop()
+
+# Da qui in poi st.user.email è affidabile (autenticato da Google)
+email_autenticata = (st.user.email or "").strip().lower()
+
+if st.session_state.get("email_logged") != email_autenticata:
+    autorizzato, ruolo_trovato, errore_verifica = verifica_utente_foglio(email_autenticata)
+    if autorizzato:
+        st.session_state.email_logged = email_autenticata
+        st.session_state.ruolo = ruolo_trovato.lower()
+        if st.session_state.ruolo == "presenze":
+            st.session_state.pagina = "presenze"
+    elif errore_verifica:
+        st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
+        st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. "
+                "Riprova tra qualche secondo.")
+        st.stop()
+    else:
+        st.error(f"⚠️ L'account `{email_autenticata}` non è autorizzato ad accedere.")
+        if st.button("🚪 Esci e riprova con un altro account"):
+            st.session_state.pop("email_logged", None)
+            st.session_state.pop("ruolo", None)
+            st.logout()
+        st.stop()
 
 
 # ==============================================================================
@@ -292,15 +159,9 @@ with st.sidebar:
     st.divider()  # Linea di separazione visiva
     
     if st.button("🚪 Logout", type="secondary", use_container_width=True):
-        # Rimuove il cookie di sessione salvato nel browser
-        _elimina_cookie_sessione()
-        # Resetta lo stato locale
-        st.session_state.utente_autenticato = False
-        st.session_state.ruolo = None
-        st.session_state.email_logged = ""
-        st.rerun()
-
-
+        st.session_state.pop("ruolo", None)
+        st.session_state.pop("email_logged", None)
+        st.logout()
 
 # ─────────────────────────────────────────────────────────────────
 # COSTANTI E CONFIGURAZIONI DEL SISTEMA
