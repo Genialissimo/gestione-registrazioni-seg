@@ -10,4 +10,5 @@ reportlab
 openpyxl
 pdfplumber
 streamlit-keyup
+google-api-python-client
 
