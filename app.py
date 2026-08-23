@@ -38,6 +38,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Titoli più piccoli in tutta l'app (Streamlit li rende parecchio grandi
+#    di default su mobile) ────────────────────────────────────────────────
+st.markdown("""
+<style>
+h1 { font-size: 1.5rem !important; }
+h2 { font-size: 1.25rem !important; }
+h3 { font-size: 1.1rem !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # ==============================================================================
 # 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA (st.login())
 # ==============================================================================
@@ -46,6 +56,7 @@ NOME_FOGLIO_UTENTI = "Utenti"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/documents",
 ]
 
 @st.cache_resource(show_spinner=False)
@@ -1689,6 +1700,52 @@ def elimina_riga_foglio(_workbook, nome_foglio: str, riga_da_eliminare: int):
         return False, f"Errore durante l'eliminazione: {e}"
 
 
+def archivia_rapporti_consegnati(_workbook) -> tuple:
+    """Sposta i rapporti consegnati dal foglio 'Risposte del modulo 9' (dalla riga
+    10 in poi, colonne A-K) al foglio 'Tutti' (in coda, prima riga libera), forzando
+    la colonna C (mese) come testo puro (es. "2026-07"), poi elimina quelle stesse
+    righe da 'Risposte del modulo 9'. La cancellazione avviene SOLO se la copia in
+    'Tutti' è andata a buon fine, per non rischiare di perdere dati. Ritorna
+    (ok, messaggio_o_errore)."""
+    RIGA_INIZIO_ARCHIVIO = 10
+    NUMERO_COLONNE = 11  # A..K
+    try:
+        ws_risposte = _workbook.worksheet(NOME_FOGLIO_RISPOSTE)
+        valori_risposte = ws_risposte.get_all_values()
+        ultima_riga = len(valori_risposte)
+
+        if ultima_riga < RIGA_INIZIO_ARCHIVIO:
+            return False, "Non ci sono rapporti da esportare."
+
+        righe_grezze = valori_risposte[RIGA_INIZIO_ARCHIVIO - 1:ultima_riga]
+
+        righe_da_scrivere = []
+        for riga in righe_grezze:
+            riga_completa = (list(riga) + [""] * NUMERO_COLONNE)[:NUMERO_COLONNE]
+            # Colonna C (indice 2, il mese) forzata a testo puro con l'apice,
+            # come quando lo si digita a mano in Sheets: es. '2026-07
+            if riga_completa[2]:
+                riga_completa[2] = "'" + str(riga_completa[2]).lstrip("'")
+            righe_da_scrivere.append(riga_completa)
+
+        ws_tutti = _workbook.worksheet(NOME_FOGLIO_TUTTI)
+        ws_tutti.append_rows(righe_da_scrivere, value_input_option="USER_ENTERED")
+    except Exception as e:
+        return False, (f"Errore durante la copia in «Tutti»: {e}. Nessuna riga è stata "
+                       f"toccata in «Risposte del modulo 9».")
+
+    try:
+        ws_risposte.delete_rows(RIGA_INIZIO_ARCHIVIO, ultima_riga)
+    except Exception as e:
+        return False, (f"I {len(righe_da_scrivere)} rapporti sono stati copiati in «Tutti», ma non "
+                       f"sono riuscito a eliminarli da «Risposte del modulo 9»: {e}. Attenzione: "
+                       f"potresti trovarli duplicati, controlla ed elimina a mano le righe da "
+                       f"{RIGA_INIZIO_ARCHIVIO} a {ultima_riga} in «Risposte del modulo 9» se necessario.")
+
+    n_spostati = len(righe_da_scrivere)
+    return True, f"Esportati correttamente in archivio {n_spostati}/{n_spostati} rapporti consegnati"
+
+
 def salva_riga_tutti(_workbook, riga_foglio: int, nuova_grezza: list):
     try:
         ws = _workbook.worksheet(NOME_FOGLIO_TUTTI)
@@ -2169,6 +2226,7 @@ def mostra_home():
 
     esito_presenze_adunanza = None
     nomi_mancanti_rapporto_mese = None  # None = non calcolabile; lista = proclamatori attivi senza rapporto del mese
+    info_mese_archiviato = None  # (mese, n_archiviati, n_attivi) quando i rapporti sono già stati spostati in Tutti
 
     if collegato:
         try:
@@ -2198,13 +2256,37 @@ def mostra_home():
                     else:
                         nomi_consegnati_home = set()
 
-                    conteggio_consegnati_home = len(nomi_consegnati_home)
-                    completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
-                    cls_badge = "hud-green" if completo else "hud-red"
-                    badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
+                    if not df_risposte_home.empty:
+                        # I rapporti stanno ancora arrivando in "Risposte del modulo 9":
+                        # il conteggio si basa su quello, come sempre.
+                        conteggio_consegnati_home = len(nomi_consegnati_home)
+                        completo = conteggio_attivi_home > 0 and conteggio_consegnati_home >= conteggio_attivi_home
+                        cls_badge = "hud-green" if completo else "hud-red"
+                        badge_rapporti = f'<span class="hud-badge {cls_badge}">{conteggio_consegnati_home} / {conteggio_attivi_home}</span>'
 
-                    # Proclamatori attivi che non compaiono ancora in "Risposte del modulo 9" (colonna B) per questo mese
-                    nomi_mancanti_rapporto_mese = sorted(nomi_attivi_home - nomi_consegnati_home)
+                        # Proclamatori attivi che non compaiono ancora in "Risposte del modulo 9" per questo mese
+                        nomi_mancanti_rapporto_mese = sorted(nomi_attivi_home - nomi_consegnati_home)
+                    elif (not err_tutti_home and not df_tutti_home.empty
+                          and "Mese" in df_tutti_home.columns and "Cognome e Nome" in df_tutti_home.columns):
+                        # "Risposte del modulo 9" è vuoto: i rapporti sono probabilmente
+                        # già stati spostati in archivio con "Sposta i rapporti in
+                        # archivio". Controlliamo l'ultimo mese presente in "Tutti"
+                        # invece di segnalare per errore che mancano tutti.
+                        mesi_presenti_tutti = df_tutti_home["Mese"].astype(str).str.strip()
+                        mesi_presenti_tutti = mesi_presenti_tutti[mesi_presenti_tutti != ""]
+                        if not mesi_presenti_tutti.empty:
+                            ultimo_mese_tutti = sorted(mesi_presenti_tutti.unique())[-1]
+                            nomi_archiviati_home = set(
+                                df_tutti_home.loc[
+                                    df_tutti_home["Mese"].astype(str).str.strip() == ultimo_mese_tutti,
+                                    "Cognome e Nome"
+                                ].astype(str).str.strip()
+                            ) & nomi_attivi_home
+                            conteggio_archiviati_home = len(nomi_archiviati_home)
+                            cls_badge = "hud-green" if conteggio_archiviati_home >= conteggio_attivi_home else "hud-yellow"
+                            badge_rapporti = (f'<span class="hud-badge {cls_badge}">'
+                                              f'{conteggio_archiviati_home} / {conteggio_attivi_home}</span>')
+                            info_mese_archiviato = (ultimo_mese_tutti, conteggio_archiviati_home, conteggio_attivi_home)
 
                 colonne_obbligatorie = ["ID", "Cognome e Nome", "Data Nascita", "Sesso", "Tipo", "A/U", "Gruppo", "Attivi / Inattivi"]
                 if "Attivi / Inattivi" in df_anagrafica_home.columns:
@@ -2292,21 +2374,47 @@ def mostra_home():
             badge_rapporti = ""
             badge_anagrafica = ""
 
+    # ─────────────────────────────────────────────────────────────────
+    # Domande di pioniere ausiliario da approvare (di qualsiasi mese, per il post-it)
+    # ─────────────────────────────────────────────────────────────────
+    n_domande_da_approvare_tot = None
+    if collegato:
+        try:
+            df_domande_home, err_domande_home = leggi_foglio_come_df(
+                workbook, NOME_FOGLIO_PIONIERI_AUSILIARIO, RIGA_INTESTAZIONE_PIONIERI_AUSILIARIO)
+            if not err_domande_home:
+                if df_domande_home.empty:
+                    n_domande_da_approvare_tot = 0
+                else:
+                    n_domande_da_approvare_tot = sum(
+                        1 for _, r in df_domande_home.iterrows()
+                        if _domande_calcola_stato(r.to_dict())[1] < 3
+                    )
+        except Exception:
+            n_domande_da_approvare_tot = None
+
     promemoria = []
 
     # ─────────────────────────────────────────────────────────────────
     # Segnalazione: Rapporto del mese corrente (da Anagrafica attivi + foglio
-    # "Risposte del modulo 9", colonna B) — non ancora consegnato
+    # "Risposte del modulo 9", colonna B). Se i rapporti sono già stati
+    # spostati in "Tutti" (Risposte vuoto), conta da lì invece. Un unico
+    # formato in entrambi i casi: pallino giallo se ne manca qualcuno,
+    # verde se sono tutti presenti.
     # ─────────────────────────────────────────────────────────────────
-    n_mancanti_mese = len(nomi_mancanti_rapporto_mese) if nomi_mancanti_rapporto_mese else 0
-    if n_mancanti_mese > 0:
-        dot_cls_mese = "dot-yellow" if n_mancanti_mese < 5 else "dot-red"
-        if n_mancanti_mese == 1:
-            testo_mese = "1 proclamatore non ha ancora consegnato il rapporto di questo mese."
-        else:
-            testo_mese = f"{n_mancanti_mese} proclamatori non hanno ancora consegnato il rapporto di questo mese."
-        promemoria.append((dot_cls_mese, testo_mese))
-    # Se hanno consegnato tutti (o non ci sono proclamatori attivi), non si scrive nulla.
+    if info_mese_archiviato:
+        mese_arch, n_arch, n_att = info_mese_archiviato
+        if n_att > 0:
+            dot_cls_mese = "dot-green" if n_arch >= n_att else "dot-yellow"
+            promemoria.append((dot_cls_mese,
+                               f"{n_arch}/{n_att} Rapporti di servizio consegnati (mese {mese_arch})."))
+    elif nomi_mancanti_rapporto_mese is not None and conteggio_attivi_home > 0:
+        n_mancanti_mese = len(nomi_mancanti_rapporto_mese)
+        n_consegnati_mese = conteggio_attivi_home - n_mancanti_mese
+        dot_cls_mese = "dot-green" if n_mancanti_mese == 0 else "dot-yellow"
+        promemoria.append((dot_cls_mese,
+                           f"{n_consegnati_mese}/{conteggio_attivi_home} Rapporti di servizio consegnati."))
+    # Se non c'è nulla da controllare (non collegato, nessun attivo), non si scrive nulla.
 
     # ─────────────────────────────────────────────────────────────────
     # Segnalazione 1: Rapporti dell'Anno Teocratico
@@ -2339,6 +2447,14 @@ def mostra_home():
     elif isinstance(esito_presenze_adunanza, tuple) and esito_presenze_adunanza[0] is False:
         _, data_mancante, giorno_mancante = esito_presenze_adunanza
         promemoria.append(("dot-red", f"Presenze adunanza non inserite per {giorno_mancante} {data_mancante}."))
+
+    # Segnalazione 4: Domande di pioniere ausiliario da approvare (qualsiasi mese)
+    if n_domande_da_approvare_tot is not None and n_domande_da_approvare_tot > 0:
+        dot_cls_dom = "dot-yellow" if n_domande_da_approvare_tot < 5 else "dot-red"
+        testo_domande = "1 domanda di pioniere ausiliario da approvare." if n_domande_da_approvare_tot == 1 \
+            else f"{n_domande_da_approvare_tot} domande di pioniere ausiliario da approvare."
+        promemoria.append((dot_cls_dom, testo_domande))
+    # Se non ce n'è nessuna da approvare (di nessun mese), non si scrive nulla.
 
     righe_html = "".join(
         f'<div class="promemoria-riga"><span class="dot {dot_cls}"></span>'
@@ -2378,6 +2494,10 @@ def mostra_home():
         ],
         "🙌 Adunanze": [
             ("🙌", "bg-green",  "Presenti alle adunanze", "Registra e monitora le presenze alle due adunanze.", "presenze", ""),
+        ],
+        "📝 Domande": [
+            ("📝", "bg-amber", "Domande di pioniere ausiliario",
+             "Compila, archivia ed esporta le domande S-205b.", "domande_pionieri", ""),
         ],
         "⚙️ Impostazioni": lista_impostazioni,
     }
@@ -2511,8 +2631,42 @@ def _form_modifica_rapporto_consegnato(dati_selezione: dict):
 
 def mostra_registrazioni():
     st.title("Rapporti consegnati")
-    st.button("🏠 Torna alla Home", key="home_da_registrazioni", use_container_width=True,
-              on_click=vai_a, args=("home",))
+
+    col_home, col_menu = st.columns(2)
+    with col_home:
+        st.button("🏠 Home", key="home_da_registrazioni", use_container_width=True,
+                  on_click=vai_a, args=("home",))
+    with col_menu:
+        if st.button("⋯", key="toggle_menu_registrazioni", use_container_width=True):
+            st.session_state.registrazioni_menu_aperto = not st.session_state.get(
+                "registrazioni_menu_aperto", False)
+
+    if st.session_state.get("registrazioni_menu_aperto") and collegato:
+        if st.button("🗄️ Sposta i rapporti in archivio", key="apri_conferma_archivio",
+                     use_container_width=True, disabled=sola_lettura()):
+            st.session_state.conferma_archivio_rapporti = True
+            st.session_state.registrazioni_menu_aperto = False
+            st.rerun()
+
+    if st.session_state.get("conferma_archivio_rapporti") and collegato:
+        st.warning("Sei sicuro di voler spostare i rapporti consegnati in archivio? "
+                   "L'operazione non è reversibile.")
+        col_si, col_no = st.columns(2)
+        with col_si:
+            if st.button("✔ Sì", key="archivio_si", type="primary", use_container_width=True):
+                with st.spinner("Sposto i rapporti in archivio…"):
+                    ok_arch, msg_arch = archivia_rapporti_consegnati(workbook)
+                st.session_state.conferma_archivio_rapporti = False
+                if ok_arch:
+                    st.cache_data.clear()
+                    st.success(f"✔ {msg_arch}")
+                else:
+                    st.error(msg_arch)
+                st.rerun()
+        with col_no:
+            if st.button("No", key="archivio_no", use_container_width=True):
+                st.session_state.conferma_archivio_rapporti = False
+                st.rerun()
 
     if not collegato:
         st.warning("⚠️  Nessun foglio dati collegato.")
@@ -5621,6 +5775,696 @@ if modalita_solo_presenze:
     mostra_presenze_adunanze()
     st.stop()
 
+# ─────────────────────────────────────────────────────────────────
+# MODULO S-205b — Domanda per il servizio di pioniere ausiliario
+# ─────────────────────────────────────────────────────────────────
+NOME_FOGLIO_PIONIERI_AUSILIARIO = "Pionieri Ausiliari"
+RIGA_INTESTAZIONE_PIONIERI_AUSILIARIO = 1
+
+PERCORSO_MODULO_S205B = os.path.join(os.path.dirname(__file__), "S-205b_I.pdf")
+S205B_PAGE_W, S205B_PAGE_H = 612.0, 396.0
+
+S205B_CAMPO_MESE      = (83.6, 297.6, 575.8, 315.3)   # "Mese(i) di ..."
+S205B_CASELLA_CONT    = (34.7, 279.4, 54.4, 297.1)    # checkbox "fino a diversa comunicazione"
+S205B_CAMPO_DATA      = (63.0, 230.0, 216.6, 246.0)   # "Data:"
+S205B_CAMPO_FIRMA     = (277.4, 230.0, 575.1, 246.0)  # "(Firma del richiedente)"
+S205B_CAMPO_NOME      = (277.4, 192.5, 575.6, 208.4)  # "(Nome e cognome in stampatello)"
+S205B_CAMPO_APPR_CCA  = (428.1, 112.1, 575.5, 128.0)  # iniziali Coordinatore Corpo Anziani
+S205B_CAMPO_APPR_SEG  = (429.4, 84.0, 575.6, 99.9)    # iniziali Segretario
+S205B_CAMPO_APPR_SS   = (428.1, 56.3, 575.6, 72.2)    # iniziali Sorvegliante Servizi
+
+OPZIONI_ORE_PIONIERE_AUSILIARIO = ["15", "30"]
+
+# ID del documento Google "Annunci" — si trova nell'URL del documento, nella parte
+# tra /d/ e /edit, es: https://docs.google.com/document/d/QUESTO_È_L_ID/edit
+ID_DOCUMENTO_ANNUNCI = "17A7jd9TessIvfCsc3wrlbSKNBvFrD50TkhpQCrfwhpI"
+
+
+@st.cache_resource(show_spinner=False)
+def get_docs_service():
+    """Autentica verso Google Docs con lo stesso account di servizio già usato per i fogli."""
+    from googleapiclient.discovery import build
+    credenziali = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=SCOPES
+    )
+    return build("docs", "v1", credentials=credenziali)
+
+
+def _lunghezza_utf16(testo: str) -> int:
+    """Google Docs conta gli indici in unità UTF-16: le emoji occupano 2 unità,
+    mentre len() di Python le conta come 1 carattere solo. Serve per calcolare
+    correttamente dove finisce l'intestazione quando la mettiamo in grassetto."""
+    return len(testo.encode("utf-16-le")) // 2
+
+
+def esporta_domande_in_annunci(nomi_ordinati: list, etichetta_mese: str) -> tuple:
+    """Scrive/aggiorna nel documento 'Annunci' la sezione con l'elenco dei pionieri
+    ausiliari approvati del mese indicato. Se esiste già una sezione per quel mese
+    la sostituisce (stesso punto), altrimenti la inserisce subito sotto l'intestazione
+    "Annunci". Il testo viene forzato a carattere 14, allineato a sinistra. Il resto
+    del contenuto (altri annunci, altri mesi) non viene mai toccato. Non usa mai la
+    cancellazione manuale di intervalli (deleteContentRange): per sostituire una
+    sezione esistente usa "replaceAllText" di Google (trova questo testo esatto e
+    sostituiscilo), che è gestito internamente da Google ed evita i tanti vincoli e
+    le eccezioni della cancellazione manuale su documenti con elenchi, tabelle, ecc.
+    Ritorna (ok, errore)."""
+    if not ID_DOCUMENTO_ANNUNCI or ID_DOCUMENTO_ANNUNCI.startswith("INCOLLA"):
+        return False, "ID del documento Annunci non configurato (costante ID_DOCUMENTO_ANNUNCI)."
+    try:
+        servizio = get_docs_service()
+        prefisso_intestazione = "📋 Pionieri ausiliari del mese di"
+        intestazione_sezione = f"{prefisso_intestazione} {etichetta_mese}"
+        MARCATORE_FINE_ELENCO = "-Fine elenco-"
+        LIMITE_PARAGRAFI_SEZIONE = 60
+
+        corpo_elenco = "\n".join(nomi_ordinati) if nomi_ordinati else "(nessuno approvato per questo mese)"
+        testo_sezione = f"{intestazione_sezione}\n{corpo_elenco}\n{MARCATORE_FINE_ELENCO}\n"
+
+        def leggi_paragrafi():
+            documento = servizio.documents().get(documentId=ID_DOCUMENTO_ANNUNCI).execute()
+            elementi = documento.get("body", {}).get("content", [])
+            paragrafi = []
+            for el in elementi:
+                par = el.get("paragraph")
+                if not par:
+                    continue
+                testo = "".join(
+                    r.get("textRun", {}).get("content", "")
+                    for r in par.get("elements", [])
+                    if "textRun" in r
+                )
+                paragrafi.append((testo, el["startIndex"], el["endIndex"]))
+            return elementi, paragrafi
+
+        elementi, paragrafi = leggi_paragrafi()
+
+        # Cerca se esiste già una sezione per questo identico mese
+        indice_inizio_sezione = None
+        for testo, inizio, _fine in paragrafi:
+            if testo.strip() == intestazione_sezione.strip():
+                indice_inizio_sezione = inizio
+                break
+
+        if indice_inizio_sezione is not None:
+            # Trova la fine cercando SOLO il marcatore esplicito "-Fine elenco-"
+            # (niente ripieghi tipo "riga vuota": in un documento con altri
+            # annunci una riga vuota può trovarsi ovunque, anche dentro
+            # contenuti non correlati). Se non c'è, non tocchiamo nulla.
+            dopo_inizio = False
+            contatore = 0
+            indice_marcatore = None
+            for testo, inizio, fine in paragrafi:
+                if inizio == indice_inizio_sezione:
+                    dopo_inizio = True
+                    continue
+                if not dopo_inizio:
+                    continue
+                contatore += 1
+                if testo.strip() == MARCATORE_FINE_ELENCO:
+                    indice_marcatore = fine
+                    break
+                if contatore > LIMITE_PARAGRAFI_SEZIONE:
+                    break
+
+            if indice_marcatore is None:
+                return False, (
+                    f"Non riesco a determinare con sicurezza dove finisce la sezione "
+                    f"già presente di «{etichetta_mese}»: per non rischiare di cancellare "
+                    f"altri annunci non ho modificato il documento. Elimina a mano la "
+                    f"vecchia sezione «{intestazione_sezione}» (intestazione compresa) "
+                    f"e riprova: verrà ricreata da capo con il marcatore corretto."
+                )
+
+            # Ricostruisce il testo ESATTO della vecchia sezione (dall'intestazione
+            # fino al marcatore incluso) da cercare e sostituire
+            testo_vecchia_sezione = ""
+            for testo, inizio, fine in paragrafi:
+                if inizio >= indice_inizio_sezione and fine <= indice_marcatore:
+                    testo_vecchia_sezione += testo
+
+            servizio.documents().batchUpdate(
+                documentId=ID_DOCUMENTO_ANNUNCI,
+                body={"requests": [{
+                    "replaceAllText": {
+                        "containsText": {"text": testo_vecchia_sezione, "matchCase": True},
+                        "replaceText": testo_sezione,
+                    }
+                }]},
+            ).execute()
+        else:
+            # Sezione nuova: va inserita subito sotto l'intestazione "Annunci"
+            indice_dopo_annunci = None
+            for testo, _inizio, fine in paragrafi:
+                testo_pulito = testo.strip().rstrip(":：").strip()
+                if testo_pulito.lower() == "annunci":
+                    indice_dopo_annunci = fine
+                    break
+
+            ultimo_indice_valido = elementi[-1]["endIndex"] - 1 if elementi else 1
+            indice_scrittura = indice_dopo_annunci if indice_dopo_annunci is not None else 1
+            indice_scrittura = max(1, min(indice_scrittura, ultimo_indice_valido))
+
+            servizio.documents().batchUpdate(
+                documentId=ID_DOCUMENTO_ANNUNCI,
+                body={"requests": [{
+                    "insertText": {"location": {"index": indice_scrittura}, "text": testo_sezione + "\n"}
+                }]},
+            ).execute()
+
+        # Ora che il contenuto è sicuramente presente, applica la formattazione
+        # (carattere 14, allineato a sinistra, solo intestazione in grassetto),
+        # rileggendo il documento da capo per avere indici aggiornati e sicuri.
+        _, paragrafi_aggiornati = leggi_paragrafi()
+        indice_nuovo_inizio = None
+        for testo, inizio, _fine in paragrafi_aggiornati:
+            if testo.strip() == intestazione_sezione.strip():
+                indice_nuovo_inizio = inizio
+                break
+
+        if indice_nuovo_inizio is not None:
+            lunghezza_blocco = _lunghezza_utf16(testo_sezione)
+            richieste_stile = [
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": indice_nuovo_inizio,
+                                  "endIndex": indice_nuovo_inizio + lunghezza_blocco},
+                        "paragraphStyle": {"alignment": "START", "namedStyleType": "NORMAL_TEXT"},
+                        "fields": "alignment,namedStyleType",
+                    }
+                },
+                {
+                    "updateTextStyle": {
+                        "range": {"startIndex": indice_nuovo_inizio,
+                                  "endIndex": indice_nuovo_inizio + lunghezza_blocco},
+                        "textStyle": {"fontSize": {"magnitude": 14, "unit": "PT"}, "bold": False},
+                        "fields": "fontSize,bold",
+                    }
+                },
+                {
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": indice_nuovo_inizio,
+                            "endIndex": indice_nuovo_inizio + _lunghezza_utf16(intestazione_sezione),
+                        },
+                        "textStyle": {"bold": True},
+                        "fields": "bold",
+                    }
+                },
+            ]
+            servizio.documents().batchUpdate(
+                documentId=ID_DOCUMENTO_ANNUNCI, body={"requests": richieste_stile}
+            ).execute()
+
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: DOMANDE DI PIONIERE AUSILIARIO (S-205b)
+# ─────────────────────────────────────────────────────────────────
+
+def _s205b_testo(c: rl_canvas.Canvas, testo: str, rect: tuple,
+                  font_name: str = "Helvetica", font_size: float = 10.5, pad_sx: float = 3.0):
+    """Scrive un testo allineato a sinistra, appoggiato sopra la riga puntinata del modulo."""
+    if not testo:
+        return
+    x0, y0, x1, y1 = rect
+    y = y0 + (y1 - y0 - font_size) / 2 + 2.2
+    c.setFont(font_name, font_size)
+    c.drawString(x0 + pad_sx, y, testo)
+
+
+def _s205b_testo_centrato(c: rl_canvas.Canvas, testo: str, rect: tuple,
+                           font_name: str = "Helvetica", font_size: float = 10.0):
+    """Scrive un testo centrato orizzontalmente (usato per le iniziali di approvazione)."""
+    if not testo:
+        return
+    x0, y0, x1, y1 = rect
+    largo = c.stringWidth(testo, font_name, font_size)
+    x = (x0 + x1) / 2 - largo / 2
+    y = y0 + (y1 - y0 - font_size) / 2 + 2.2
+    c.setFont(font_name, font_size)
+    c.drawString(x, y, testo)
+
+
+def _s205b_segna_casella(c: rl_canvas.Canvas, rect: tuple,
+                          font_name: str = "Helvetica-Bold", font_size: float = 12.0):
+    x0, y0, x1, y1 = rect
+    testo = "X"
+    largo = c.stringWidth(testo, font_name, font_size)
+    x = (x0 + x1) / 2 - largo / 2
+    y = (y0 + y1) / 2 - font_size * 0.36
+    c.setFont(font_name, font_size)
+    c.drawString(x, y, testo)
+
+
+def genera_pdf_s205b(riga: dict) -> bytes:
+    """Compila il modulo S-205b a partire da una riga del foglio 'Pionieri Ausiliario'."""
+    nome = str(riga.get("Nome e Cognome", "")).strip()
+    mese = str(riga.get("Mese di", "")).strip()
+    ore = str(riga.get("Ore", "")).strip()
+    data_val = str(riga.get("Data", "")).strip()
+    firma = str(riga.get("Firma", "")).strip() or nome
+    continuativo = str(riga.get("T/I", "")).strip().upper() == "I"
+
+    if mese and ore:
+        mese_completo = f"{mese} (ore {ore})"
+    else:
+        mese_completo = mese or (f"(ore {ore})" if ore else "")
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=(S205B_PAGE_W, S205B_PAGE_H))
+
+    _s205b_testo(c, mese_completo, S205B_CAMPO_MESE, font_size=10.5)
+    if continuativo:
+        _s205b_segna_casella(c, S205B_CASELLA_CONT)
+    _s205b_testo(c, data_val, S205B_CAMPO_DATA, font_size=10.5)
+    _s205b_testo(c, firma, S205B_CAMPO_FIRMA, font_size=10.5)
+    _s205b_testo(c, nome, S205B_CAMPO_NOME, font_size=10.5)
+    _s205b_testo_centrato(c, str(riga.get("CCA", "")).strip(), S205B_CAMPO_APPR_CCA)
+    _s205b_testo_centrato(c, str(riga.get("SEG", "")).strip(), S205B_CAMPO_APPR_SEG)
+    _s205b_testo_centrato(c, str(riga.get("SS", "")).strip(), S205B_CAMPO_APPR_SS)
+
+    c.save()
+    buf.seek(0)
+
+    overlay_reader = PdfReader(buf)
+    template_reader = PdfReader(PERCORSO_MODULO_S205B)
+    writer = PdfWriter()
+
+    pagina = template_reader.pages[0]
+    pagina.merge_page(overlay_reader.pages[0])
+    if "/Annots" in pagina:
+        del pagina["/Annots"]
+    writer.add_page(pagina)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _s205b_nome_file_sicuro(nome: str) -> str:
+    return _s21_nome_file_sicuro(nome)
+
+
+def genera_zip_s205b(righe: list) -> bytes:
+    """Genera uno ZIP con una S-205b compilata per ciascuna riga passata."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for riga in righe:
+            pdf_bytes = genera_pdf_s205b(riga)
+            nome_file = _s205b_nome_file_sicuro(str(riga.get("Nome e Cognome", "senza_nome"))) + ".pdf"
+            zf.writestr(nome_file, pdf_bytes)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _domande_mesi_anno_teocratico() -> list:
+    """Lista dei mesi (anno, mese) di DUE anni teocratici consecutivi (24 mesi),
+    da Settembre dell'anno teocratico corrente ad Agosto di quello successivo.
+    Così il mese in corso è sempre in elenco, insieme a tutto il prossimo anno
+    di servizio (utile soprattutto a luglio/agosto, quando si programma già settembre)."""
+    oggi = date.today()
+    anno_teo = oggi.year if oggi.month >= 9 else oggi.year - 1
+    mesi = []
+    for offset in (0, 1):
+        anno_base = anno_teo + offset
+        mesi += [(anno_base, m) for m in range(9, 13)]
+        mesi += [(anno_base + 1, m) for m in range(1, 9)]
+    return mesi
+
+
+def _domande_mese_riferimento() -> tuple:
+    """Il mese 'di riferimento' da proporre come default: le domande si presentano
+    in anticipo per il mese successivo, quindi fino al giorno 10 del mese si
+    considera ancora quello corrente; dall'11 in poi si passa già al mese dopo."""
+    oggi = date.today()
+    if oggi.day <= 10:
+        return (oggi.year, oggi.month)
+    anno, mese = oggi.year, oggi.month + 1
+    if mese > 12:
+        mese = 1
+        anno += 1
+    return (anno, mese)
+
+
+
+def _domande_calcola_stato(riga: dict) -> tuple:
+    """Ritorna (etichetta, n_approvazioni) in base a quante fra CCA/SEG/SS sono compilate."""
+    n = sum(1 for col in ("CCA", "SEG", "SS") if str(riga.get(col, "")).strip())
+    if n >= 3:
+        return "🟢 Approvata", n
+    if n >= 1:
+        return "🟡 Parziale", n
+    return "🔴 Da approvare", n
+
+
+def _domande_filtra_per_mese(df: pd.DataFrame, etichetta_mese: str) -> pd.DataFrame:
+    if not etichetta_mese or df.empty or "Mese di" not in df.columns:
+        return df
+    return df[df["Mese di"].astype(str).str.contains(etichetta_mese, case=False, na=False, regex=False)]
+
+
+def vai_a_home_reset_domande():
+    for chiave in ("domande_editor", "domande_conferma_elimina", "domande_pdf_pronto",
+                   "domande_zip_pronto", "domande_menu_aperto"):
+        st.session_state.pop(chiave, None)
+    vai_a("home")
+
+
+def _form_domanda_pioniere(editor: dict, nomi_anagrafica: list):
+    modo = editor.get("modo")
+    e = editor.get("riga", {}) if modo == "modifica" else {}
+    chiave = editor.get("numero_riga_foglio", "nuovo")
+    bloccato = sola_lettura()
+
+    if modo == "modifica":
+        st.markdown(f"#### ✏️ Modifica domanda — {e.get('Nome e Cognome', '')}")
+    else:
+        st.markdown("#### ➕ Nuova domanda di pioniere ausiliario")
+
+    with st.form(f"form_domanda_{chiave}", clear_on_submit=False):
+        opzioni_nomi = [""] + list(nomi_anagrafica)
+        nome_attuale = e.get("Nome e Cognome", "")
+        
+        if modo == "modifica":
+            if nome_attuale and nome_attuale not in opzioni_nomi:
+                opzioni_nomi = [nome_attuale] + opzioni_nomi
+            indice_nome = opzioni_nomi.index(nome_attuale) if nome_attuale in opzioni_nomi else 0
+        else:
+            indice_nome = 0  # Vuoto di default pronto per scrivere
+
+        nome_scelto = st.selectbox("Nome e Cognome *", opzioni_nomi, index=indice_nome, disabled=bloccato)
+
+        opzioni_mesi = [f"{MESI_ITALIANI[m]} {a}" for a, m in _domande_mesi_anno_teocratico()]
+        mese_attuale = e.get("Mese di", "")
+        if mese_attuale and mese_attuale not in opzioni_mesi:
+            opzioni_mesi = [mese_attuale] + opzioni_mesi
+
+        if modo == "modifica":
+            indice_mese = opzioni_mesi.index(mese_attuale) if mese_attuale in opzioni_mesi else 0
+        else:
+            anno_rif, mese_rif = _domande_mese_riferimento()
+            mese_riferimento_lbl = f"{MESI_ITALIANI[mese_rif]} {anno_rif}"
+            indice_mese = opzioni_mesi.index(mese_riferimento_lbl) if mese_riferimento_lbl in opzioni_mesi else 0
+
+        mese_scelto = st.selectbox("Mese di *", opzioni_mesi, index=indice_mese, disabled=bloccato)
+
+        ore_correnti = e.get("Ore", "") or OPZIONI_ORE_PIONIERE_AUSILIARIO[0]
+        if ore_correnti not in OPZIONI_ORE_PIONIERE_AUSILIARIO:
+            ore_correnti = OPZIONI_ORE_PIONIERE_AUSILIARIO[0]
+        ore_scelte = st.selectbox("Requisito delle ore", OPZIONI_ORE_PIONIERE_AUSILIARIO,
+                                   index=OPZIONI_ORE_PIONIERE_AUSILIARIO.index(ore_correnti),
+                                   disabled=bloccato)
+
+        continuativo = st.checkbox(
+            "Continua fino a diversa comunicazione (pioniere ausiliario continuativo)",
+            value=str(e.get("T/I", "")).strip().upper() == "I", disabled=bloccato,
+        )
+
+        try:
+            data_default = datetime.strptime(e.get("Data", ""), "%d/%m/%Y").date()
+        except Exception:
+            data_default = date.today()
+        data_scelta = st.date_input("Data *", value=data_default, format="DD/MM/YYYY", disabled=bloccato)
+
+        st.markdown("**Approvazione del comitato di servizio** _(bastano le iniziali)_")
+        col_cca, col_seg, col_ss = st.columns(3)
+        with col_cca:
+            cca = st.text_input("CCA", value=e.get("CCA", ""), disabled=bloccato)
+        with col_seg:
+            seg = st.text_input("SEG", value=e.get("SEG", ""), disabled=bloccato)
+        with col_ss:
+            ss = st.text_input("SS", value=e.get("SS", ""), disabled=bloccato)
+
+        col_salva, col_annulla, col_elimina = st.columns(3)
+        with col_salva:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True, disabled=bloccato)
+        with col_annulla:
+            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
+        with col_elimina:
+            elimina = st.form_submit_button("🗑️ Elimina", use_container_width=True,
+                                            disabled=(bloccato or modo != "modifica"))
+
+    if annulla:
+        st.session_state.domande_editor = None
+        st.rerun()
+
+    if elimina and modo == "modifica":
+        st.session_state.domande_conferma_elimina = editor
+        st.rerun()
+
+    if invia:
+        nome_pulito = (nome_scelto or "").strip()
+        mese_pulito = (mese_scelto or "").strip()
+        if not nome_pulito or not mese_pulito:
+            st.error("Il campo «Nome e Cognome» e il «Mese di» sono obbligatori.")
+        else:
+            valori = {
+                "Data": data_scelta.strftime("%d/%m/%Y"),
+                "Mese di": mese_pulito,
+                "T/I": "I" if continuativo else "T",
+                "Ore": ore_scelte,
+                "Firma": nome_pulito,
+                "Nome e Cognome": nome_pulito,
+                "CCA": cca.strip(),
+                "SEG": seg.strip(),
+                "SS": ss.strip(),
+                "Inviata il": e.get("Inviata il", "") or datetime.now().strftime("%d/%m/%Y %H:%M"),
+            }
+            numero_riga = editor.get("numero_riga_foglio") if modo == "modifica" else None
+            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_PIONIERI_AUSILIARIO,
+                                               RIGA_INTESTAZIONE_PIONIERI_AUSILIARIO,
+                                               valori, riga_da_aggiornare=numero_riga)
+            if ok:
+                st.cache_data.clear()
+                st.session_state.domande_editor = None
+                st.session_state.domande_tabella_versione = st.session_state.get("domande_tabella_versione", 0) + 1
+                st.success(f"✔ Domanda di «{nome_pulito}» salvata correttamente.")
+                st.rerun()
+            else:
+                st.error(err_salva)
+
+    conferma = st.session_state.get("domande_conferma_elimina")
+    if conferma and modo == "modifica" and conferma.get("numero_riga_foglio") == editor.get("numero_riga_foglio"):
+        st.warning(f"Confermi l'eliminazione della domanda di «{e.get('Nome e Cognome', '')}»? "
+                   "L'operazione non è reversibile.")
+        col_si, col_no = st.columns(2)
+        with col_si:
+            if st.button("✔ Sì, elimina", key="domande_conf_si", type="primary", use_container_width=True):
+                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_PIONIERI_AUSILIARIO,
+                                                    editor["numero_riga_foglio"])
+                if ok:
+                    st.cache_data.clear()
+                    st.session_state.domande_editor = None
+                    st.session_state.domande_conferma_elimina = None
+                    st.session_state.domande_tabella_versione = st.session_state.get("domande_tabella_versione", 0) + 1
+                    st.success("✔ Domanda eliminata.")
+                    st.rerun()
+                else:
+                    st.error(err_elim)
+        with col_no:
+            if st.button("No, annulla", key="domande_conf_no", use_container_width=True):
+                st.session_state.domande_conferma_elimina = None
+                st.rerun()
+
+
+
+def mostra_domande_pioniere_ausiliario():
+    st.title("📝 Domande di pioniere ausiliario")
+    contenitore_pulsanti = st.container()
+
+    if "domande_tabella_versione" not in st.session_state:
+        st.session_state.domande_tabella_versione = 0
+
+    if not collegato:
+        with contenitore_pulsanti:
+            st.button("🏠 Home", key="home_da_domande", use_container_width=True, on_click=vai_a_home_reset_domande)
+        st.warning("⚠️ Nessun foglio dati collegato.")
+        return
+
+    if not os.path.exists(PERCORSO_MODULO_S205B):
+        with contenitore_pulsanti:
+            st.button("🏠 Home", key="home_da_domande", use_container_width=True, on_click=vai_a_home_reset_domande)
+        st.error("Modulo S-205b non trovato: metti il file «S-205b_I.pdf» nella stessa cartella di app.py.")
+        return
+
+    df_domande, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_PIONIERI_AUSILIARIO,
+                                            RIGA_INTESTAZIONE_PIONIERI_AUSILIARIO)
+    if err:
+        with contenitore_pulsanti:
+            st.button("🏠 Home", key="home_da_domande", use_container_width=True, on_click=vai_a_home_reset_domande)
+        st.error(err)
+        return
+
+    df_anagrafica, _ = leggi_foglio_come_df(workbook, NOME_FOGLIO_ANAGRAFICA, RIGA_INTESTAZIONE_ANAGRAFICA)
+    nomi_anagrafica = []
+    if df_anagrafica is not None and not df_anagrafica.empty and "Cognome e Nome" in df_anagrafica.columns:
+        df_att = df_anagrafica
+        if "Attivi / Inattivi" in df_anagrafica.columns:
+            df_att = df_anagrafica[df_anagrafica["Attivi / Inattivi"].apply(categoria_stato_proclamatore) == "A"]
+        nomi_anagrafica = sorted({n.strip() for n in df_att["Cognome e Nome"].astype(str) if n.strip()})
+
+    # ── 1. FILTRI (Mese e Stato) — calcolati PRIMA dei pulsanti perché il
+    #    pulsante "Compila/Modifica" deve sapere se una riga è selezionata ──
+    mesi_disponibili = _domande_mesi_anno_teocratico()
+    mese_riferimento = _domande_mese_riferimento()
+    indice_mese_default = mesi_disponibili.index(mese_riferimento) \
+        if mese_riferimento in mesi_disponibili else len(mesi_disponibili) - 1
+
+    mese_scelto_tupla = st.selectbox(
+        "Mese anno teocratico",
+        mesi_disponibili,
+        index=indice_mese_default,
+        format_func=lambda am: f"{MESI_ITALIANI[am[1]]} {am[0]}",
+        key="domande_mese_scelto",
+    )
+    etichetta_mese_scelto = f"{MESI_ITALIANI[mese_scelto_tupla[1]]} {mese_scelto_tupla[0]}"
+
+    filtro_stato = st.radio("Stato", ["Tutte", "🟢 Approvate", "🔴 Da approvare"],
+                             horizontal=True, key="domande_filtro_stato")
+
+    # ── 4. PREPARAZIONE DATI E TABELLA ───────────────────────────────────
+    df_domande = df_domande.reset_index(drop=True)
+    if not df_domande.empty:
+        df_domande["_riga_foglio"] = RIGA_INTESTAZIONE_PIONIERI_AUSILIARIO + 1 + df_domande.index
+        stati = df_domande.apply(lambda r: _domande_calcola_stato(r.to_dict()), axis=1)
+        df_domande["_stato_label"] = [s[0] for s in stati]
+        df_domande["_n_approvazioni"] = [s[1] for s in stati]
+
+    df_filtrato = _domande_filtra_per_mese(df_domande, etichetta_mese_scelto)
+    if "_n_approvazioni" in df_filtrato.columns:
+        if filtro_stato == "🟢 Approvate":
+            df_filtrato = df_filtrato[df_filtrato["_n_approvazioni"] >= 3]
+        elif filtro_stato == "🔴 Da approvare":
+            df_filtrato = df_filtrato[df_filtrato["_n_approvazioni"] < 3]
+    df_filtrato = df_filtrato.reset_index(drop=True)
+
+    idx_sel = None
+    colonne_mostrate = [c for c in ["_stato_label", "Nome e Cognome", "Mese di", "Ore", "T/I",
+                                     "Data", "CCA", "SEG", "SS", "Inviata il"]
+                         if c in df_filtrato.columns]
+    
+    chiave_tabella = f"domande_tabella_{st.session_state.domande_tabella_versione}"
+
+    if not df_filtrato.empty:
+        evento = st.dataframe(
+            df_filtrato[colonne_mostrate],
+            hide_index=True,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key=chiave_tabella,
+            column_config={
+                "_stato_label": st.column_config.TextColumn("Stato", width="small"),
+                "Ore": st.column_config.TextColumn(width="small"),
+                "T/I": st.column_config.TextColumn(width="small"),
+                "Data": st.column_config.TextColumn(width="small"),
+            },
+        )
+        righe_sel = evento.selection.rows if evento and evento.selection else []
+        if righe_sel and righe_sel[0] < len(df_filtrato):
+            idx_sel = righe_sel[0]
+
+    riga_selezionata = df_filtrato.loc[idx_sel].to_dict() if idx_sel is not None else None
+
+    if df_filtrato.empty:
+        st.info("Nessuna domanda trovata con questi filtri.")
+    else:
+        st.caption("La tabella mostra le domande del mese e dello stato selezionati sopra. "
+                   "Il pulsante ZIP esporta esattamente le domande visibili qui sotto.")
+
+    # ── 2. PULSANTI + FORM — scritti ORA nel container dichiarato in cima,
+    #    quindi appaiono comunque sopra i filtri e la griglia ──────────────
+    with contenitore_pulsanti:
+        n_zip = len(df_filtrato) if not df_filtrato.empty else 0
+        col_home, col_menu = st.columns(2)
+        with col_home:
+            st.button("🏠 Home", key="home_da_domande", use_container_width=True,
+                      on_click=vai_a_home_reset_domande)
+        with col_menu:
+            if st.button("⋯", key="toggle_menu_domande", use_container_width=True):
+                st.session_state.domande_menu_aperto = not st.session_state.get(
+                    "domande_menu_aperto", False)
+
+        apri_form_click = esporta_click = zip_click = annunci_click = False
+        if st.session_state.get("domande_menu_aperto"):
+            etichetta_nuovo = "✏️ Modifica" if riga_selezionata is not None else "➕ Compila"
+            apri_form_click = st.button(etichetta_nuovo, key="domande_apri_form",
+                                        use_container_width=True, disabled=sola_lettura())
+            esporta_click = st.button("📄 Esporta", key="domande_esporta", use_container_width=True,
+                                      disabled=riga_selezionata is None)
+            zip_click = st.button(f"📦 ZIP ({n_zip})", key="domande_esporta_zip",
+                                  use_container_width=True, disabled=n_zip == 0)
+            annunci_click = st.button("📤 Esporta in Annunci", key="domande_esporta_annunci",
+                                      use_container_width=True, disabled=n_zip == 0)
+            if apri_form_click or esporta_click or zip_click or annunci_click:
+                st.session_state.domande_menu_aperto = False
+
+        if apri_form_click:
+            if riga_selezionata is not None:
+                st.session_state.domande_editor = {
+                    "modo": "modifica",
+                    "riga": riga_selezionata,
+                    "numero_riga_foglio": int(riga_selezionata["_riga_foglio"]),
+                }
+            else:
+                st.session_state.domande_editor = {"modo": "nuovo"}
+            st.session_state.domande_conferma_elimina = None
+
+        if esporta_click and riga_selezionata is not None:
+            with st.spinner("Compilo il modulo…"):
+                pdf_bytes = genera_pdf_s205b(riga_selezionata)
+            st.session_state.domande_pdf_pronto = (pdf_bytes, riga_selezionata.get("Nome e Cognome", "domanda"))
+
+        if annunci_click and not df_filtrato.empty:
+            df_approvate = df_filtrato[df_filtrato["_n_approvazioni"] >= 3] \
+                if "_n_approvazioni" in df_filtrato.columns else df_filtrato.iloc[0:0]
+            nomi_approvati = sorted(
+                n.strip() for n in df_approvate["Nome e Cognome"].astype(str) if n.strip()
+            )
+            with st.spinner("Scrivo su Annunci…"):
+                ok_annunci, err_annunci = esporta_domande_in_annunci(nomi_approvati, etichetta_mese_scelto)
+            if ok_annunci:
+                st.success(f"✔ Elenco di {etichetta_mese_scelto} scritto su Annunci "
+                           f"({len(nomi_approvati)} approvati).")
+            else:
+                st.error("✖ Non è stato possibile trasferire l'elenco: il formato in "
+                         "Annunci è stato modificato.")
+                with st.expander("Dettagli tecnici"):
+                    st.code(str(err_annunci))
+
+        if zip_click and not df_filtrato.empty:
+            righe_zip = df_filtrato.to_dict("records")
+            with st.spinner("Compilo tutte le domande…"):
+                zip_bytes = genera_zip_s205b(righe_zip)
+            st.session_state.domande_zip_pronto = (zip_bytes, etichetta_mese_scelto)
+
+        if st.session_state.get("domande_pdf_pronto"):
+            pdf_bytes, nome_file = st.session_state.domande_pdf_pronto
+            st.download_button(
+                "⬇️ Scarica PDF", data=pdf_bytes,
+                file_name=f"S-205b_{_s205b_nome_file_sicuro(nome_file)}.pdf",
+                mime="application/pdf", key="download_domanda_pdf", use_container_width=True,
+                on_click=lambda: st.session_state.pop("domande_pdf_pronto", None),
+            )
+
+        if st.session_state.get("domande_zip_pronto"):
+            zip_bytes, etichetta_zip = st.session_state.domande_zip_pronto
+            st.download_button(
+                "⬇️ Scarica ZIP", data=zip_bytes,
+                file_name=f"Domande_{_s205b_nome_file_sicuro(etichetta_zip)}.zip",
+                mime="application/zip", key="download_domande_zip", use_container_width=True,
+                on_click=lambda: st.session_state.pop("domande_zip_pronto", None),
+            )
+
+        editor = st.session_state.get("domande_editor")
+        if editor:
+            st.divider()
+            _form_domanda_pioniere(editor, nomi_anagrafica)
+
+
+
 
 # ─────────────────────────────────────────────────────────────────
 # ROUTING COMPLETO — Accessibile solo per Amministratori
@@ -5647,6 +6491,11 @@ elif st.session_state.pagina == "impostazioni":
     mostra_impostazioni()
 elif st.session_state.pagina == "utenti":
     mostra_gestione_utenti()
+elif st.session_state.pagina == "domande_pionieri":
+    mostra_domande_pioniere_ausiliario()
 else:
     mostra_home()
+
+
+
 
