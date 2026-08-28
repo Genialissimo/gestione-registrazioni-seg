@@ -264,6 +264,63 @@ def salva_giorni_adunanze_per_tipo(_workbook, giorni_per_tipo: dict):
         return False, f"Errore durante il salvataggio: {e}"
 
 
+RUOLI_COMITATO_SERVIZIO = ["Coordinatore", "Segretario", "Sorvegliante del servizio"]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def leggi_comitato_servizio(_workbook) -> dict:
+    """Legge dal foglio 'Configurazioni' i nomi di chi ricopre i ruoli del
+    comitato di servizio (Coordinatore, Segretario, Sorvegliante del servizio),
+    cercando per chiave (colonna A) e prendendo il valore (colonna B)."""
+    risultato = {ruolo: "" for ruolo in RUOLI_COMITATO_SERVIZIO}
+    if _workbook is None:
+        return risultato
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
+        valori = ws.get_all_values()
+        righe = valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]
+        for ruolo in RUOLI_COMITATO_SERVIZIO:
+            for riga in righe:
+                if len(riga) >= 2 and riga[0].strip().lower() == ruolo.lower():
+                    risultato[ruolo] = riga[1].strip()
+                    break
+    except Exception:
+        pass
+    return risultato
+
+
+def salva_comitato_servizio(_workbook, nomi_per_ruolo: dict):
+    """Salva (o crea) le righe del comitato di servizio nel foglio 'Configurazioni',
+    cercando ciascun ruolo per chiave e aggiornando solo la colonna B."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
+    except Exception:
+        return False, (f"Il foglio «{NOME_FOGLIO_IMPOSTAZIONI}» non esiste ancora nel documento Google. "
+                       f"Creane uno con questo nome esatto e metti «Chiave» in A1 e «Valore» in B1, poi riprova.")
+    try:
+        valori = ws.get_all_values()
+        righe = valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]
+        for ruolo in RUOLI_COMITATO_SERVIZIO:
+            valore_str = nomi_per_ruolo.get(ruolo, "").strip()
+            trovata = False
+            for i, riga in enumerate(righe, start=RIGA_INTESTAZIONE_IMPOSTAZIONI + 1):
+                if len(riga) >= 1 and riga[0].strip().lower() == ruolo.lower():
+                    ws.update_cell(i, 2, valore_str)
+                    trovata = True
+                    break
+            if not trovata:
+                ws.append_row([ruolo, valore_str], value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante il salvataggio: {e}"
+
+
+def _iniziali_da_nome(nome_completo: str) -> str:
+    """Ricava le iniziali da un nome completo, es. 'Putrino Fabrizio' -> 'PF'."""
+    parole = [p for p in str(nome_completo).strip().split() if p]
+    return "".join(p[0].upper() for p in parole)
+
+
 def _prossima_data_valida_precedente(data_scelta, giorni_validi: list):
     """Se 'data_scelta' cade in uno dei giorni della settimana validi,
     ritorna (True, None). Altrimenti ritorna (False, data_proposta)."""
@@ -2378,6 +2435,7 @@ def mostra_home():
     # Domande di pioniere ausiliario da approvare (di qualsiasi mese, per il post-it)
     # ─────────────────────────────────────────────────────────────────
     n_domande_da_approvare_tot = None
+    info_mese_domande = None  # (etichetta_mese, n_approvate, n_totale) per il post-it "Approvate X/Y"
     if collegato:
         try:
             df_domande_home, err_domande_home = leggi_foglio_come_df(
@@ -2390,8 +2448,20 @@ def mostra_home():
                         1 for _, r in df_domande_home.iterrows()
                         if _domande_calcola_stato(r.to_dict())[1] < 3
                     )
+
+                    anno_rif_dom, mese_rif_dom = _domande_mese_riferimento_postit()
+                    etichetta_mese_dom = f"{MESI_ITALIANI[mese_rif_dom]} {anno_rif_dom}"
+                    df_mese_dom = _domande_filtra_per_mese(df_domande_home, etichetta_mese_dom)
+                    n_totale_mese_dom = len(df_mese_dom)
+                    if n_totale_mese_dom > 0:
+                        n_approvate_mese_dom = sum(
+                            1 for _, r in df_mese_dom.iterrows()
+                            if _domande_calcola_stato(r.to_dict())[1] >= 3
+                        )
+                        info_mese_domande = (etichetta_mese_dom, n_approvate_mese_dom, n_totale_mese_dom)
         except Exception:
             n_domande_da_approvare_tot = None
+            info_mese_domande = None
 
     promemoria = []
 
@@ -2455,6 +2525,14 @@ def mostra_home():
             else f"{n_domande_da_approvare_tot} domande di pioniere ausiliario da approvare."
         promemoria.append((dot_cls_dom, testo_domande))
     # Se non ce n'è nessuna da approvare (di nessun mese), non si scrive nulla.
+
+    # Segnalazione 5: Approvate X/Y Domande di pioniere ausiliario (mese di riferimento)
+    if info_mese_domande:
+        _etichetta_dom, n_approvate_dom, n_totale_dom = info_mese_domande
+        dot_cls_appr = "dot-green" if n_approvate_dom >= n_totale_dom else "dot-yellow"
+        promemoria.append((dot_cls_appr,
+                           f"Approvate {n_approvate_dom}/{n_totale_dom} Domande di pioniere ausiliario."))
+    # Se non c'è nessuna domanda per il mese di riferimento, non si scrive nulla.
 
     righe_html = "".join(
         f'<div class="promemoria-riga"><span class="dot {dot_cls}"></span>'
@@ -5054,6 +5132,30 @@ def mostra_impostazioni():
 
     st.markdown("---")
 
+    st.subheader("🤝 Comitato di servizio")
+    st.caption("Le iniziali di chi ricopre questi incarichi vengono usate per approvare in un tocco "
+               "le domande di pioniere ausiliario.")
+
+    comitato_attuale = leggi_comitato_servizio(workbook)
+    nomi_comitato_scelti = {}
+    for ruolo in RUOLI_COMITATO_SERVIZIO:
+        st.caption(ruolo)
+        nomi_comitato_scelti[ruolo] = st.text_input(
+            f"Cognome e Nome — {ruolo}", value=comitato_attuale.get(ruolo, ""),
+            key=f"comitato_{ruolo}", label_visibility="collapsed", disabled=sola_lettura(),
+        )
+
+    if st.button("✔ Salva comitato di servizio", type="primary", use_container_width=True,
+                 disabled=sola_lettura()):
+        ok_com, err_com = salva_comitato_servizio(workbook, nomi_comitato_scelti)
+        if ok_com:
+            st.cache_data.clear()
+            st.success("✔ Comitato di servizio aggiornato.")
+        else:
+            st.error(err_com)
+
+    st.markdown("---")
+
     st.subheader("🔗 Link di Accesso Rapido Presenze")
     st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
 
@@ -6108,6 +6210,32 @@ def _domande_mese_riferimento() -> tuple:
     return (anno, mese)
 
 
+def _domande_mese_riferimento_postit() -> tuple:
+    """Il mese 'di riferimento' per il post-it delle domande di pioniere ausiliario:
+    dal giorno 15 del mese in poi si passa già a considerare il mese successivo
+    (finestra "dal 15 del mese M al 14 del mese M+1" mostra il mese M+1)."""
+    oggi = date.today()
+    if oggi.day <= 14:
+        return (oggi.year, oggi.month)
+    anno, mese = oggi.year, oggi.month + 1
+    if mese > 12:
+        mese = 1
+        anno += 1
+    return (anno, mese)
+
+
+def approva_domanda_pioniere(_workbook, riga_foglio: int, cca: str, seg: str, ss: str) -> tuple:
+    """Scrive le iniziali di approvazione nelle colonne G (CCA), H (SEG), I (SS)
+    del foglio 'Pionieri Ausiliari' per la riga indicata. Aggiorna SOLO queste tre
+    celle, senza toccare il resto della riga (nome, mese, data, ecc.)."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_PIONIERI_AUSILIARIO)
+        ws.update(f"G{riga_foglio}:I{riga_foglio}", [[cca, seg, ss]], value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante l'approvazione: {e}"
+
+
 
 def _domande_calcola_stato(riga: dict) -> tuple:
     """Ritorna (etichetta, n_approvazioni) in base a quante fra CCA/SEG/SS sono compilate."""
@@ -6321,10 +6449,7 @@ def mostra_domande_pioniere_ausiliario():
     )
     etichetta_mese_scelto = f"{MESI_ITALIANI[mese_scelto_tupla[1]]} {mese_scelto_tupla[0]}"
 
-    filtro_stato = st.radio("Stato", ["Tutte", "🟢 Approvate", "🔴 Da approvare"],
-                             horizontal=True, key="domande_filtro_stato")
-
-    # ── 4. PREPARAZIONE DATI E TABELLA ───────────────────────────────────
+    # ── 4. PREPARAZIONE DATI (prima dei filtri di stato, per poter contare) ──
     df_domande = df_domande.reset_index(drop=True)
     if not df_domande.empty:
         df_domande["_riga_foglio"] = RIGA_INTESTAZIONE_PIONIERI_AUSILIARIO + 1 + df_domande.index
@@ -6332,11 +6457,25 @@ def mostra_domande_pioniere_ausiliario():
         df_domande["_stato_label"] = [s[0] for s in stati]
         df_domande["_n_approvazioni"] = [s[1] for s in stati]
 
-    df_filtrato = _domande_filtra_per_mese(df_domande, etichetta_mese_scelto)
+    df_mese = _domande_filtra_per_mese(df_domande, etichetta_mese_scelto)
+    if "_n_approvazioni" in df_mese.columns:
+        n_tutte_mese = len(df_mese)
+        n_approvate_mese = int((df_mese["_n_approvazioni"] >= 3).sum())
+        n_da_approvare_mese = n_tutte_mese - n_approvate_mese
+    else:
+        n_tutte_mese = n_approvate_mese = n_da_approvare_mese = 0
+
+    filtro_stato = st.radio(
+        "Stato",
+        [f"Tutte ({n_tutte_mese})", f"🟢 Approvate ({n_approvate_mese})", f"🔴 Da approvare ({n_da_approvare_mese})"],
+        horizontal=True, key="domande_filtro_stato",
+    )
+
+    df_filtrato = df_mese
     if "_n_approvazioni" in df_filtrato.columns:
-        if filtro_stato == "🟢 Approvate":
+        if filtro_stato.startswith("🟢"):
             df_filtrato = df_filtrato[df_filtrato["_n_approvazioni"] >= 3]
-        elif filtro_stato == "🔴 Da approvare":
+        elif filtro_stato.startswith("🔴"):
             df_filtrato = df_filtrato[df_filtrato["_n_approvazioni"] < 3]
     df_filtrato = df_filtrato.reset_index(drop=True)
 
@@ -6387,18 +6526,20 @@ def mostra_domande_pioniere_ausiliario():
                 st.session_state.domande_menu_aperto = not st.session_state.get(
                     "domande_menu_aperto", False)
 
-        apri_form_click = esporta_click = zip_click = annunci_click = False
+        apri_form_click = esporta_click = zip_click = annunci_click = approva_click = False
         if st.session_state.get("domande_menu_aperto"):
             etichetta_nuovo = "✏️ Modifica" if riga_selezionata is not None else "➕ Compila"
             apri_form_click = st.button(etichetta_nuovo, key="domande_apri_form",
                                         use_container_width=True, disabled=sola_lettura())
+            approva_click = st.button("✔ Approva", key="domande_approva", use_container_width=True,
+                                      disabled=riga_selezionata is None or sola_lettura())
             esporta_click = st.button("📄 Esporta", key="domande_esporta", use_container_width=True,
                                       disabled=riga_selezionata is None)
             zip_click = st.button(f"📦 ZIP ({n_zip})", key="domande_esporta_zip",
                                   use_container_width=True, disabled=n_zip == 0)
             annunci_click = st.button("📤 Esporta in Annunci", key="domande_esporta_annunci",
                                       use_container_width=True, disabled=n_zip == 0)
-            if apri_form_click or esporta_click or zip_click or annunci_click:
+            if apri_form_click or approva_click or esporta_click or zip_click or annunci_click:
                 st.session_state.domande_menu_aperto = False
 
         if apri_form_click:
@@ -6411,6 +6552,27 @@ def mostra_domande_pioniere_ausiliario():
             else:
                 st.session_state.domande_editor = {"modo": "nuovo"}
             st.session_state.domande_conferma_elimina = None
+
+        if approva_click and riga_selezionata is not None:
+            comitato_attuale = leggi_comitato_servizio(workbook)
+            cca = _iniziali_da_nome(comitato_attuale.get("Coordinatore", ""))
+            seg = _iniziali_da_nome(comitato_attuale.get("Segretario", ""))
+            ss = _iniziali_da_nome(comitato_attuale.get("Sorvegliante del servizio", ""))
+            if not (cca and seg and ss):
+                st.error("Comitato di servizio incompleto: vai in Impostazioni → «Comitato di servizio» "
+                         "e imposta i tre nominativi prima di approvare.")
+            else:
+                with st.spinner("Approvo…"):
+                    ok_appr, err_appr = approva_domanda_pioniere(
+                        workbook, int(riga_selezionata["_riga_foglio"]), cca, seg, ss)
+                if ok_appr:
+                    st.cache_data.clear()
+                    st.session_state.domande_tabella_versione = st.session_state.get(
+                        "domande_tabella_versione", 0) + 1
+                    st.success(f"✔ Domanda di «{riga_selezionata.get('Nome e Cognome', '')}» approvata.")
+                    st.rerun()
+                else:
+                    st.error(err_appr)
 
         if esporta_click and riga_selezionata is not None:
             with st.spinner("Compilo il modulo…"):
