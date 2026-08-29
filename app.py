@@ -620,15 +620,27 @@ def _s21_y_da_bottom(bottom: float, offset: float = 0.0, alza: float = 1.5) -> f
 
 def _s21_centro_box(c: rl_canvas.Canvas, box: tuple, offset: float, testo: str = "X",
                      font_name: str = "Helvetica-Bold", font_size: float = 10.0, sposta: float = 0.0):
+    """Disegna un segno di spunta (√) vettoriale centrato nella casella, al posto
+    della vecchia "X" scritta come testo. Il parametro 'testo' non è più usato
+    per il disegno (si spunta sempre con lo stesso segno a forma di spunta):
+    resta nella firma solo per non dover toccare le tante chiamate esistenti,
+    che continuano a passare 'font_size' e 'sposta' per controllare dimensione
+    e posizione, esattamente come prima."""
     x0, x1, top, bottom = box
-    fattore_altezza_maiuscole = 0.717
-    largo_testo = c.stringWidth(testo, font_name, font_size)
-    x = (x0 + x1) / 2 - largo_testo / 2
+    cx = (x0 + x1) / 2
     centro_verticale_top = (top + bottom) / 2 + offset
-    baseline_top = centro_verticale_top + (font_size * fattore_altezza_maiuscole) / 2 + sposta
-    y = S21_PAGE_H - baseline_top
-    c.setFont(font_name, font_size)
-    c.drawString(x, y, testo)
+    cy = S21_PAGE_H - centro_verticale_top - sposta
+    dimensione = font_size * 0.7
+    c.saveState()
+    c.setLineWidth(max(1.0, dimensione * 0.12))
+    c.setLineCap(1)
+    c.setLineJoin(1)
+    percorso = c.beginPath()
+    percorso.moveTo(cx - dimensione * 0.5, cy - dimensione * 0.05)
+    percorso.lineTo(cx - dimensione * 0.15, cy - dimensione * 0.42)
+    percorso.lineTo(cx + dimensione * 0.5, cy + dimensione * 0.42)
+    c.drawPath(percorso, stroke=1, fill=0)
+    c.restoreState()
 
 
 def _s21_testo_centrato_colonna(c: rl_canvas.Canvas, testo: str, col: tuple, top: float, bottom: float,
@@ -6479,7 +6491,7 @@ def mostra_domande_pioniere_ausiliario():
             df_filtrato = df_filtrato[df_filtrato["_n_approvazioni"] < 3]
     df_filtrato = df_filtrato.reset_index(drop=True)
 
-    idx_sel = None
+    righe_selezionate = []
     colonne_mostrate = [c for c in ["_stato_label", "Nome e Cognome", "Mese di", "Ore", "T/I",
                                      "Data", "CCA", "SEG", "SS", "Inviata il"]
                          if c in df_filtrato.columns]
@@ -6492,7 +6504,7 @@ def mostra_domande_pioniere_ausiliario():
             hide_index=True,
             use_container_width=True,
             on_select="rerun",
-            selection_mode="single-row",
+            selection_mode="multi-row",
             key=chiave_tabella,
             column_config={
                 "_stato_label": st.column_config.TextColumn("Stato", width="small"),
@@ -6502,10 +6514,11 @@ def mostra_domande_pioniere_ausiliario():
             },
         )
         righe_sel = evento.selection.rows if evento and evento.selection else []
-        if righe_sel and righe_sel[0] < len(df_filtrato):
-            idx_sel = righe_sel[0]
+        indici_validi = [i for i in righe_sel if i < len(df_filtrato)]
+        righe_selezionate = [df_filtrato.loc[i].to_dict() for i in indici_validi]
 
-    riga_selezionata = df_filtrato.loc[idx_sel].to_dict() if idx_sel is not None else None
+    n_selezionate = len(righe_selezionate)
+    riga_selezionata = righe_selezionate[0] if n_selezionate == 1 else None
 
     if df_filtrato.empty:
         st.info("Nessuna domanda trovata con questi filtri.")
@@ -6528,13 +6541,15 @@ def mostra_domande_pioniere_ausiliario():
 
         apri_form_click = esporta_click = zip_click = annunci_click = approva_click = False
         if st.session_state.get("domande_menu_aperto"):
-            etichetta_nuovo = "✏️ Modifica" if riga_selezionata is not None else "➕ Compila"
+            etichetta_nuovo = "✏️ Modifica" if n_selezionate == 1 else "➕ Compila"
             apri_form_click = st.button(etichetta_nuovo, key="domande_apri_form",
-                                        use_container_width=True, disabled=sola_lettura())
-            approva_click = st.button("✔ Approva", key="domande_approva", use_container_width=True,
-                                      disabled=riga_selezionata is None or sola_lettura())
+                                        use_container_width=True,
+                                        disabled=sola_lettura() or n_selezionate > 1)
+            etichetta_approva = "✔ Approva" if n_selezionate <= 1 else f"✔ Approva ({n_selezionate})"
+            approva_click = st.button(etichetta_approva, key="domande_approva", use_container_width=True,
+                                      disabled=n_selezionate == 0 or sola_lettura())
             esporta_click = st.button("📄 Esporta", key="domande_esporta", use_container_width=True,
-                                      disabled=riga_selezionata is None)
+                                      disabled=n_selezionate != 1)
             zip_click = st.button(f"📦 ZIP ({n_zip})", key="domande_esporta_zip",
                                   use_container_width=True, disabled=n_zip == 0)
             annunci_click = st.button("📤 Esporta in Annunci", key="domande_esporta_annunci",
@@ -6553,7 +6568,7 @@ def mostra_domande_pioniere_ausiliario():
                 st.session_state.domande_editor = {"modo": "nuovo"}
             st.session_state.domande_conferma_elimina = None
 
-        if approva_click and riga_selezionata is not None:
+        if approva_click and righe_selezionate:
             comitato_attuale = leggi_comitato_servizio(workbook)
             cca = _iniziali_da_nome(comitato_attuale.get("Coordinatore", ""))
             seg = _iniziali_da_nome(comitato_attuale.get("Segretario", ""))
@@ -6562,17 +6577,26 @@ def mostra_domande_pioniere_ausiliario():
                 st.error("Comitato di servizio incompleto: vai in Impostazioni → «Comitato di servizio» "
                          "e imposta i tre nominativi prima di approvare.")
             else:
-                with st.spinner("Approvo…"):
-                    ok_appr, err_appr = approva_domanda_pioniere(
-                        workbook, int(riga_selezionata["_riga_foglio"]), cca, seg, ss)
-                if ok_appr:
+                n_ok = 0
+                errori_approvazione = []
+                with st.spinner(f"Approvo {len(righe_selezionate)} domande…"):
+                    for riga in righe_selezionate:
+                        ok_appr, err_appr = approva_domanda_pioniere(
+                            workbook, int(riga["_riga_foglio"]), cca, seg, ss)
+                        if ok_appr:
+                            n_ok += 1
+                        else:
+                            errori_approvazione.append(f"{riga.get('Nome e Cognome', '')}: {err_appr}")
+                if n_ok:
                     st.cache_data.clear()
                     st.session_state.domande_tabella_versione = st.session_state.get(
                         "domande_tabella_versione", 0) + 1
-                    st.success(f"✔ Domanda di «{riga_selezionata.get('Nome e Cognome', '')}» approvata.")
+                if errori_approvazione:
+                    st.error("Alcune approvazioni non sono riuscite:\n" + "\n".join(errori_approvazione))
+                if n_ok:
+                    testo_ok = "✔ 1 domanda approvata." if n_ok == 1 else f"✔ {n_ok} domande approvate."
+                    st.success(testo_ok)
                     st.rerun()
-                else:
-                    st.error(err_appr)
 
         if esporta_click and riga_selezionata is not None:
             with st.spinner("Compilo il modulo…"):
@@ -6657,7 +6681,3 @@ elif st.session_state.pagina == "domande_pionieri":
     mostra_domande_pioniere_ausiliario()
 else:
     mostra_home()
-
-
-
-
