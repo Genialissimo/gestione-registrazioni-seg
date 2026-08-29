@@ -5116,104 +5116,100 @@ def mostra_impostazioni():
         st.warning("⚠️ Nessun foglio dati collegato.")
         return
 
-    st.subheader("📅 Giorni delle adunanze")
-    st.caption("Usati in «Presenti alle adunanze» per controllare la data inserita e proporre in automatico "
-               "il tipo di adunanza giusto per quel giorno. Se cambiano in futuro, aggiornali qui — non "
-               "serve toccare il codice del programma. Puoi scegliere anche più giorni per tipo.")
+    with st.expander("📅 Giorni delle adunanze"):
+        st.caption("Usati in «Presenti alle adunanze» per controllare la data inserita e proporre in automatico "
+                   "il tipo di adunanza giusto per quel giorno. Se cambiano in futuro, aggiornali qui — non "
+                   "serve toccare il codice del programma. Puoi scegliere anche più giorni per tipo.")
 
-    giorni_attuali = leggi_giorni_adunanze_per_tipo(workbook)
-    giorni_scelti = {}
-    for tipo in TIPI_ADUNANZA:
-        giorni_scelti[tipo] = st.multiselect(f"Giorni — {tipo}", GIORNI_SETTIMANA_IT,
-                                             default=giorni_attuali.get(tipo, []),
-                                             key=f"impostazioni_giorni_{tipo}",
-                                             disabled=sola_lettura())
+        giorni_attuali = leggi_giorni_adunanze_per_tipo(workbook)
+        giorni_scelti = {}
+        for tipo in TIPI_ADUNANZA:
+            giorni_scelti[tipo] = st.multiselect(f"Giorni — {tipo}", GIORNI_SETTIMANA_IT,
+                                                 default=giorni_attuali.get(tipo, []),
+                                                 key=f"impostazioni_giorni_{tipo}",
+                                                 disabled=sola_lettura())
 
-    tutti_vuoti = not any(giorni_scelti.values())
-    if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
-                 disabled=tutti_vuoti or sola_lettura()):
-        ok, err_salva = salva_giorni_adunanze_per_tipo(workbook, giorni_scelti)
-        if ok:
-            st.cache_data.clear()
-            st.success("✔ Giorni delle adunanze aggiornati.")
-        else:
-            st.error(err_salva)
+        tutti_vuoti = not any(giorni_scelti.values())
+        if st.button("✔ Salva impostazione", type="primary", use_container_width=True,
+                     disabled=tutti_vuoti or sola_lettura()):
+            ok, err_salva = salva_giorni_adunanze_per_tipo(workbook, giorni_scelti)
+            if ok:
+                st.cache_data.clear()
+                st.success("✔ Giorni delle adunanze aggiornati.")
+            else:
+                st.error(err_salva)
 
-    if tutti_vuoti:
-        st.info("Seleziona almeno un giorno per almeno un tipo di adunanza.")
+        if tutti_vuoti:
+            st.info("Seleziona almeno un giorno per almeno un tipo di adunanza.")
 
-    st.markdown("---")
+    with st.expander("🤝 Comitato di servizio"):
+        st.caption("Le iniziali di chi ricopre questi incarichi vengono usate per approvare in un tocco "
+                   "le domande di pioniere ausiliario.")
 
-    st.subheader("🤝 Comitato di servizio")
-    st.caption("Le iniziali di chi ricopre questi incarichi vengono usate per approvare in un tocco "
-               "le domande di pioniere ausiliario.")
+        comitato_attuale = leggi_comitato_servizio(workbook)
+        nomi_comitato_scelti = {}
+        for ruolo in RUOLI_COMITATO_SERVIZIO:
+            st.caption(ruolo)
+            nomi_comitato_scelti[ruolo] = st.text_input(
+                f"Cognome e Nome — {ruolo}", value=comitato_attuale.get(ruolo, ""),
+                key=f"comitato_{ruolo}", label_visibility="collapsed", disabled=sola_lettura(),
+            )
 
-    comitato_attuale = leggi_comitato_servizio(workbook)
-    nomi_comitato_scelti = {}
-    for ruolo in RUOLI_COMITATO_SERVIZIO:
-        st.caption(ruolo)
-        nomi_comitato_scelti[ruolo] = st.text_input(
-            f"Cognome e Nome — {ruolo}", value=comitato_attuale.get(ruolo, ""),
-            key=f"comitato_{ruolo}", label_visibility="collapsed", disabled=sola_lettura(),
-        )
+        if st.button("✔ Salva comitato di servizio", type="primary", use_container_width=True,
+                     disabled=sola_lettura()):
+            ok_com, err_com = salva_comitato_servizio(workbook, nomi_comitato_scelti)
+            if ok_com:
+                st.cache_data.clear()
+                st.success("✔ Comitato di servizio aggiornato.")
+            else:
+                st.error(err_com)
 
-    if st.button("✔ Salva comitato di servizio", type="primary", use_container_width=True,
-                 disabled=sola_lettura()):
-        ok_com, err_com = salva_comitato_servizio(workbook, nomi_comitato_scelti)
-        if ok_com:
-            st.cache_data.clear()
-            st.success("✔ Comitato di servizio aggiornato.")
-        else:
-            st.error(err_com)
+    with st.expander("🔗 Link di Accesso Rapido Presenze"):
+        st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
 
-    st.markdown("---")
+        url_app = "https://gestioneseg.streamlit.app/?page=presenze"
 
-    st.subheader("🔗 Link di Accesso Rapido Presenze")
-    st.info("Condividi questo link con chi deve registrare solo le presenze. Chi lo apre vedrà **esclusivamente** la schermata di inserimento, senza poter accedere al resto del programma:")
-
-    url_app = "https://gestioneseg.streamlit.app/?page=presenze"
-
-    html_copia_link = f"""
-    <div style="font-family: sans-serif; font-size: 14px;">
-        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 8px; border: 1px solid #d6d8db; margin-bottom: 10px; word-break: break-all;">
-            <code style="color: #31333F; font-size: 13px;">{url_app}</code>
+        html_copia_link = f"""
+        <div style="font-family: sans-serif; font-size: 14px;">
+            <div style="background-color: #f0f2f6; padding: 10px; border-radius: 8px; border: 1px solid #d6d8db; margin-bottom: 10px; word-break: break-all;">
+                <code style="color: #31333F; font-size: 13px;">{url_app}</code>
+            </div>
+            <button id="btnCopia" onclick="copiaLink()" style="
+                background-color: #ff4b4b;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            ">
+                📋 Copia link
+            </button>
+            <div id="messaggioCopiato" style="display: none; color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-weight: 600;">
+                ✅ Il link è stato copiato negli appunti!
+            </div>
         </div>
-        <button id="btnCopia" onclick="copiaLink()" style="
-            background-color: #ff4b4b;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        ">
-            📋 Copia link
-        </button>
-        <div id="messaggioCopiato" style="display: none; color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-weight: 600;">
-            ✅ Il link è stato copiato negli appunti!
-        </div>
-    </div>
 
-    <script>
-    function copiaLink() {{
-        navigator.clipboard.writeText("{url_app}").then(function() {{
-            var msg = document.getElementById("messaggioCopiato");
-            msg.style.display = "block";
-            setTimeout(function() {{
-                msg.style.display = "none";
-            }}, 3500);
-        }}).catch(function(err) {{
-            alert("Errore nella copia: " + err);
-        }});
-    }}
-    </script>
-    """
+        <script>
+        function copiaLink() {{
+            navigator.clipboard.writeText("{url_app}").then(function() {{
+                var msg = document.getElementById("messaggioCopiato");
+                msg.style.display = "block";
+                setTimeout(function() {{
+                    msg.style.display = "none";
+                }}, 3500);
+            }}).catch(function(err) {{
+                alert("Errore nella copia: " + err);
+            }});
+        }}
+        </script>
+        """
 
-    components.html(html_copia_link, height=140)
+        components.html(html_copia_link, height=140)
 
 
 # ─────────────────────────────────────────────────────────────────
