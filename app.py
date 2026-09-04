@@ -1712,7 +1712,7 @@ def _riepilogo_dettagli_gruppo(df_tutti_periodo: pd.DataFrame) -> dict:
         for mese_val in sorted(df_aus["_mese_ord"].unique()):
             n_mese = df_aus.loc[df_aus["_mese_ord"] == mese_val, "Nome"].nunique()
             if n_mese > 0:
-                ausiliari_per_mese.append((_etichetta_mese(mese_val), n_mese))
+                ausiliari_per_mese.append((_etichetta_mese_anno(mese_val), n_mese))
 
     # 2. Studi biblici totale + per categoria/persona (Proclamatori include anche gli ausiliari).
     # Il numero accanto a ogni nome è la MEDIA MENSILE (totale studi / mesi in cui risulta
@@ -1770,7 +1770,7 @@ def _riepilogo_dettagli_gruppo(df_tutti_periodo: pd.DataFrame) -> dict:
         for mese_val in sorted(df_irr["_mese_ord"].unique()):
             nomi = sorted(set(df_irr.loc[df_irr["_mese_ord"] == mese_val, "Nome"]))
             if nomi:
-                irregolari_per_mese.append((_etichetta_mese(mese_val), nomi))
+                irregolari_per_mese.append((_etichetta_mese_anno(mese_val), nomi))
 
     return {
         "n_ausiliari_totale": n_ausiliari_totale, "ausiliari_per_mese": ausiliari_per_mese,
@@ -1911,13 +1911,19 @@ def genera_pdf_riepilogo_attivita(blocchi: list, etichetta_periodo: str, etichet
             elenco_ausiliari = dett["ausiliari_per_mese"]
             if elenco_ausiliari:
                 N_COLONNE_MESI = 4
-                celle_mesi = [Paragraph(f"{etichetta_mese}: {n}", stile_persona_grid)
-                              for etichetta_mese, n in elenco_ausiliari]
+                n_elementi = len(elenco_ausiliari)
+                n_righe_mesi = -(-n_elementi // N_COLONNE_MESI)  # arrotonda per eccesso
+                colonne_mesi = [elenco_ausiliari[c * n_righe_mesi:(c + 1) * n_righe_mesi]
+                                for c in range(N_COLONNE_MESI)]
                 righe_mesi = []
-                for i in range(0, len(celle_mesi), N_COLONNE_MESI):
-                    riga = celle_mesi[i:i + N_COLONNE_MESI]
-                    while len(riga) < N_COLONNE_MESI:
-                        riga.append("")
+                for r in range(n_righe_mesi):
+                    riga = []
+                    for colonna in colonne_mesi:
+                        if r < len(colonna):
+                            etichetta_mese, n = colonna[r]
+                            riga.append(Paragraph(f"{etichetta_mese}: {n}", stile_persona_grid))
+                        else:
+                            riga.append("")
                     righe_mesi.append(riga)
                 larghezza_col_mese = (17.4 * cm) / N_COLONNE_MESI
                 tabella_mesi = Table(righe_mesi, colWidths=[larghezza_col_mese] * N_COLONNE_MESI)
