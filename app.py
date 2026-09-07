@@ -2271,6 +2271,12 @@ if "pagina" not in st.session_state:
 def vai_a(pagina: str):
     st.session_state.pagina = pagina
 
+# Naviga alla sezione cliccata sul post-it della home (link "?vai_a=..."),
+# stesso meccanismo già usato per il link di sola-presenze ("?page=presenze").
+_pagina_da_postit = st.query_params.get("vai_a")
+if _pagina_da_postit:
+    st.session_state.pagina = _pagina_da_postit
+    del st.query_params["vai_a"]
 
 def vai_a_home_reset_riepilogo():
     st.session_state["riepilogo_expander_aperto"] = False
@@ -2686,6 +2692,15 @@ def mostra_home():
         .promemoria-riga:last-child {
             border-bottom: none;
         }
+        .promemoria-link {
+        text-decoration: none;
+        color: inherit;
+        cursor: pointer;
+        }
+       .promemoria-link:hover .promemoria-testo {
+       text-decoration: underline;
+       }
+        
         .dot {
             width: 11px;
             height: 11px;
@@ -2921,13 +2936,15 @@ def mostra_home():
         if n_att > 0:
             dot_cls_mese = "dot-green" if n_arch >= n_att else "dot-yellow"
             promemoria.append((dot_cls_mese,
-                               f"{n_arch}/{n_att} Rapporti di servizio consegnati (mese {mese_arch})."))
+                               f"{n_arch}/{n_att} Rapporti di servizio consegnati (mese {mese_arch}).",
+                               "registrazioni"))
     elif nomi_mancanti_rapporto_mese is not None and conteggio_attivi_home > 0:
         n_mancanti_mese = len(nomi_mancanti_rapporto_mese)
         n_consegnati_mese = conteggio_attivi_home - n_mancanti_mese
         dot_cls_mese = "dot-green" if n_mancanti_mese == 0 else "dot-yellow"
         promemoria.append((dot_cls_mese,
-                           f"{n_consegnati_mese}/{conteggio_attivi_home} Rapporti di servizio consegnati."))
+                           f"{n_consegnati_mese}/{conteggio_attivi_home} Rapporti di servizio consegnati.",
+                           "registrazioni"))
     # Se non c'è nulla da controllare (non collegato, nessun attivo), non si scrive nulla.
 
     # ─────────────────────────────────────────────────────────────────
@@ -2937,37 +2954,37 @@ def mostra_home():
         df_tutti_home, df_anagrafica_home)
 
     if n_dovuti_rapporti is None:
-        promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati."))
+        promemoria.append(("dot-grey", "Connettiti al foglio Google per vedere lo stato dei rapporti consegnati.", None))
     elif mancanti_dettaglio:
         n_persone_mancanti = len(mancanti_dettaglio)
         dot_cls = "dot-yellow" if n_persone_mancanti < 5 else "dot-red"
         testo = "Rapporti mancanti in archivio:<br>" + "<br>".join(mancanti_dettaglio)
-        promemoria.append((dot_cls, testo))
+        promemoria.append((dot_cls, testo, "storico"))
     # Se non manca nulla (o non ci sono proclamatori attivi da controllare), non si scrive nulla.
 
     # Segnalazione 2: Anagrafiche
     if n_completi_anagrafica is None or (n_completi_anagrafica == 0 and n_incompleti_anagrafica == 0):
-        promemoria.append(("dot-grey", "Nessuna anagrafica attiva da verificare al momento."))
+        promemoria.append(("dot-grey", "Nessuna anagrafica attiva da verificare al momento.", "anagrafiche"))
     elif n_incompleti_anagrafica == 0:
-        promemoria.append(("dot-green", "Tutte le anagrafiche sono complete."))
+        promemoria.append(("dot-green", "Tutte le anagrafiche sono complete.", "anagrafiche"))
     elif n_incompleti_anagrafica < n_completi_anagrafica:
-        promemoria.append(("dot-yellow", f"{n_incompleti_anagrafica} anagrafiche incomplete da controllare."))
+        promemoria.append(("dot-yellow", f"{n_incompleti_anagrafica} anagrafiche incomplete da controllare.", "anagrafiche"))
     else:
-        promemoria.append(("dot-red", f"{n_incompleti_anagrafica} anagrafiche incomplete su {n_completi_anagrafica + n_incompleti_anagrafica}: da sistemare con priorità."))
+        promemoria.append(("dot-red", f"{n_incompleti_anagrafica} anagrafiche incomplete su {n_completi_anagrafica + n_incompleti_anagrafica}: da sistemare con priorità.", "anagrafiche"))
 
     # Segnalazione 3: Presenze Adunanze
     if esito_presenze_adunanza is True:
-        promemoria.append(("dot-green", "Presenze dell'ultima adunanza registrate correttamente."))
+        promemoria.append(("dot-green", "Presenze dell'ultima adunanza registrate correttamente.", "presenze"))
     elif isinstance(esito_presenze_adunanza, tuple) and esito_presenze_adunanza[0] is False:
         _, data_mancante, giorno_mancante = esito_presenze_adunanza
-        promemoria.append(("dot-red", f"Presenze adunanza non inserite per {giorno_mancante} {data_mancante}."))
+        promemoria.append(("dot-red", f"Presenze adunanza non inserite per {giorno_mancante} {data_mancante}.", "presenze"))
 
     # Segnalazione 4: Domande di pioniere ausiliario da approvare (qualsiasi mese)
     if n_domande_da_approvare_tot is not None and n_domande_da_approvare_tot > 0:
         dot_cls_dom = "dot-yellow" if n_domande_da_approvare_tot < 5 else "dot-red"
         testo_domande = "1 domanda di pioniere ausiliario da approvare." if n_domande_da_approvare_tot == 1 \
             else f"{n_domande_da_approvare_tot} domande di pioniere ausiliario da approvare."
-        promemoria.append((dot_cls_dom, testo_domande))
+        promemoria.append((dot_cls_dom, testo_domande, "domande_pionieri"))
     # Se non ce n'è nessuna da approvare (di nessun mese), non si scrive nulla.
 
     # Segnalazione 5: Approvate X/Y Domande di pioniere ausiliario (mese di riferimento)
@@ -2975,14 +2992,17 @@ def mostra_home():
         _etichetta_dom, n_approvate_dom, n_totale_dom = info_mese_domande
         dot_cls_appr = "dot-green" if n_approvate_dom >= n_totale_dom else "dot-yellow"
         promemoria.append((dot_cls_appr,
-                           f"Approvate {n_approvate_dom}/{n_totale_dom} Domande di pioniere ausiliario."))
+                           f"Approvate {n_approvate_dom}/{n_totale_dom} Domande di pioniere ausiliario.",
+                           "domande_pionieri"))
     # Se non c'è nessuna domanda per il mese di riferimento, non si scrive nulla.
 
-    righe_html = "".join(
-        f'<div class="promemoria-riga"><span class="dot {dot_cls}"></span>'
-        f'<span class="promemoria-testo">{testo}</span></div>'
-        for dot_cls, testo in promemoria
-    )
+    def _riga_postit(dot_cls, testo, pagina_target):
+        contenuto = f'<span class="dot {dot_cls}"></span><span class="promemoria-testo">{testo}</span>'
+        if pagina_target and collegato:
+            return f'<a class="promemoria-riga promemoria-link" href="?vai_a={pagina_target}" target="_self">{contenuto}</a>'
+        return f'<div class="promemoria-riga">{contenuto}</div>'
+
+    righe_html = "".join(_riga_postit(dot_cls, testo, pagina_target) for dot_cls, testo, pagina_target in promemoria)
 
     postit_html = f"""
     <div class="postit-card">
