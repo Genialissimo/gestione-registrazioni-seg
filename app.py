@@ -2848,14 +2848,14 @@ def mostra_home():
             }
         }
 
-        .impegni-card {
+        div[class*="st-key-impegni_card_container"] {
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd) !important;
+            border: none !important;
+            border-radius: 14px !important;
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.18) !important;
             width: 92%;
             max-width: 900px;
-            margin: 8px auto 24px auto;
-            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
-            border-radius: 14px;
-            padding: 22px clamp(20px, 4vw, 40px);
-            box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
+            margin: 8px auto 24px auto !important;
         }
         .impegni-titolo {
             font-size: clamp(1.05rem, 1.6vw, 1.3rem);
@@ -2892,7 +2892,6 @@ def mostra_home():
             color: #0c4a6e;
             line-height: 1.35;
         }
-
         .impegni-vuoto {
             font-size: 0.92rem;
             color: #0c4a6e;
@@ -3250,15 +3249,10 @@ def mostra_home():
         riga1_testo = f'{r["scadenza_str"]} ({r["giorni"]}) — {r["categoria"]}' if r["categoria"] \
             else f'{r["scadenza_str"]} ({r["giorni"]})'
         dot_html = f'<span class="dot {_impegni_dot_class(r["giorni"])}"></span>'
-        if collegato:
-            riga1_html = (f'<a class="impegni-link" href="?vai_a=impegni_scadenze" target="_self">'
-                          f'<span class="impegni-testo">{riga1_testo}</span></a>')
-        else:
-            riga1_html = f'<span class="impegni-testo">{riga1_testo}</span>'
+        riga1_html = f'<span class="impegni-testo">{riga1_testo}</span>'
         riga2_html = f'<div class="impegni-oggetto">{r["oggetto"]}</div>'
         return (f'<div class="impegni-riga">{dot_html}'
                 f'<div class="impegni-testo-blocco">{riga1_html}{riga2_html}</div></div>')
-
 
     def _impegni_html_gruppi(lista):
         scaduti = sorted([r for r in lista if r["giorni"] < 0], key=lambda r: r["giorni"])
@@ -3288,14 +3282,18 @@ def mostra_home():
     else:
         corpo_gruppi_html = '<div class="impegni-vuoto">Nessun impegno da ricordare al momento.</div>'
 
-    impegni_widget_html = f"""
-    <div class="impegni-card">
-        <div class="impegni-titolo">🗓️ Prossimi impegni e scadenze ({n_impegni_da_fare_totale})</div>
-        <div class="impegni-lista">
-            {corpo_gruppi_html}
-        </div>
-    </div>
-    """
+    contenuto_widget_html = (
+        f'<div class="impegni-titolo">🗓️ Prossimi impegni e scadenze ({n_impegni_da_fare_totale})</div>'
+        f'<div class="impegni-lista">{corpo_gruppi_html}</div>'
+    )
+    if collegato:
+        impegni_widget_html = (
+            f'<a href="?vai_a=impegni_scadenze" target="_self" '
+            f'style="text-decoration:none; color:inherit; display:block; cursor:pointer;">'
+            f'{contenuto_widget_html}</a>'
+        )
+    else:
+        impegni_widget_html = contenuto_widget_html
 
     lista_impostazioni = [
         ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
@@ -3363,14 +3361,14 @@ def mostra_home():
     with tabs[0]:
         st.markdown(postit_html, unsafe_allow_html=True)
 
-        st.button("➕ Aggiungi impegno", key="home_aggiungi_impegno", use_container_width=True,
-                  disabled=not collegato, on_click=vai_a_impegni_nuovo)
-        st.markdown(impegni_widget_html, unsafe_allow_html=True)
+        with st.container(key="impegni_card_container", border=True):
+            st.button("➕ Aggiungi impegno", key="home_aggiungi_impegno", use_container_width=True,
+                      disabled=not collegato, on_click=vai_a_impegni_nuovo)
+            st.markdown(impegni_widget_html, unsafe_allow_html=True)
 
     for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
         with tab:
             mostra_griglia_card(lista_card)
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: RAPPORTI CONSEGNATI
 # ─────────────────────────────────────────────────────────────────
@@ -7591,37 +7589,25 @@ def mostra_impegni_scadenze():
             flex: 1 1 0% !important;
             min-width: 0 !important;
         }
-        div[class*="st-key-impegno_link_present_"] button,
+        div[class*="st-key-impegno_link_present_"] button {
+            background: transparent !important;
+            border: none !important;
+            color: #2563eb !important;
+            text-decoration: underline !important;
+            font-weight: 500 !important;
+            padding: 2px 6px !important;
+            min-height: 0 !important;
+        }
         div[class*="st-key-impegno_link_absent_"] button {
             background: transparent !important;
             border: none !important;
-            font-weight: 500 !important;
-            padding: 0 4px !important;
-            min-height: 0 !important;
-            height: auto !important;
-            line-height: 1.2 !important;
-        }
-        div[class*="st-key-impegno_link_present_"] button p,
-        div[class*="st-key-impegno_link_absent_"] button p {
-            margin: 0 !important;
-            line-height: 1.2 !important;
-        }
-        div[class*="st-key-impegno_link_present_"] button {
-            color: #2563eb !important;
-            text-decoration: underline !important;
-        }
-        div[class*="st-key-impegno_link_absent_"] button {
             color: #cbd5e1 !important;
             text-decoration: none !important;
-        }}
-        .impegno-riga1 {
-            font-weight: 700;
-            font-size: 0.95rem;
-            color: #0c4a6e;
-            text-align: left;
-            margin: 0 0 2px 0;
+            font-weight: 500 !important;
+            padding: 2px 6px !important;
+            min-height: 0 !important;
         }
-            div[class*="st-key-impegno_card_fatto_"] {
+        div[class*="st-key-impegno_card_fatto_"] {
             background: #f0fdf4 !important;
             border-color: #bbf7d0 !important;
         }
@@ -7632,6 +7618,16 @@ def mostra_impegni_scadenze():
         div[class*="st-key-impegno_card_dafare_"] {
             background: #f9fafb !important;
             border-color: #e5e7eb !important;
+        }
+        .impegno-riga1 {
+            font-weight: 700 !important;
+            font-size: 0.95rem;
+            color: #0c4a6e;
+            text-align: left;
+            margin: 0 0 2px 0;
+        }
+        .impegno-riga1 * {
+            font-weight: 700 !important;
         }
         .impegno-oggetto-riga {
             font-size: 0.9rem;
@@ -7679,7 +7675,7 @@ def mostra_impegni_scadenze():
         _form_impegno(editor, categorie_disponibili)
         st.divider()
 
-    filtro_stato = st.radio("Stato", ["Tutti", "Da fare", "Fatto"], horizontal=True,
+    filtro_stato = st.radio("Stato", ["Tutti", "Da fare", "Fatti"], index=1, horizontal=True,
                             key="impegni_filtro_stato")
     opzioni_categoria_filtro = ["Tutte le categorie"] + categorie_disponibili
     filtro_categoria = st.selectbox("Categoria", opzioni_categoria_filtro, key="impegni_filtro_categoria")
@@ -7689,7 +7685,7 @@ def mostra_impegni_scadenze():
         fatto = _impegni_e_fatto(riga.get("Fatto", ""))
         if filtro_stato == "Da fare" and fatto:
             continue
-        if filtro_stato == "Fatto" and not fatto:
+        if filtro_stato == "Fatti" and not fatto:
             continue
         if filtro_categoria != "Tutte le categorie" and str(riga.get("Categoria", "")).strip() != filtro_categoria:
             continue
@@ -7759,14 +7755,14 @@ def mostra_impegni_scadenze():
                     st.link_button("Link", r["link"] or "#", disabled=not ha_link, key=key_link)
                 with col_stato:
                     fatto_corrente = _impegni_e_fatto(r["riga_dict"].get("Fatto", ""))
-                    valore_corrente = "Fatto" if fatto_corrente else "Da fare"
-                    scelta_stato = st.radio(" ", ["Da fare", "Fatto"],
+                    valore_corrente = "Fatti" if fatto_corrente else "Da fare"
+                    scelta_stato = st.radio(" ", ["Da fare", "Fatti"],
                                             index=(1 if fatto_corrente else 0),
                                             key=f"impegno_stato_{rf}", horizontal=True,
                                             label_visibility="collapsed", disabled=sola_lettura())
                     if scelta_stato != valore_corrente:
                         valori_fatto = dict(r["riga_dict"])
-                        valori_fatto["Fatto"] = "X" if scelta_stato == "Fatto" else ""
+                        valori_fatto["Fatto"] = "X" if scelta_stato == "Fatti" else ""
                         ok_f, err_f = salva_riga_foglio(workbook, NOME_FOGLIO_IMPEGNI,
                                                         RIGA_INTESTAZIONE_IMPEGNI, valori_fatto,
                                                         riga_da_aggiornare=rf)
@@ -7790,6 +7786,7 @@ def mostra_impegni_scadenze():
                 _render_corpo_impegno()
                 st.button(" ", key=f"impegno_apri_{rf}",
                           on_click=_impegni_apri_modifica, args=(r["riga_dict"], rf))
+
 
 
 # ─────────────────────────────────────────────────────────────────
