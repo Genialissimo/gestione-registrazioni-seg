@@ -314,6 +314,125 @@ def salva_comitato_servizio(_workbook, nomi_per_ruolo: dict):
     except Exception as e:
         return False, f"Errore durante il salvataggio: {e}"
 
+# ─────────────────────────────────────────────────────────────────
+# IMPEGNI E SCADENZE — costanti e lettura/scrittura dati
+# ─────────────────────────────────────────────────────────────────
+NOME_FOGLIO_IMPEGNI = "Impegni e scadenze"
+RIGA_INTESTAZIONE_IMPEGNI = 1
+CHIAVE_CATEGORIA_IMPEGNI = "Categoria Impegni"
+OPZIONI_PREAVVISO_IMPEGNI = ["1", "3", "7", "10", "15", "30", "60", "90"]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def leggi_categorie_impegni(_workbook) -> list:
+    """Legge dal foglio 'Configurazioni' tutte le righe con chiave 'Categoria Impegni'
+    (una riga per categoria, non un unico valore con virgole) e ritorna l'elenco
+    dei valori trovati, nell'ordine in cui compaiono nel foglio."""
+    categorie = []
+    if _workbook is None:
+        return categorie
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
+        valori = ws.get_all_values()
+        righe = valori[RIGA_INTESTAZIONE_IMPOSTAZIONI:]
+        for riga in righe:
+            if len(riga) >= 2 and riga[0].strip().lower() == CHIAVE_CATEGORIA_IMPEGNI.lower():
+                valore = riga[1].strip()
+                if valore and valore not in categorie:
+                    categorie.append(valore)
+    except Exception:
+        pass
+    return categorie
+
+
+def aggiungi_categoria_impegno(_workbook, nuova_categoria: str):
+    """Aggiunge una nuova riga 'Categoria Impegni' nel foglio 'Configurazioni'."""
+    try:
+        ws = _workbook.worksheet(NOME_FOGLIO_IMPOSTAZIONI)
+        ws.append_row([CHIAVE_CATEGORIA_IMPEGNI, nuova_categoria.strip()],
+                      value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, f"Errore durante il salvataggio della categoria: {e}"
+
+
+def _impegni_e_fatto(valore) -> bool:
+    return str(valore).strip().upper() in ("X", "SI", "SÌ", "TRUE", "1")
+
+
+def _impegni_giorni_mancanti(scadenza_str: str):
+    """Ritorna i giorni mancanti alla scadenza (negativo se già passata), o None
+    se la data non è leggibile."""
+    try:
+        scadenza = datetime.strptime(str(scadenza_str).strip(), "%d/%m/%Y").date()
+    except Exception:
+        return None
+    return (scadenza - date.today()).days
+
+
+def _impegni_preavviso_attivo(scadenza_str: str, preavviso_str: str) -> bool:
+    """True se l'impegno è scaduto, oppure se oggi rientra in una delle soglie
+    di preavviso impostate per quell'impegno (es. '7,10,30' → mostralo da 30
+    giorni prima in poi, visto che 30 è la soglia più larga)."""
+    giorni = _impegni_giorni_mancanti(scadenza_str)
+    if giorni is None:
+        return False
+    if giorni < 0:
+        return True
+    soglie = [int(s.strip()) for s in str(preavviso_str).split(",") if s.strip().isdigit()]
+    return any(giorni <= s for s in soglie)
+
+
+def _impegni_testo_giorni(giorni: int) -> str:
+    if giorni < 0:
+        n = abs(giorni)
+        return f"scaduto da {n} giorno" if n == 1 else f"scaduto da {n} giorni"
+    if giorni == 0:
+        return "oggi"
+    if giorni == 1:
+        return "domani"
+    return f"tra {giorni} giorni"
+
+
+def _impegni_dot_class(giorni: int) -> str:
+    if giorni < 0 or giorni <= 3:
+        return "dot-red"
+    if giorni <= 10:
+        return "dot-yellow"
+    return "dot-green"
+
+
+def _impegni_calcola_promemoria(df_impegni: pd.DataFrame) -> list:
+    """Ritorna la lista degli impegni non ancora Fatti con il promemoria attivo
+    (scaduti, oppure entro una delle soglie di preavviso scelte per quell'impegno),
+    con le soglie stesse incluse per poterli raggruppare nel widget di Home."""
+    if df_impegni.empty or "Scadenza" not in df_impegni.columns:
+        return []
+
+    risultato = []
+    for idx, riga in df_impegni.iterrows():
+        if _impegni_e_fatto(riga.get("Fatto", "")):
+            continue
+        scadenza_str = str(riga.get("Scadenza", "")).strip()
+        giorni = _impegni_giorni_mancanti(scadenza_str)
+        if giorni is None:
+            continue
+        soglie = [int(s.strip()) for s in str(riga.get("Preavviso", "")).split(",") if s.strip().isdigit()]
+        attivo = giorni < 0 or any(giorni <= s for s in soglie)
+        if not attivo:
+            continue
+        risultato.append({
+            "oggetto": str(riga.get("Oggetto", "")).strip() or "(senza oggetto)",
+            "categoria": str(riga.get("Categoria", "")).strip(),
+            "giorni": giorni,
+            "scadenza_str": scadenza_str,
+            "soglie": soglie,
+            "riga_foglio": RIGA_INTESTAZIONE_IMPEGNI + 1 + idx,
+        })
+
+    risultato.sort(key=lambda r: r["giorni"])
+    return risultato
+
 
 def _iniziali_da_nome(nome_completo: str) -> str:
     """Ricava le iniziali da un nome completo, es. 'Putrino Fabrizio' -> 'PF'."""
@@ -2728,6 +2847,89 @@ def mostra_home():
                 font-size: 0.98rem;
             }
         }
+
+        .impegni-card {
+            width: 92%;
+            max-width: 900px;
+            margin: 8px auto 24px auto;
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            border-radius: 14px;
+            padding: 22px clamp(20px, 4vw, 40px);
+            box-shadow: 3px 5px 14px rgba(0,0,0,0.18);
+        }
+        .impegni-titolo {
+            font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+            font-weight: 700;
+            color: #075985;
+            margin: 0 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .impegni-lista {
+            display: block;
+        }
+        .impegni-riga {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 7px 0;
+            border-bottom: 1px dashed rgba(0,0,0,0.12);
+        }
+        .impegni-riga:last-child {
+            border-bottom: none;
+        }
+        .impegni-link {
+            text-decoration: none;
+            color: inherit;
+            cursor: pointer;
+        }
+        .impegni-link:hover .impegni-testo {
+            text-decoration: underline;
+        }
+        .impegni-testo {
+            font-size: 0.92rem;
+            color: #0c4a6e;
+            line-height: 1.35;
+        }
+
+        .impegni-vuoto {
+            font-size: 0.92rem;
+            color: #0c4a6e;
+            opacity: 0.75;
+            font-style: italic;
+        }
+        .impegni-testo-blocco {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .impegni-oggetto {
+            font-size: 0.92rem;
+            color: #0369a1;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+        .impegni-conteggio {
+            font-weight: 700;
+            font-size: 0.98rem;
+        }
+        .impegni-gruppo-titolo {
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #0369a1;
+            margin: 10px 0 4px 0;
+        }
+        @media (min-width: 900px) {
+            .impegni-lista {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 2px 32px;
+            }
+            .impegni-testo {
+                font-size: 0.98rem;
+            }
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -2922,6 +3124,37 @@ def mostra_home():
             n_domande_da_approvare_tot = None
             info_mese_domande = None
 
+    # ─────────────────────────────────────────────────────────────────
+    # Impegni e scadenze — conteggio totale da fare e promemoria attivi
+    # (per il widget in Home, raggruppati per soglia di preavviso)
+    # ─────────────────────────────────────────────────────────────────
+    lista_promemoria_impegni = []
+    n_impegni_da_fare_totale = 0
+    badge_impegni = ""
+    if collegato:
+        try:
+            df_impegni_home, err_impegni_home = leggi_foglio_come_df(
+                workbook, NOME_FOGLIO_IMPEGNI, RIGA_INTESTAZIONE_IMPEGNI)
+            if not err_impegni_home:
+                if not df_impegni_home.empty and "Fatto" in df_impegni_home.columns:
+                    n_impegni_da_fare_totale = int(
+                        (~df_impegni_home["Fatto"].apply(_impegni_e_fatto)).sum()
+                    )
+                lista_promemoria_impegni = _impegni_calcola_promemoria(df_impegni_home)
+                if n_impegni_da_fare_totale > 0:
+                    n_scaduti_imp = sum(1 for r in lista_promemoria_impegni if r["giorni"] < 0)
+                    if n_scaduti_imp:
+                        cls_badge_imp = "hud-red"
+                    elif lista_promemoria_impegni:
+                        cls_badge_imp = "hud-yellow"
+                    else:
+                        cls_badge_imp = "hud-green"
+                    badge_impegni = f'<span class="hud-badge {cls_badge_imp}">{n_impegni_da_fare_totale}</span>'
+        except Exception:
+            lista_promemoria_impegni = []
+            n_impegni_da_fare_totale = 0
+            badge_impegni = ""
+
     promemoria = []
 
     # ─────────────────────────────────────────────────────────────────
@@ -3013,6 +3246,57 @@ def mostra_home():
     </div>
     """
 
+    def _impegni_html_riga(r):
+        riga1_testo = f'{r["scadenza_str"]} ({r["giorni"]}) — {r["categoria"]}' if r["categoria"] \
+            else f'{r["scadenza_str"]} ({r["giorni"]})'
+        dot_html = f'<span class="dot {_impegni_dot_class(r["giorni"])}"></span>'
+        if collegato:
+            riga1_html = (f'<a class="impegni-link" href="?vai_a=impegni_scadenze" target="_self">'
+                          f'<span class="impegni-testo">{riga1_testo}</span></a>')
+        else:
+            riga1_html = f'<span class="impegni-testo">{riga1_testo}</span>'
+        riga2_html = f'<div class="impegni-oggetto">{r["oggetto"]}</div>'
+        return (f'<div class="impegni-riga">{dot_html}'
+                f'<div class="impegni-testo-blocco">{riga1_html}{riga2_html}</div></div>')
+
+
+    def _impegni_html_gruppi(lista):
+        scaduti = sorted([r for r in lista if r["giorni"] < 0], key=lambda r: r["giorni"])
+        futuri = [r for r in lista if r["giorni"] >= 0]
+
+        gruppi = {}
+        for r in futuri:
+            candidati = [s for s in r["soglie"] if r["giorni"] <= s]
+            if not candidati:
+                continue
+            gruppi.setdefault(min(candidati), []).append(r)
+
+        pezzi = []
+        if scaduti:
+            righe = "".join(_impegni_html_riga(r) for r in scaduti)
+            pezzi.append(f'<div class="impegni-gruppo-titolo">⚠️ Scaduti</div>{righe}')
+
+        for soglia in sorted(gruppi.keys()):
+            righe_gruppo = sorted(gruppi[soglia], key=lambda r: r["giorni"])
+            righe = "".join(_impegni_html_riga(r) for r in righe_gruppo)
+            pezzi.append(f'<div class="impegni-gruppo-titolo">Nei prossimi {soglia:02d} giorni</div>{righe}')
+
+        return "".join(pezzi)
+
+    if lista_promemoria_impegni:
+        corpo_gruppi_html = _impegni_html_gruppi(lista_promemoria_impegni)
+    else:
+        corpo_gruppi_html = '<div class="impegni-vuoto">Nessun impegno da ricordare al momento.</div>'
+
+    impegni_widget_html = f"""
+    <div class="impegni-card">
+        <div class="impegni-titolo">🗓️ Prossimi impegni e scadenze ({n_impegni_da_fare_totale})</div>
+        <div class="impegni-lista">
+            {corpo_gruppi_html}
+        </div>
+    </div>
+    """
+
     lista_impostazioni = [
         ("⚙️", "bg-slate",  "Impostazioni", "Configura i giorni delle adunanze e altre opzioni.", "impostazioni", ""),
     ]
@@ -3040,6 +3324,10 @@ def mostra_home():
         "📝 Domande": [
             ("📝", "bg-amber", "Domande di pioniere ausiliario",
              "Compila, archivia ed esporta le domande S-205b.", "domande_pionieri", ""),
+        ],
+        "📅 Impegni": [
+            ("📅", "bg-cyan", "Impegni e scadenze",
+             "Gestisci impegni, scadenze e promemoria personali.", "impegni_scadenze", badge_impegni),
         ],
         "⚙️ Impostazioni": lista_impostazioni,
     }
@@ -3074,6 +3362,10 @@ def mostra_home():
 
     with tabs[0]:
         st.markdown(postit_html, unsafe_allow_html=True)
+
+        st.button("➕ Aggiungi impegno", key="home_aggiungi_impegno", use_container_width=True,
+                  disabled=not collegato, on_click=vai_a_impegni_nuovo)
+        st.markdown(impegni_widget_html, unsafe_allow_html=True)
 
     for tab, (nome_tab, lista_card) in zip(tabs[1:], sezioni.items()):
         with tab:
@@ -6859,7 +7151,6 @@ def _form_domanda_pioniere(editor: dict, nomi_anagrafica: list):
                 st.rerun()
 
 
-
 def mostra_domande_pioniere_ausiliario():
     st.title("📝 Domande di pioniere ausiliario")
     contenitore_pulsanti = st.container()
@@ -7100,6 +7391,405 @@ def mostra_domande_pioniere_ausiliario():
             _form_domanda_pioniere(editor, nomi_anagrafica)
 
 
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: IMPEGNI E SCADENZE
+# ─────────────────────────────────────────────────────────────────
+def vai_a_impegni_nuovo():
+    st.session_state.impegni_editor = {"modo": "nuovo"}
+    vai_a("impegni_scadenze")
+
+
+def vai_a_home_reset_impegni():
+    for chiave in ("impegni_editor", "impegni_conferma_elimina"):
+        st.session_state.pop(chiave, None)
+    vai_a("home")
+
+
+
+def _form_impegno(editor: dict, categorie_disponibili: list):
+    modo = editor.get("modo")
+    e = editor.get("riga", {}) if modo == "modifica" else {}
+    chiave = editor.get("numero_riga_foglio", "nuovo")
+    bloccato = sola_lettura()
+
+    if modo == "modifica":
+        st.markdown(f"#### ✏️ Modifica impegno — {e.get('Oggetto', '')}")
+    else:
+        st.markdown("#### ➕ Nuovo impegno")
+
+    def parse_data(s):
+        try:
+            return datetime.strptime(s, "%d/%m/%Y").date()
+        except Exception:
+            return None
+
+    with st.form(f"form_impegno_{chiave}", clear_on_submit=False):
+        oggetto = st.text_input("Oggetto *", value=e.get("Oggetto", ""), disabled=bloccato)
+        descrizione = st.text_area("Descrizione", value=e.get("Descrizione", ""), height=80, disabled=bloccato)
+
+        opzioni_categoria = list(categorie_disponibili) + ["➕ Nuova categoria…"]
+        categoria_corrente = e.get("Categoria", "")
+        if categoria_corrente and categoria_corrente not in opzioni_categoria:
+            opzioni_categoria = [categoria_corrente] + opzioni_categoria
+        indice_cat = opzioni_categoria.index(categoria_corrente) if categoria_corrente in opzioni_categoria else 0
+        scelta_categoria = st.selectbox("Categoria", opzioni_categoria, index=indice_cat, disabled=bloccato)
+        nuova_categoria_testo = ""
+        if scelta_categoria == "➕ Nuova categoria…":
+            nuova_categoria_testo = st.text_input("Nome della nuova categoria", disabled=bloccato)
+
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            data_iniziale = st.date_input("Data Iniziale",
+                                          value=parse_data(e.get("Data Iniziale", "")) or date.today(),
+                                          format="DD/MM/YYYY", disabled=bloccato)
+        with col_d2:
+            scadenza = st.date_input("Scadenza *",
+                                     value=parse_data(e.get("Scadenza", "")) or date.today(),
+                                     format="DD/MM/YYYY", disabled=bloccato)
+
+        valori_preavviso_correnti = [v.strip() for v in str(e.get("Preavviso", "")).split(",") if v.strip()]
+        opzioni_preavviso = list(OPZIONI_PREAVVISO_IMPEGNI)
+        for v in valori_preavviso_correnti:
+            if v not in opzioni_preavviso:
+                opzioni_preavviso.append(v)
+        preavviso_scelto = st.multiselect("Avvisami (giorni prima della scadenza)", opzioni_preavviso,
+                                          default=valori_preavviso_correnti, disabled=bloccato)
+
+        assegnato = st.text_input("Assegnato", value=e.get("Assegnato", ""), disabled=bloccato)
+        fatto = st.checkbox("Fatto", value=_impegni_e_fatto(e.get("Fatto", "")), disabled=bloccato)
+        link = st.text_input("Collega Link", value=e.get("Collega Link", ""), disabled=bloccato)
+
+        col_salva, col_annulla, col_elimina = st.columns(3)
+        with col_salva:
+            invia = st.form_submit_button("✔ Salva", type="primary", use_container_width=True,
+                                          disabled=bloccato)
+        with col_annulla:
+            annulla = st.form_submit_button("✖ Annulla", use_container_width=True)
+        with col_elimina:
+            elimina = st.form_submit_button("🗑️ Elimina", use_container_width=True,
+                                            disabled=(bloccato or modo != "modifica"))
+
+    if annulla:
+        st.session_state.impegni_editor = None
+        st.rerun()
+
+    if elimina and modo == "modifica":
+        st.session_state.impegni_conferma_elimina = editor
+        st.rerun()
+
+    if invia:
+        oggetto_pulito = oggetto.strip()
+        if not oggetto_pulito:
+            st.error("Il campo «Oggetto» è obbligatorio.")
+        elif scadenza is None:
+            st.error("Il campo «Scadenza» è obbligatorio.")
+        else:
+            categoria_finale = (nuova_categoria_testo.strip() if scelta_categoria == "➕ Nuova categoria…"
+                                else scelta_categoria)
+            if scelta_categoria == "➕ Nuova categoria…" and categoria_finale:
+                aggiungi_categoria_impegno(workbook, categoria_finale)
+
+            valori = {
+                "Data Iniziale": data_iniziale.strftime("%d/%m/%Y") if data_iniziale else "",
+                "Scadenza": scadenza.strftime("%d/%m/%Y"),
+                "Preavviso": ",".join(sorted(preavviso_scelto, key=lambda x: int(x))),
+                "Categoria": categoria_finale,
+                "Assegnato": assegnato.strip(),
+                "Oggetto": oggetto_pulito,
+                "Descrizione": descrizione.strip(),
+                "Fatto": "X" if fatto else "",
+                "Collega Link": link.strip(),
+            }
+            numero_riga = editor.get("numero_riga_foglio") if modo == "modifica" else None
+            ok, err_salva = salva_riga_foglio(workbook, NOME_FOGLIO_IMPEGNI, RIGA_INTESTAZIONE_IMPEGNI,
+                                              valori, riga_da_aggiornare=numero_riga)
+            if ok:
+                st.cache_data.clear()
+                st.session_state.impegni_editor = None
+                st.session_state.impegni_tabella_versione = st.session_state.get(
+                    "impegni_tabella_versione", 0) + 1
+                st.success(f"✔ «{oggetto_pulito}» salvato correttamente.")
+                st.rerun()
+            else:
+                st.error(err_salva)
+
+    conferma = st.session_state.get("impegni_conferma_elimina")
+    if conferma and modo == "modifica" and conferma.get("numero_riga_foglio") == editor.get("numero_riga_foglio"):
+        st.warning(f"Confermi l'eliminazione di «{e.get('Oggetto', '')}»? "
+                   "L'operazione non è reversibile.")
+        col_si, col_no = st.columns(2)
+        with col_si:
+            if st.button("✔ Sì, elimina", key="impegni_conf_si", type="primary", use_container_width=True):
+                ok, err_elim = elimina_riga_foglio(workbook, NOME_FOGLIO_IMPEGNI, editor["numero_riga_foglio"])
+                if ok:
+                    st.cache_data.clear()
+                    st.session_state.impegni_editor = None
+                    st.session_state.impegni_conferma_elimina = None
+                    st.session_state.impegni_tabella_versione = st.session_state.get(
+                        "impegni_tabella_versione", 0) + 1
+                    st.success("✔ Impegno eliminato.")
+                    st.rerun()
+                else:
+                    st.error(err_elim)
+        with col_no:
+            if st.button("No, annulla", key="impegni_conf_no", use_container_width=True):
+                st.session_state.impegni_conferma_elimina = None
+                st.rerun()
+
+
+def _impegni_apri_modifica(riga_dict: dict, rf: int):
+    st.session_state.impegni_editor = {
+        "modo": "modifica", "riga": riga_dict, "numero_riga_foglio": rf,
+    }
+
+
+def mostra_impegni_scadenze():
+    st.title("🗓️ Impegni e scadenze")
+
+    st.markdown("""
+    <style>
+        div[class*="st-key-impegno_card_"] {
+            position: relative !important;
+            padding: 10px 14px !important;
+            text-align: left !important;
+        }
+        div[class*="st-key-impegno_card_"] div[data-testid="stElementContainer"] {
+            margin-bottom: 2px !important;
+        }
+        div[class*="st-key-impegno_apri_"] {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            z-index: 1 !important;
+        }
+        div[class*="st-key-impegno_apri_"] button {
+            width: 100% !important;
+            height: 100% !important;
+            opacity: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        div[class*="st-key-impegno_link_"],
+        div[class*="st-key-impegno_stato_"] {
+            position: relative !important;
+            z-index: 10 !important;
+        }
+        div[class*="st-key-impegno_card_"] div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 10px !important;
+            align-items: center !important;
+        }
+        div[class*="st-key-impegno_card_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 0% !important;
+            min-width: 0 !important;
+        }
+        div[class*="st-key-impegno_link_present_"] button,
+        div[class*="st-key-impegno_link_absent_"] button {
+            background: transparent !important;
+            border: none !important;
+            font-weight: 500 !important;
+            padding: 0 4px !important;
+            min-height: 0 !important;
+            height: auto !important;
+            line-height: 1.2 !important;
+        }
+        div[class*="st-key-impegno_link_present_"] button p,
+        div[class*="st-key-impegno_link_absent_"] button p {
+            margin: 0 !important;
+            line-height: 1.2 !important;
+        }
+        div[class*="st-key-impegno_link_present_"] button {
+            color: #2563eb !important;
+            text-decoration: underline !important;
+        }
+        div[class*="st-key-impegno_link_absent_"] button {
+            color: #cbd5e1 !important;
+            text-decoration: none !important;
+        }}
+        .impegno-riga1 {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #0c4a6e;
+            text-align: left;
+            margin: 0 0 2px 0;
+        }
+            div[class*="st-key-impegno_card_fatto_"] {
+            background: #f0fdf4 !important;
+            border-color: #bbf7d0 !important;
+        }
+        div[class*="st-key-impegno_card_scaduto_"] {
+            background: #fef2f2 !important;
+            border-color: #fecaca !important;
+        }
+        div[class*="st-key-impegno_card_dafare_"] {
+            background: #f9fafb !important;
+            border-color: #e5e7eb !important;
+        }
+        .impegno-oggetto-riga {
+            font-size: 0.9rem;
+            color: #374151;
+            text-align: left;
+            margin: 0 0 8px 0;
+        }
+        .impegno-gruppo-titolo {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: #0369a1;
+            margin: 14px 0 6px 0;
+            text-align: left;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_home, col_nuovo = st.columns(2)
+    with col_home:
+        st.button("🏠 Home", key="home_da_impegni", use_container_width=True,
+                  on_click=vai_a_home_reset_impegni)
+    with col_nuovo:
+        if st.button("➕ Nuovo", key="impegni_nuovo_btn", use_container_width=True,
+                     disabled=not collegato or sola_lettura()):
+            st.session_state.impegni_editor = {"modo": "nuovo"}
+
+    if not collegato:
+        st.warning("⚠️ Nessun foglio dati collegato.")
+        return
+
+    df_impegni, err = leggi_foglio_come_df(workbook, NOME_FOGLIO_IMPEGNI, RIGA_INTESTAZIONE_IMPEGNI)
+    if err:
+        st.error(err)
+        return
+
+    categorie_disponibili = leggi_categorie_impegni(workbook)
+
+    df_impegni = df_impegni.reset_index(drop=True)
+    if not df_impegni.empty:
+        df_impegni["_riga_foglio"] = RIGA_INTESTAZIONE_IMPEGNI + 1 + df_impegni.index
+
+    editor = st.session_state.get("impegni_editor")
+    if editor:
+        st.divider()
+        _form_impegno(editor, categorie_disponibili)
+        st.divider()
+
+    filtro_stato = st.radio("Stato", ["Tutti", "Da fare", "Fatto"], horizontal=True,
+                            key="impegni_filtro_stato")
+    opzioni_categoria_filtro = ["Tutte le categorie"] + categorie_disponibili
+    filtro_categoria = st.selectbox("Categoria", opzioni_categoria_filtro, key="impegni_filtro_categoria")
+
+    righe_valide = []
+    for _, riga in df_impegni.iterrows():
+        fatto = _impegni_e_fatto(riga.get("Fatto", ""))
+        if filtro_stato == "Da fare" and fatto:
+            continue
+        if filtro_stato == "Fatto" and not fatto:
+            continue
+        if filtro_categoria != "Tutte le categorie" and str(riga.get("Categoria", "")).strip() != filtro_categoria:
+            continue
+        try:
+            scadenza_date = datetime.strptime(str(riga.get("Scadenza", "")).strip(), "%d/%m/%Y").date()
+        except Exception:
+            scadenza_date = None
+        righe_valide.append({
+            "riga_foglio": int(riga["_riga_foglio"]),
+            "riga_dict": riga.to_dict(),
+            "scadenza_date": scadenza_date,
+            "scadenza_str": str(riga.get("Scadenza", "")).strip(),
+            "categoria": str(riga.get("Categoria", "")).strip(),
+            "oggetto": str(riga.get("Oggetto", "")).strip() or "(senza oggetto)",
+            "link": str(riga.get("Collega Link", "")).strip(),
+        })
+
+    if not righe_valide:
+        st.info("Nessun impegno trovato con questi filtri.")
+        return
+
+    def _raggruppa_per_mese(righe: list) -> list:
+        gruppi = {}
+        for r in righe:
+            chiave = (r["scadenza_date"].year, r["scadenza_date"].month)
+            gruppi.setdefault(chiave, []).append(r)
+        risultato = []
+        for chiave in sorted(gruppi.keys()):
+            anno, mese = chiave
+            etichetta = f"{MESI_ITALIANI[mese]} {anno}"
+            righe_ordinate = sorted(gruppi[chiave], key=lambda r: r["scadenza_date"])
+            risultato.append((etichetta, righe_ordinate))
+        return risultato
+
+    raggruppa_per_mese = (filtro_categoria == "Tutte le categorie")
+
+    if raggruppa_per_mese:
+        righe_con_data = [r for r in righe_valide if r["scadenza_date"] is not None]
+        righe_senza_data = [r for r in righe_valide if r["scadenza_date"] is None]
+        gruppi = _raggruppa_per_mese(righe_con_data)
+        if righe_senza_data:
+            gruppi.append(("Senza data valida", righe_senza_data))
+    else:
+        righe_ordinate = sorted(righe_valide,
+                                key=lambda r: (r["scadenza_date"] is None, r["scadenza_date"] or date.max))
+        gruppi = [(filtro_categoria, righe_ordinate)]
+
+    for etichetta_gruppo, righe_gruppo in gruppi:
+        st.markdown(f'<div class="impegno-gruppo-titolo">📅 {etichetta_gruppo}</div>', unsafe_allow_html=True)
+
+        for r in righe_gruppo:
+            rf = r["riga_foglio"]
+            if raggruppa_per_mese and r["categoria"]:
+                riga1_testo = f'{r["scadenza_str"]} — {r["categoria"]}'
+            else:
+                riga1_testo = r["scadenza_str"]
+
+            def _render_corpo_impegno(r=r, rf=rf, riga1_testo=riga1_testo):
+                st.markdown(f'<div class="impegno-riga1">{riga1_testo}</div>', unsafe_allow_html=True)
+                if r["oggetto"]:
+                    st.markdown(f'<div class="impegno-oggetto-riga">{r["oggetto"]}</div>', unsafe_allow_html=True)
+
+                col_link, col_stato = st.columns([1, 2])
+                with col_link:
+                    ha_link = bool(r["link"])
+                    key_link = f"impegno_link_present_{rf}" if ha_link else f"impegno_link_absent_{rf}"
+                    st.link_button("Link", r["link"] or "#", disabled=not ha_link, key=key_link)
+                with col_stato:
+                    fatto_corrente = _impegni_e_fatto(r["riga_dict"].get("Fatto", ""))
+                    valore_corrente = "Fatto" if fatto_corrente else "Da fare"
+                    scelta_stato = st.radio(" ", ["Da fare", "Fatto"],
+                                            index=(1 if fatto_corrente else 0),
+                                            key=f"impegno_stato_{rf}", horizontal=True,
+                                            label_visibility="collapsed", disabled=sola_lettura())
+                    if scelta_stato != valore_corrente:
+                        valori_fatto = dict(r["riga_dict"])
+                        valori_fatto["Fatto"] = "X" if scelta_stato == "Fatto" else ""
+                        ok_f, err_f = salva_riga_foglio(workbook, NOME_FOGLIO_IMPEGNI,
+                                                        RIGA_INTESTAZIONE_IMPEGNI, valori_fatto,
+                                                        riga_da_aggiornare=rf)
+                        if ok_f:
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(err_f)
+
+            fatto_card = _impegni_e_fatto(r["riga_dict"].get("Fatto", ""))
+            scaduto_card = (not fatto_card and r["scadenza_date"] is not None
+                            and r["scadenza_date"] < date.today())
+            if fatto_card:
+                stato_card = "fatto"
+            elif scaduto_card:
+                stato_card = "scaduto"
+            else:
+                stato_card = "dafare"
+
+            with st.container(key=f"impegno_card_{stato_card}_{rf}", border=True):
+                _render_corpo_impegno()
+                st.button(" ", key=f"impegno_apri_{rf}",
+                          on_click=_impegni_apri_modifica, args=(r["riga_dict"], rf))
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -7129,6 +7819,8 @@ elif st.session_state.pagina == "utenti":
     mostra_gestione_utenti()
 elif st.session_state.pagina == "domande_pionieri":
     mostra_domande_pioniere_ausiliario()
+elif st.session_state.pagina == "impegni_scadenze":
+    mostra_impegni_scadenze()
 else:
     mostra_home()
 
