@@ -7581,13 +7581,20 @@ def mostra_impegni_scadenze():
         div[class*="st-key-impegno_card_"] div[data-testid="stHorizontalBlock"] {
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            gap: 10px !important;
+            gap: 12px !important;
             align-items: center !important;
         }
-        div[class*="st-key-impegno_card_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: 100% !important;
-            flex: 1 1 0% !important;
-            min-width: 0 !important;
+        /* Larghezza fissa in pixel per la prima colonna (Link) */
+        div[class*="st-key-impegno_card_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {
+            flex: 0 0 90px !important;
+            width: 90px !important;
+            min-width: 90px !important;
+        }
+        /* Larghezza fissa in pixel per la seconda colonna (Stato) */
+        div[class*="st-key-impegno_card_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
+            flex: 0 0 200px !important;
+            width: 200px !important;
+            min-width: 200px !important;
         }
         div[class*="st-key-impegno_link_present_"] button {
             background: transparent !important;
@@ -7648,7 +7655,7 @@ def mostra_impegni_scadenze():
     col_home, col_nuovo = st.columns(2)
     with col_home:
         st.button("🏠 Home", key="home_da_impegni", use_container_width=True,
-                  on_click=vai_a_home_reset_impegni)
+                    on_click=vai_a_home_reset_impegni)
     with col_nuovo:
         if st.button("➕ Nuovo", key="impegni_nuovo_btn", use_container_width=True,
                      disabled=not collegato or sola_lettura()):
