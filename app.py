@@ -7423,7 +7423,7 @@ def _form_impegno(editor: dict, categorie_disponibili: list):
 
     with st.form(f"form_impegno_{chiave}", clear_on_submit=False):
         oggetto = st.text_input("Oggetto *", value=e.get("Oggetto", ""), disabled=bloccato)
-        descrizione = st.text_area("Descrizione", value=e.get("Descrizione", ""), height=80, disabled=bloccato)
+        descrizione = st.text_area("Descrizione", value=e.get("Descrizione", ""), height=200, disabled=bloccato)
 
         opzioni_categoria = list(categorie_disponibili) + ["➕ Nuova categoria…"]
         categoria_corrente = e.get("Categoria", "")
