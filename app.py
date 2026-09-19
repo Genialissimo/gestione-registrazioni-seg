@@ -4240,8 +4240,15 @@ def mostra_cartoline_registrazione():
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: GRUPPI DI SERVIZIO
 # ─────────────────────────────────────────────────────────────────
-ETICHETTE_STATO_GRUPPI = {"A": "🟢 Attivi", "I": "🔺 Inattivi", "TR": "↔️ Trasferiti"}
+import io
+import base64
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from xhtml2pdf import pisa
 
+ETICHETTE_STATO_GRUPPI = {"A": "🟢 Attivi", "I": "🔺 Inattivi", "TR": "↔️ Trasferiti"}
 
 COLORI_GRUPPI = ["BDD7EE", "FBE0D0", "D8ECD2", "FCEDB6", "E4D6EC", "F5C6C6"]
 COLORI_TESTATA_GRUPPI = ["9DC3E6", "F4B183", "A9D18E", "FFD966", "C9A0DC", "E8A0A0"]
@@ -4289,8 +4296,11 @@ def _gruppi_dati_filtrati(df: pd.DataFrame, includi_inattivi: bool = False):
         if not g:
             continue
         stato = categorie.loc[idx] if idx in categorie.index else "A"
-        gruppi.setdefault(g, []).append({"nome": nome, "sigla": _gruppi_calcola_sigla(riga.to_dict()),
-                                          "stato": stato})
+        gruppi.setdefault(g, []).append({
+            "nome": nome,
+            "sigla": _gruppi_calcola_sigla(riga.to_dict()),
+            "stato": stato
+        })
     return df, gruppi
 
 
@@ -4298,16 +4308,26 @@ def _gruppi_ordina_membri(membri: list) -> list:
     return sorted(membri, key=lambda m: (0 if m.get("stato") != "I" else 1, m["nome"]))
 
 
+# ─────────────────────────────────────────────────────────────────
+# PAGINA: GRUPPI DI SERVIZIO (Excel con margini stretti)
+# ─────────────────────────────────────────────────────────────────
 def genera_excel_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False) -> bytes:
     df, gruppi = _gruppi_dati_filtrati(df, includi_inattivi=includi_inattivi)
-
     nomi_gruppi = sorted(gruppi.keys())
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Gruppi di servizio"
 
-    bordo_sottile = Side(style="thin", color="999999")
+    # Impostazione margini di stampa stretti (narrow)
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.75
+    ws.page_margins.bottom = 0.75
+    ws.page_margins.header = 0.3
+    ws.page_margins.footer = 0.3
+
+    bordo_sottile = Side(style="thin", color="D9D9D9")
     bordo = Border(left=bordo_sottile, right=bordo_sottile, top=bordo_sottile, bottom=bordo_sottile)
 
     blocco_colonne = 3
@@ -4316,134 +4336,222 @@ def genera_excel_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = Fals
 
     for indice_coppia in range(0, len(nomi_gruppi), 2):
         coppia = nomi_gruppi[indice_coppia:indice_coppia + 2]
-        max_membri = max(len(gruppi[g]) for g in coppia)
+        max_membri = max((len(gruppi[g]) for g in coppia), default=0)
 
         for posizione, nome_gruppo in enumerate(coppia):
-            indice_colore = (indice_coppia // 2 + posizione) % len(COLORI_GRUPPI)
+            indice_assoluto = indice_coppia + posizione
+            # Forza il viola (indice 4) per il blocco in basso a sinistra
+            if indice_assoluto == 2:
+                indice_colore = 4
+            else:
+                indice_colore = indice_assoluto % len(COLORI_GRUPPI)
+
             colore_corpo = COLORI_GRUPPI[indice_colore]
             colore_testata = COLORI_TESTATA_GRUPPI[indice_colore]
+            
             col_base = 1 + posizione * (blocco_colonne + gutter)
             col_num, col_nome, col_sigla = col_base, col_base + 1, col_base + 2
 
             r = riga_cursore
-            ws.merge_cells(start_row=r, start_column=col_num, end_row=r, end_column=col_sigla)
-            cella = ws.cell(row=r, column=col_num, value=f"Gruppo {nome_gruppo.upper()}")
-            cella.font = Font(name="Arial", size=12, bold=True)
-            cella.alignment = Alignment(horizontal="center")
-            cella.fill = PatternFill("solid", fgColor=colore_testata)
-
             assistente = _gruppi_trova_assistente(df, nome_gruppo)
-            for etichetta, valore, r_offset in (("Sorvegliante", nome_gruppo, 1), ("Assistente", assistente, 2)):
-                rr = r + r_offset
-                ws.merge_cells(start_row=rr, start_column=col_num, end_row=rr, end_column=col_nome)
-                c1 = ws.cell(row=rr, column=col_num, value=valore)
-                c1.font = Font(name="Arial", size=10, italic=True, bold=True, color="1F4E78")
-                c1.fill = PatternFill("solid", fgColor=colore_corpo)
-                c2 = ws.cell(row=rr, column=col_sigla, value=etichetta)
-                c2.font = Font(name="Arial", size=10, bold=True)
-                c2.alignment = Alignment(horizontal="right")
-                c2.fill = PatternFill("solid", fgColor=colore_corpo)
 
+            # Riga 1: Nome Gruppo / Sorvegliante (con sfondo colorato)
+            ws.merge_cells(start_row=r, start_column=col_num, end_row=r, end_column=col_nome)
+            c1 = ws.cell(row=r, column=col_num, value=nome_gruppo)
+            c1.font = Font(name="Arial", size=10, bold=True, color="1A1A1A")
+            c1.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            c1.fill = PatternFill("solid", fgColor=colore_corpo)
+            
+            c2 = ws.cell(row=r, column=col_sigla, value="Sorvegliante")
+            c2.font = Font(name="Arial", size=8, color="777777")
+            c2.alignment = Alignment(horizontal="right", vertical="center")
+            c2.fill = PatternFill("solid", fgColor=colore_corpo)
+
+            # Riga 2: Assistente (con sfondo colorato)
+            rr_ass = r + 1
+            ws.merge_cells(start_row=rr_ass, start_column=col_num, end_row=rr_ass, end_column=col_nome)
+            c1_ass = ws.cell(row=rr_ass, column=col_num, value=assistente)
+            c1_ass.font = Font(name="Arial", size=10, bold=True, color="1A1A1A")
+            c1_ass.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            c1_ass.fill = PatternFill("solid", fgColor=colore_corpo)
+            
+            c2_ass = ws.cell(row=rr_ass, column=col_sigla, value="Assistente")
+            c2_ass.font = Font(name="Arial", size=8, color="777777")
+            c2_ass.alignment = Alignment(horizontal="right", vertical="center")
+            c2_ass.fill = PatternFill("solid", fgColor=colore_corpo)
+
+            for rw in (r, rr_ass):
+                ws.cell(row=rw, column=col_num).border = Border(
+                    left=Side(style="medium", color=colore_testata),
+                    top=bordo.top, bottom=bordo.bottom
+                )
+                ws.cell(row=rw, column=col_sigla).border = Border(
+                    right=bordo.right, top=bordo.top, bottom=bordo.bottom
+                )
+
+            # Membri del gruppo
             membri = _gruppi_ordina_membri(gruppi[nome_gruppo])
             for i in range(max_membri):
-                rr = r + 3 + i
-                cn = ws.cell(row=rr, column=col_num, value=i + 1 if i < len(membri) else "")
-                cnome = ws.cell(row=rr, column=col_nome, value=membri[i]["nome"] if i < len(membri) else "")
-                csigla = ws.cell(row=rr, column=col_sigla, value=membri[i]["sigla"] if i < len(membri) else "")
-                colore_font = "FF0000" if i < len(membri) and membri[i].get("stato") == "I" else "000000"
-                for c in (cn, cnome, csigla):
-                    c.font = Font(name="Arial", size=10, color=colore_font)
-                    c.fill = PatternFill("solid", fgColor=colore_corpo)
+                rr = r + 2 + i
+                ha_membro = i < len(membri)
+                cn = ws.cell(row=rr, column=col_num, value=i + 1)
+                cnome = ws.cell(row=rr, column=col_nome, value=membri[i]["nome"] if ha_membro else "")
+                csigla = ws.cell(row=rr, column=col_sigla, value=membri[i]["sigla"] if ha_membro else "")
+                
+                colore_font = "CC0000" if ha_membro and membri[i].get("stato") == "I" else "1A1A1A"
+                
+                # Nomi e sigle senza sfondo (bianchi)
+                for c in (cnome, csigla):
+                    c.font = Font(name="Arial", size=9, color=colore_font)
                     c.border = bordo
-                cn.alignment = Alignment(horizontal="center")
-                csigla.alignment = Alignment(horizontal="center")
+                
+                # Colonna dei numeri con sfondo colorato
+                cn.fill = PatternFill("solid", fgColor=colore_corpo)
+                cn.alignment = Alignment(horizontal="center", vertical="center")
+                cn.font = Font(name="Arial", size=8, color="555555")
+                cn.border = Border(
+                    left=Side(style="medium", color=colore_testata),
+                    right=bordo_sottile, top=bordo_sottile, bottom=bordo_sottile
+                )
+                
+                csigla.alignment = Alignment(horizontal="center", vertical="center")
+                csigla.font = Font(name="Arial", size=8, bold=True, color=colore_testata)
 
-            ws.column_dimensions[get_column_letter(col_num)].width = 5
-            ws.column_dimensions[get_column_letter(col_nome)].width = 26
+            ws.column_dimensions[get_column_letter(col_num)].width = 4
+            ws.column_dimensions[get_column_letter(col_nome)].width = 28
             ws.column_dimensions[get_column_letter(col_sigla)].width = 10
 
-        riga_cursore += 3 + max_membri + 2
+        # Imposta la colonna divisoria stretta (larghezza 2)
+        ws.column_dimensions[get_column_letter(col_base + 3)].width = 2
+        riga_cursore += 2 + max_membri + 2
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
-
-
-def _gruppi_tabella_pdf(df: pd.DataFrame, nome_gruppo: str, membri: list,
-                         colore_corpo: str, colore_testata: str, righe_totali: int = None):
+def _gruppi_tabella_html(df: pd.DataFrame, nome_gruppo: str, membri: list,
+                         colore_corpo: str, colore_testata: str, max_righe: int) -> str:
     membri_ordinati = _gruppi_ordina_membri(membri)
     assistente = _gruppi_trova_assistente(df, nome_gruppo)
-    n_righe = righe_totali if righe_totali is not None else len(membri_ordinati)
 
-    dati = [[f"Gruppo {nome_gruppo.upper()}", "", ""],
-            [nome_gruppo, "", "Sorvegliante"],
-            [assistente, "", "Assistente"]]
-    for i in range(n_righe):
-        if i < len(membri_ordinati):
-            m = membri_ordinati[i]
-            dati.append([str(i + 1), m["nome"], m["sigla"]])
-        else:
-            dati.append(["", "", ""])
+    spazio_dopo_testata = '<tr><td colspan="3" style="height:4px; border:none; padding:0;"></td></tr>'
 
-    larghezze = [1.1 * cm, 4.6 * cm, 1.8 * cm]
-    t = Table(dati, colWidths=larghezze)
-    stile = [
-        ("SPAN", (0, 0), (2, 0)),
-        ("SPAN", (0, 1), (1, 1)),
-        ("SPAN", (0, 2), (1, 2)),
-        ("BACKGROUND", (0, 0), (2, 0), colors.HexColor("#" + colore_testata)),
-        ("FONTNAME", (0, 0), (2, 0), "Helvetica-Bold"),
-        ("ALIGN", (0, 0), (2, 0), "CENTER"),
-        ("BACKGROUND", (0, 1), (2, 2), colors.HexColor("#" + colore_corpo)),
-        ("FONTNAME", (0, 1), (1, 2), "Helvetica-BoldOblique"),
-        ("ALIGN", (2, 1), (2, 2), "RIGHT"),
-        ("BACKGROUND", (0, 3), (2, -1), colors.HexColor("#" + colore_corpo)),
-        ("GRID", (0, 3), (2, -1), 0.4, colors.grey),
-        ("ALIGN", (0, 3), (0, -1), "CENTER"),
-        ("ALIGN", (2, 3), (2, -1), "CENTER"),
-        ("FONTSIZE", (0, 0), (2, -1), 7),
-        ("TOPPADDING", (0, 0), (2, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (2, -1), 1),
-        ("VALIGN", (0, 0), (2, -1), "MIDDLE"),
-    ]
-    for i, m in enumerate(membri_ordinati):
-        if m.get("stato") == "I":
-            riga_tabella = 3 + i
-            stile.append(("TEXTCOLOR", (0, riga_tabella), (2, riga_tabella), colors.red))
-    t.setStyle(TableStyle(stile))
-    return t
+    html_righe = spazio_dopo_testata
+    for i in range(max_righe):
+        ha_membro = i < len(membri_ordinati)
+        m = membri_ordinati[i] if ha_membro else None
+        colore_testo = "#CC0000" if m and m.get("stato") == "I" else "#1A1A1A"
+        nome_val = m["nome"] if m else ""
+        sigla_val = m["sigla"] if m else ""
+        
+        html_righe += f"""
+            <tr>
+                <td style="text-align:center; width:9%; border-left:3px solid #{colore_testata}; border-top:0.5px solid #D9D9D9; border-bottom:0.5px solid #D9D9D9;
+                           padding:1.6px 4px; font-size:7.6px; color:#888888;">{i + 1}</td>
+                <td style="width:66%; border-top:0.5px solid #D9D9D9; border-bottom:0.5px solid #D9D9D9; padding:1.6px 4px; font-size:8px; color:{colore_testo};">{nome_val}</td>
+                <td style="text-align:center; width:25%; border-right:0.5px solid #D9D9D9; border-top:0.5px solid #D9D9D9; border-bottom:0.5px solid #D9D9D9; padding:1.6px 4px; font-size:7.6px;
+                           font-weight:bold; color:#{colore_testata};">{sigla_val}</td>
+            </tr>
+        """
+
+    html = f"""
+    <table style="width:100%; border-collapse:collapse;">
+        <tr style="background-color:#{colore_corpo};">
+            <td colspan="2" style="border-left:3px solid #{colore_testata}; padding:3px 6px;
+                                    font-size:9px; font-weight:bold; color:#1A1A1A;">{nome_gruppo}</td>
+            <td style="text-align:right; border-right:0.5px solid #D9D9D9; padding:3px 6px; font-size:7.3px; color:#777777;">Sorvegliante</td>
+        </tr>
+        <tr style="background-color:#{colore_corpo};">
+            <td colspan="2" style="border-left:3px solid #{colore_testata}; border-bottom:0.5px solid #D9D9D9; padding:3px 6px;
+                                    font-size:9px; font-weight:bold; color:#1A1A1A;">{assistente}</td>
+            <td style="text-align:right; border-right:0.5px solid #D9D9D9; border-bottom:0.5px solid #D9D9D9; padding:3px 6px; font-size:7.3px; color:#777777;">Assistente</td>
+        </tr>
+        {html_righe}
+    </table>
+    """
+    return html
 
 
-def genera_pdf_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False) -> bytes:
+def genera_pdf_da_html_gruppi_servizio(df: pd.DataFrame, includi_inattivi: bool = False,
+                                        congregazione: str = "", rev: str = "1/1", data: str = "") -> bytes:
     df, gruppi = _gruppi_dati_filtrati(df, includi_inattivi=includi_inattivi)
     nomi_gruppi = sorted(gruppi.keys())
 
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.7 * cm, bottomMargin=0.7 * cm,
-                             leftMargin=0.7 * cm, rightMargin=0.7 * cm)
-    stili = getSampleStyleSheet()
-    elementi = [Paragraph("Gruppi di servizio", stili["Title"]), Spacer(1, 8)]
+    n_coppie = (len(nomi_gruppi) + 1) // 2
+    altezza_riga_cm = 24.6 / max(n_coppie, 1)
 
+    righe_griglia = ""
     for indice in range(0, len(nomi_gruppi), 2):
         coppia = nomi_gruppi[indice:indice + 2]
-        max_membri = max(len(gruppi[g]) for g in coppia)
+        max_membri_coppia = max((len(gruppi[g]) for g in coppia), default=0)
         celle = []
         for posizione, nome_gruppo in enumerate(coppia):
-            indice_colore = (indice // 2 + posizione) % len(COLORI_GRUPPI)
-            celle.append(_gruppi_tabella_pdf(df, nome_gruppo, gruppi[nome_gruppo],
-                                              COLORI_GRUPPI[indice_colore],
-                                              COLORI_TESTATA_GRUPPI[indice_colore],
-                                              righe_totali=max_membri))
+            indice_assoluto = indice + posizione
+            if indice_assoluto == 2:
+                indice_colore = 4
+            else:
+                indice_colore = indice_assoluto % len(COLORI_GRUPPI)
+            
+            celle.append(_gruppi_tabella_html(
+                df, nome_gruppo, gruppi[nome_gruppo],
+                COLORI_GRUPPI[indice_colore], COLORI_TESTATA_GRUPPI[indice_colore],
+                max_righe=max_membri_coppia
+            ))
         if len(celle) == 1:
             celle.append("")
-        riga_esterna = Table([celle], colWidths=[9 * cm, 9 * cm])
-        riga_esterna.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-        elementi.append(KeepTogether([riga_esterna, Spacer(1, 8)]))
+        righe_griglia += f"""
+        <tr>
+            <td style="width:9.25cm; height:{altezza_riga_cm:.2f}cm; vertical-align:top;">{celle[0]}</td>
+            <td style="width:0.5cm;"></td>
+            <td style="width:9.25cm; height:{altezza_riga_cm:.2f}cm; vertical-align:top;">{celle[1]}</td>
+        </tr>
+        """
 
-    doc.build(elementi)
-    buf.seek(0)
-    return buf.getvalue()
+    griglia_html = f'''
+    <table style="width:19cm; margin: 0 auto; border-collapse:collapse;">
+        {righe_griglia}
+    </table>
+    '''
+
+    riga_meta = ""
+    if congregazione:
+        riga_meta += f'<div>Congregazione: <b style="color:#1A1A1A;">{congregazione}</b></div>'
+    if rev or data:
+        riga_meta += f'<div>Rev. {rev} data: {data}</div>'
+
+    html_completo = f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {{ 
+            size: A4 portrait; 
+            margin-top: 0.7cm;
+            margin-bottom: 0.7cm;
+            margin-left: 1.0cm;
+            margin-right: 1.0cm;
+        }}
+        body {{ font-family: Helvetica, Arial, sans-serif; color: #333; margin: 0; padding: 0; }}
+    </style>
+</head>
+<body>
+    <table style="width:19cm; margin: 0 auto; border-collapse:collapse; margin-bottom:4px;">
+        <tr>
+            <td style="font-size:18px; font-weight:bold; color:#2E75B6;">Gruppi di servizio</td>
+            <td style="text-align:right; font-size:7.8px; color:#8A8A8A; vertical-align:bottom;">{riga_meta}</td>
+        </tr>
+    </table>
+    <div style="width:19cm; margin: 0 auto; border-bottom:1.3px solid #2E75B6; margin-bottom:8px;"></div>
+    {griglia_html}
+</body>
+</html>
+"""
+    pdf_output = io.BytesIO()
+    pisa_status = pisa.CreatePDF(io.BytesIO(html_completo.encode("utf-8")), dest=pdf_output)
+    if pisa_status.err:
+        raise Exception("Errore durante la generazione del PDF HTML")
+    pdf_output.seek(0)
+    return pdf_output.getvalue()
 
 
 def mostra_gruppi_servizio():
@@ -4468,16 +4576,16 @@ def mostra_gruppi_servizio():
     df = df.reset_index(drop=True)
 
     formato_export = st.radio("Formato esportazione", ["Excel", "PDF", "PDF includi inattivi"],
-                               horizontal=True, key="gruppi_formato_export")
+                              horizontal=True, key="gruppi_formato_export")
     if st.button(f"📥 Esporta Gruppi di servizio ({formato_export})", key="esporta_gruppi",
                  use_container_width=True):
         if formato_export == "Excel":
             st.session_state.gruppi_export_pronto = ("xlsx", genera_excel_gruppi_servizio(df))
         elif formato_export == "PDF":
-            st.session_state.gruppi_export_pronto = ("pdf", genera_pdf_gruppi_servizio(df))
+            st.session_state.gruppi_export_pronto = ("pdf", genera_pdf_da_html_gruppi_servizio(df))
         else:
             st.session_state.gruppi_export_pronto = (
-                "pdf", genera_pdf_gruppi_servizio(df, includi_inattivi=True))
+                "pdf", genera_pdf_da_html_gruppi_servizio(df, includi_inattivi=True))
 
     if st.session_state.get("gruppi_export_pronto"):
         tipo_file, dati_file = st.session_state.gruppi_export_pronto
@@ -4508,7 +4616,7 @@ def mostra_gruppi_servizio():
         categorie = pd.Series(["A"] * len(df), index=df.index)
 
     stato_scelto = st.radio("Stato", ["🟢 Attivi", "🔺 Inattivi"], horizontal=True,
-                             key="gruppi_stato_filtro")
+                            key="gruppi_stato_filtro")
     codice_stato = {v: k for k, v in ETICHETTE_STATO_GRUPPI.items()}[stato_scelto]
 
     def _chiave_cb(nome: str) -> str:
@@ -4626,7 +4734,7 @@ def mostra_gruppi_servizio():
                                 valori = df.loc[idx].to_dict()
                                 valori["Gruppo"] = nome_gruppo_finale
                                 ok, err_salva = salva_riga_anagrafica(workbook, valori,
-                                                                       riga_da_aggiornare=numero_riga_foglio)
+                                                                   riga_da_aggiornare=numero_riga_foglio)
                                 if not ok:
                                     errori.append(f"{nome}: {err_salva}")
                         for nome in selezionati:
@@ -4639,7 +4747,6 @@ def mostra_gruppi_servizio():
                                 st.session_state.pop(_chiave_cb(nome), None)
                             st.session_state.gruppi_mostra_scelta = False
                             st.success(f"✔ {n_sel} Proclamatori abbinati a «{nome_gruppo_finale}».")
-
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: Presenti alle adunanze
 # ─────────────────────────────────────────────────────────────────
