@@ -12,3 +12,5 @@ pdfplumber
 streamlit-keyup
 google-api-python-client
 xhtml2pdf
+dropbox
+PyMuPDF
