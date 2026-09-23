@@ -602,7 +602,10 @@ def _genera_miniature(pdf_bytes: bytes, dpi: int = 100):
         miniature.append(pix.tobytes("png"))
     doc.close()
     return miniature
-
+    
+@st.dialog("Anteprima pagina", width="large")
+def _mostra_pagina_ingrandita(immagine_bytes, numero_pagina):
+    st.image(immagine_bytes, caption=f"Pagina {numero_pagina}", use_container_width=True)
 
 def _rimuovi_pagine(pdf_bytes: bytes, pagine_da_eliminare: list) -> bytes:
     """Restituisce un nuovo PDF (bytes) senza le pagine indicate (indici 0-based)."""
@@ -2528,7 +2531,7 @@ def vai_a_home_reset_importa_s21():
 # Gestisce il ritorno dall'autorizzazione OAuth di Google Drive (una tantum, da Impostazioni):
 # scambia il "code" ricevuto con un refresh token e lo mostra copiabile.
 if st.query_params.get("drive_auth") == "1" and st.query_params.get("code"):
-    _redirect_uri_drive = "https://gestioneseg.streamlit.app/?drive_auth=1"
+    _redirect_uri_drive = "https://gestioneseg-test.streamlit.app/?drive_auth=1"
     try:
         _risposta_oauth = httpx.post(
             "https://oauth2.googleapis.com/token",
@@ -6222,7 +6225,7 @@ def mostra_impostazioni():
         elif errore_oauth:
             st.error(f"Errore durante l'autorizzazione: {errore_oauth}")
 
-        _redirect_uri_drive = "https://gestioneseg.streamlit.app/?drive_auth=1"
+        _redirect_uri_drive = "https://gestioneseg-test.streamlit.app/?drive_auth=1"
         _url_autorizza = (
             "https://accounts.google.com/o/oauth2/v2/auth"
             f"?client_id={st.secrets['auth']['client_id']}"
@@ -6290,6 +6293,8 @@ def mostra_impostazioni():
                                     break
                                 with col:
                                     st.image(miniature[indice], caption=f"Pagina {indice + 1}", use_container_width=True)
+                                    if st.button("🔍 Ingrandisci", key=f"zoom_pagina_{indice}", use_container_width=True):
+                                        _mostra_pagina_ingrandita(miniature[indice], indice + 1)
                                     selezionata = st.checkbox(
                                         "Elimina",
                                         key=f"del_pagina_{indice}",
@@ -6299,7 +6304,6 @@ def mostra_impostazioni():
                                         st.session_state.pagine_selezionate.add(indice)
                                     else:
                                         st.session_state.pagine_selezionate.discard(indice)
-
 
 
                         n_da_eliminare = len(st.session_state.pagine_selezionate)
