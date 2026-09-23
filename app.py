@@ -3,11 +3,15 @@ app.py
 Gestione Registrazioni SEG - Web App (Streamlit + Google Sheets)
 """
 
+
 from datetime import datetime, date, timedelta
 import io
 import os
 import re
 import zipfile
+import dropbox
+import httpx
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -27,6 +31,13 @@ from reportlab.lib.units import cm
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+import fitz
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+from google.oauth2.credentials import Credentials as GoogleUserCredentials
+
+DRIVE_FOLDER_ID = "1FA6I6CG0W_X8nXKfsctgQAhIErW4Khm0"
+DROPBOX_SHARED_FOLDER_URL = "https://www.dropbox.com/scl/fo/ym54mob5amc2dt1vx1dhb/h?rlkey=rj3mrgng1jexuubhkdrrufpsw&st=a0i2p5qq&dl=0"
 
 # ==============================================================================
 # 1. CONFIGURAZIONE PAGINA (Deve essere la prima istruzione Streamlit)
@@ -543,7 +554,112 @@ S21_FONT_ETA = 8.5
 S21_COLORE_ROSSO = (0.827, 0.125, 0.125)
 S21_COLORE_NERO = (0, 0, 0)
 
+# ─────────────────────────────────────────────────────────────────
+# PULIZIA PDF DA DROPBOX — costanti e funzioni di supporto
+# ─────────────────────────────────────────────────────────────────
+DRIVE_FOLDER_ID = "1FA6I6CG0W_X8nXKfsctgQAhIErW4Khm0"
+DROPBOX_SHARED_FOLDER_URL = "https://www.dropbox.com/scl/fo/ym54mob5amc2dt1vx1dhb/h?rlkey=rj3mrgng1jexuubhkdrrufpsw&st=a0i2p5qq&dl=0"
 
+
+@st.cache_resource(show_spinner=False)
+def _client_dropbox():
+    """Client Dropbox autenticato con refresh token (non scade mai)."""
+    return dropbox.Dropbox(
+        oauth2_refresh_token=st.secrets["dropbox_refresh_token"],
+        app_key=st.secrets["dropbox_app_key"],
+        app_secret=st.secrets["dropbox_app_secret"],
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _lista_pdf_dropbox(url_cartella_condivisa: str):
+    """Elenca i PDF presenti in una cartella Dropbox condivisa tramite link pubblico."""
+    dbx = _client_dropbox()
+    link = dropbox.files.SharedLink(url=url_cartella_condivisa)
+    risultato = dbx.files_list_folder(path="", shared_link=link)
+    voci = list(risultato.entries)
+    while risultato.has_more:
+        risultato = dbx.files_list_folder_continue(risultato.cursor)
+        voci.extend(risultato.entries)
+    return [v for v in voci if isinstance(v, dropbox.files.FileMetadata) and v.name.lower().endswith(".pdf")]
+
+
+def _scarica_pdf_da_percorso(percorso_file: str) -> bytes:
+    """Scarica un PDF da Dropbox dato il suo percorso completo nell'account."""
+    dbx = _client_dropbox()
+    _, resp = dbx.files_download(percorso_file)
+    return resp.content
+
+
+def _genera_miniature(pdf_bytes: bytes, dpi: int = 100):
+    """Genera un'immagine PNG (bytes) per ogni pagina del PDF."""
+    miniature = []
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
+    for pagina in doc:
+        pix = pagina.get_pixmap(matrix=matrix)
+        miniature.append(pix.tobytes("png"))
+    doc.close()
+    return miniature
+
+
+def _rimuovi_pagine(pdf_bytes: bytes, pagine_da_eliminare: list) -> bytes:
+    """Restituisce un nuovo PDF (bytes) senza le pagine indicate (indici 0-based)."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc.delete_pages(pagine_da_eliminare)
+    output = doc.tobytes()
+    doc.close()
+    return output
+
+
+def _trasforma_nome_file(nome_originale: str, aggiungi_v: bool) -> str:
+    """Sposta la data (ultime 8 cifre AAAAMMGG prima dell'estensione) in testa al nome,
+    nel formato 'AAAA MM GG  Resto.pdf', aggiungendo il tag (V) se richiesto."""
+    base, estensione = os.path.splitext(nome_originale)
+    match = re.search(r"(\d{8})$", base)
+    if not match:
+        prefisso = "(V) " if aggiungi_v else ""
+        return f"{prefisso}{nome_originale}"
+
+    data_str = match.group(1)
+    resto = base[:match.start()]
+    anno, mese, giorno = data_str[0:4], data_str[4:6], data_str[6:8]
+    prefisso_v = "(V) " if aggiungi_v else ""
+    return f"{anno} {mese} {giorno}  {prefisso_v}{resto}{estensione}"
+
+
+def _file_esiste_su_drive(nome_file: str, folder_id: str, credentials) -> bool:
+    """True se esiste già un file con questo nome nella cartella Drive indicata."""
+    servizio = build("drive", "v3", credentials=credentials)
+    nome_escaped = nome_file.replace("'", "\\'")
+    query = f"name = '{nome_escaped}' and '{folder_id}' in parents and trashed = false"
+    risultato = servizio.files().list(q=query, fields="files(id, name)", pageSize=1).execute()
+    return len(risultato.get("files", [])) > 0
+
+
+def _carica_su_drive(pdf_bytes: bytes, nome_file: str, folder_id: str, credentials) -> str:
+    """Carica il PDF nella cartella Drive indicata. Restituisce l'ID del file caricato."""
+    servizio = build("drive", "v3", credentials=credentials)
+    metadata = {"name": nome_file, "parents": [folder_id]}
+    media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype="application/pdf", resumable=False)
+    file = servizio.files().create(body=metadata, media_body=media, fields="id").execute()
+    return file.get("id")
+
+
+@st.cache_resource(show_spinner=False)
+def _credenziali_google_drive():
+    """Credenziali OAuth del tuo account Google personale (non del service account),
+    con refresh token che si rinnova da solo — necessario perché i service account
+    non hanno spazio di archiviazione proprio su Drive."""
+    return GoogleUserCredentials(
+        token=None,
+        refresh_token=st.secrets["google_drive_refresh_token"],
+        client_id=st.secrets["auth"]["client_id"],
+        client_secret=st.secrets["auth"]["client_secret"],
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["https://www.googleapis.com/auth/drive"],
+    )
 # ─────────────────────────────────────────────────────────────────
 # CONNESSIONE A GOOGLE
 # ─────────────────────────────────────────────────────────────────
@@ -2409,9 +2525,37 @@ def vai_a_home_reset_importa_s21():
     vai_a("home")
 
 
+# Gestisce il ritorno dall'autorizzazione OAuth di Google Drive (una tantum, da Impostazioni):
+# scambia il "code" ricevuto con un refresh token e lo mostra copiabile.
+if st.query_params.get("drive_auth") == "1" and st.query_params.get("code"):
+    _redirect_uri_drive = "https://gestioneseg-test.streamlit.app/?drive_auth=1"
+    try:
+        _risposta_oauth = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": st.query_params.get("code"),
+                "client_id": st.secrets["auth"]["client_id"],
+                "client_secret": st.secrets["auth"]["client_secret"],
+                "redirect_uri": _redirect_uri_drive,
+                "grant_type": "authorization_code",
+            },
+        )
+        _dati_oauth = _risposta_oauth.json()
+        if "refresh_token" in _dati_oauth:
+            st.session_state.drive_oauth_refresh_token = _dati_oauth["refresh_token"]
+        else:
+            st.session_state.drive_oauth_errore = _dati_oauth.get("error_description", str(_dati_oauth))
+    except Exception as _errore_oauth:
+        st.session_state.drive_oauth_errore = str(_errore_oauth)
+
+    del st.query_params["drive_auth"]
+    del st.query_params["code"]
+    st.query_params.pop("scope", None)
+    st.session_state.pagina = "impostazioni"
+
+
 workbook, errore = apri_foglio_dati()
 collegato = workbook is not None
-
 
 # ─────────────────────────────────────────────────────────────────
 # Pagina: per il controllo dell'Anno Teocratico nei Promemoria
@@ -6062,7 +6206,146 @@ def mostra_impostazioni():
 
         components.html(html_copia_link, height=140)
 
+    with st.expander("🔑 Autorizzazione Google Drive (upload PDF)"):
+        st.caption("Necessaria una sola volta, per far salvare i PDF su Drive con il tuo account "
+                   "personale (i service account non hanno spazio di archiviazione proprio). "
+                   "Dopo aver copiato il refresh token e averlo messo nei secrets, questa sezione "
+                   "non ti serve più.")
 
+        token_ottenuto = st.session_state.get("drive_oauth_refresh_token")
+        errore_oauth = st.session_state.get("drive_oauth_errore")
+
+        if token_ottenuto:
+            st.success("✔ Refresh token ottenuto! Copialo (icona in alto a destra del riquadro) "
+                       "e mettilo nei secrets come `google_drive_refresh_token`.")
+            st.code(token_ottenuto, language=None)
+        elif errore_oauth:
+            st.error(f"Errore durante l'autorizzazione: {errore_oauth}")
+
+        _redirect_uri_drive = "https://gestioneseg-test.streamlit.app/?drive_auth=1"
+        _url_autorizza = (
+            "https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={st.secrets['auth']['client_id']}"
+            f"&redirect_uri={quote(_redirect_uri_drive, safe='')}"
+            "&response_type=code"
+            "&scope=https://www.googleapis.com/auth/drive"
+            "&access_type=offline"
+            "&prompt=consent"
+        )
+        st.link_button("🔓 Autorizza Google Drive", _url_autorizza, use_container_width=True)
+
+    with st.expander("📄 Pulizia PDF da Dropbox"):
+        st.caption("Sfoglia i PDF nella cartella Dropbox configurata, scegli quali pagine eliminare "
+                   "e carica il risultato in una cartella Google Drive fissa.")
+
+        if sola_lettura():
+            st.info("Modalità sola lettura: questa funzione non è disponibile.")
+        else:
+            try:
+                file_pdf = _lista_pdf_dropbox(DROPBOX_SHARED_FOLDER_URL)
+            except Exception as e:
+                st.error(f"Errore nel leggere la cartella Dropbox: {e}")
+                file_pdf = []
+
+            if not file_pdf:
+                st.info("Nessun PDF trovato in questa cartella al momento.")
+            else:
+                nomi_file = [f.name for f in file_pdf]
+                nome_scelto = st.radio("Tocca il file da elaborare:", nomi_file,
+                                        key="pulizia_pdf_scelta_file", index=None)
+
+                if nome_scelto:
+                    file_scelto = next(f for f in file_pdf if f.name == nome_scelto)
+
+                    if st.session_state.get("pulizia_pdf_path_corrente") != file_scelto.path_lower:
+                        st.session_state.pdf_bytes_originale = None
+                        st.session_state.pagine_selezionate = set()
+                        st.session_state.pulizia_pdf_path_corrente = file_scelto.path_lower
+
+                    if not st.session_state.get("pdf_bytes_originale"):
+                        with st.spinner(f"Scarico «{nome_scelto}» da Dropbox..."):
+                            try:
+                                st.session_state.pdf_bytes_originale = _scarica_pdf_da_percorso(
+                                    file_scelto.path_lower)
+                            except Exception as e:
+                                st.error(f"Errore nel download da Dropbox: {e}")
+
+                    if st.session_state.get("pdf_bytes_originale"):
+                        pdf_bytes = st.session_state.pdf_bytes_originale
+
+                        with st.spinner("Genero le anteprime delle pagine..."):
+                            miniature = _genera_miniature(pdf_bytes)
+
+                        if "pagine_selezionate" not in st.session_state:
+                            st.session_state.pagine_selezionate = set()
+
+                        st.caption(f"{len(miniature)} pagine trovate. Seleziona quelle da **eliminare**.")
+
+                        colonne_per_riga = 4
+                        for riga_inizio in range(0, len(miniature), colonne_per_riga):
+                            colonne = st.columns(colonne_per_riga)
+                            for offset, col in enumerate(colonne):
+                                indice = riga_inizio + offset
+                                if indice >= len(miniature):
+                                    break
+                                with col:
+                                    st.image(miniature[indice], caption=f"Pagina {indice + 1}", use_container_width=True)
+                                    selezionata = st.checkbox(
+                                        "Elimina",
+                                        key=f"del_pagina_{indice}",
+                                        value=indice in st.session_state.pagine_selezionate,
+                                    )
+                                    if selezionata:
+                                        st.session_state.pagine_selezionate.add(indice)
+                                    else:
+                                        st.session_state.pagine_selezionate.discard(indice)
+
+
+
+                        n_da_eliminare = len(st.session_state.pagine_selezionate)
+                        st.write(f"Pagine da eliminare: **{n_da_eliminare}** su {len(miniature)}")
+
+                        tipo_destinatario = st.radio("Chi deve ricevere questo documento?",
+                                                      ["Per i soli anziani", "Per la congregazione"],
+                                                      key="pulizia_pdf_tipo_destinatario")
+
+                        nome_suggerito = _trasforma_nome_file(
+                            nome_scelto, aggiungi_v=(tipo_destinatario == "Per la congregazione"))
+
+                        nome_file_output = st.text_input(
+                            "Nome file da salvare su Drive",
+                            value=nome_suggerito,
+                            key=f"pulizia_pdf_nome_output_{file_scelto.path_lower}_{tipo_destinatario}")
+
+                        if st.session_state.get("pulizia_pdf_nome_in_conflitto") == nome_file_output:
+                            st.warning(f"⚠️ Esiste già un file chiamato «{nome_file_output}» in quella cartella Drive.")
+                            if st.button("⚠️ Carica comunque (crea un duplicato)",
+                                         key="pulizia_pdf_conferma_duplicato", use_container_width=True):
+                                st.session_state.pulizia_pdf_nome_confermato = nome_file_output
+                                st.session_state.pulizia_pdf_nome_in_conflitto = None
+                                st.rerun()
+                        else:
+                            if st.button("✅ Genera PDF ed invia a Drive", type="primary",
+                                         disabled=(n_da_eliminare == len(miniature)),
+                                         key="pulizia_pdf_invia"):
+                                with st.spinner("Controllo e carico su Drive..."):
+                                    try:
+                                        credenziali = _credenziali_google_drive()
+                                        gia_confermato = st.session_state.get("pulizia_pdf_nome_confermato") == nome_file_output
+                                        if not gia_confermato and _file_esiste_su_drive(nome_file_output, DRIVE_FOLDER_ID, credenziali):
+                                            st.session_state.pulizia_pdf_nome_in_conflitto = nome_file_output
+                                            st.rerun()
+                                        else:
+                                            nuovo_pdf = _rimuovi_pagine(pdf_bytes, sorted(st.session_state.pagine_selezionate))
+                                            file_id = _carica_su_drive(nuovo_pdf, nome_file_output, DRIVE_FOLDER_ID, credenziali)
+                                            st.success(f"PDF caricato su Drive con successo (ID: {file_id}).")
+                                            st.session_state.pdf_bytes_originale = None
+                                            st.session_state.pagine_selezionate = set()
+                                            st.session_state.pulizia_pdf_path_corrente = None
+                                            st.session_state.pulizia_pdf_nome_confermato = None
+                                            st.session_state.pulizia_pdf_nome_in_conflitto = None
+                                    except Exception as e:
+                                        st.error(f"Errore durante il salvataggio su Drive: {e}")
 # ─────────────────────────────────────────────────────────────────
 # PAGINA: ACCESSI / GESTIONE UTENTI (solo Amministratore)
 # ─────────────────────────────────────────────────────────────────
