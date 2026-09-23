@@ -2528,7 +2528,7 @@ def vai_a_home_reset_importa_s21():
 # Gestisce il ritorno dall'autorizzazione OAuth di Google Drive (una tantum, da Impostazioni):
 # scambia il "code" ricevuto con un refresh token e lo mostra copiabile.
 if st.query_params.get("drive_auth") == "1" and st.query_params.get("code"):
-    _redirect_uri_drive = "https://gestioneseg-test.streamlit.app/?drive_auth=1"
+    _redirect_uri_drive = "https://gestioneseg.streamlit.app/?drive_auth=1"
     try:
         _risposta_oauth = httpx.post(
             "https://oauth2.googleapis.com/token",
@@ -6222,7 +6222,7 @@ def mostra_impostazioni():
         elif errore_oauth:
             st.error(f"Errore durante l'autorizzazione: {errore_oauth}")
 
-        _redirect_uri_drive = "https://gestioneseg-test.streamlit.app/?drive_auth=1"
+        _redirect_uri_drive = "https://gestioneseg.streamlit.app/?drive_auth=1"
         _url_autorizza = (
             "https://accounts.google.com/o/oauth2/v2/auth"
             f"?client_id={st.secrets['auth']['client_id']}"
