@@ -602,10 +602,23 @@ def _genera_miniature(pdf_bytes: bytes, dpi: int = 100):
         miniature.append(pix.tobytes("png"))
     doc.close()
     return miniature
-    
+
+
+def _genera_pagina_alta_risoluzione(pdf_bytes: bytes, indice_pagina: int, dpi: int = 200) -> bytes:
+    """Renderizza una singola pagina del PDF a risoluzione più alta, per lo zoom."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
+    pix = doc[indice_pagina].get_pixmap(matrix=matrix)
+    immagine = pix.tobytes("png")
+    doc.close()
+    return immagine
+
+
 @st.dialog("Anteprima pagina", width="large")
 def _mostra_pagina_ingrandita(immagine_bytes, numero_pagina):
     st.image(immagine_bytes, caption=f"Pagina {numero_pagina}", use_container_width=True)
+
 
 def _rimuovi_pagine(pdf_bytes: bytes, pagine_da_eliminare: list) -> bytes:
     """Restituisce un nuovo PDF (bytes) senza le pagine indicate (indici 0-based)."""
@@ -614,7 +627,6 @@ def _rimuovi_pagine(pdf_bytes: bytes, pagine_da_eliminare: list) -> bytes:
     output = doc.tobytes()
     doc.close()
     return output
-
 
 def _trasforma_nome_file(nome_originale: str, aggiungi_v: bool) -> str:
     """Sposta la data (ultime 8 cifre AAAAMMGG prima dell'estensione) in testa al nome,
@@ -6237,7 +6249,7 @@ def mostra_impostazioni():
         )
         st.link_button("🔓 Autorizza Google Drive", _url_autorizza, use_container_width=True)
 
-    with st.expander("📄 Pulizia PDF da Dropbox"):
+    with st.expander("📄 Estrai/Modifica fogli Pdf da Dropbox"):
         st.caption("Sfoglia i PDF nella cartella Dropbox configurata, scegli quali pagine eliminare "
                    "e carica il risultato in una cartella Google Drive fissa.")
 
@@ -6294,7 +6306,8 @@ def mostra_impostazioni():
                                 with col:
                                     st.image(miniature[indice], caption=f"Pagina {indice + 1}", use_container_width=True)
                                     if st.button("🔍 Ingrandisci", key=f"zoom_pagina_{indice}", use_container_width=True):
-                                        _mostra_pagina_ingrandita(miniature[indice], indice + 1)
+                                        immagine_hd = _genera_pagina_alta_risoluzione(pdf_bytes, indice, dpi=200)
+                                        _mostra_pagina_ingrandita(immagine_hd, indice + 1)
                                     selezionata = st.checkbox(
                                         "Elimina",
                                         key=f"del_pagina_{indice}",
@@ -6304,7 +6317,6 @@ def mostra_impostazioni():
                                         st.session_state.pagine_selezionate.add(indice)
                                     else:
                                         st.session_state.pagine_selezionate.discard(indice)
-
 
                         n_da_eliminare = len(st.session_state.pagine_selezionate)
                         st.write(f"Pagine da eliminare: **{n_da_eliminare}** su {len(miniature)}")
@@ -6322,12 +6334,21 @@ def mostra_impostazioni():
                             key=f"pulizia_pdf_nome_output_{file_scelto.path_lower}_{tipo_destinatario}")
 
                         if st.session_state.get("pulizia_pdf_nome_in_conflitto") == nome_file_output:
-                            st.warning(f"⚠️ Esiste già un file chiamato «{nome_file_output}» in quella cartella Drive.")
-                            if st.button("⚠️ Carica comunque (crea un duplicato)",
-                                         key="pulizia_pdf_conferma_duplicato", use_container_width=True):
-                                st.session_state.pulizia_pdf_nome_confermato = nome_file_output
-                                st.session_state.pulizia_pdf_nome_in_conflitto = None
-                                st.rerun()
+                            url_cartella_drive = f"https://drive.google.com/drive/folders/{DRIVE_FOLDER_ID}"
+                            st.warning(f"⚠️ Esiste già un file chiamato «{nome_file_output}» in quella cartella Drive. "
+                                       f"[Apri la cartella Drive]({url_cartella_drive}) per controllare.")
+                            col_si, col_no = st.columns(2)
+                            with col_si:
+                                if st.button("✅ Sì, carica comunque", key="pulizia_pdf_conferma_si",
+                                             type="primary", use_container_width=True):
+                                    st.session_state.pulizia_pdf_nome_confermato = nome_file_output
+                                    st.session_state.pulizia_pdf_nome_in_conflitto = None
+                                    st.rerun()
+                            with col_no:
+                                if st.button("❌ No, annulla", key="pulizia_pdf_conferma_no",
+                                             use_container_width=True):
+                                    st.session_state.pulizia_pdf_nome_in_conflitto = None
+                                    st.rerun()
                         else:
                             if st.button("✅ Genera PDF ed invia a Drive", type="primary",
                                          disabled=(n_da_eliminare == len(miniature)),
@@ -6342,7 +6363,8 @@ def mostra_impostazioni():
                                         else:
                                             nuovo_pdf = _rimuovi_pagine(pdf_bytes, sorted(st.session_state.pagine_selezionate))
                                             file_id = _carica_su_drive(nuovo_pdf, nome_file_output, DRIVE_FOLDER_ID, credenziali)
-                                            st.success(f"PDF caricato su Drive con successo (ID: {file_id}).")
+                                            url_cartella_drive = f"https://drive.google.com/drive/folders/{DRIVE_FOLDER_ID}"
+                                            st.success(f"✔ PDF caricato su Drive con successo. [Apri la cartella Drive]({url_cartella_drive})")
                                             st.session_state.pdf_bytes_originale = None
                                             st.session_state.pagine_selezionate = set()
                                             st.session_state.pulizia_pdf_path_corrente = None
