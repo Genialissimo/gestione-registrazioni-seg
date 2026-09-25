@@ -60,6 +60,32 @@ h3 { font-size: 1.1rem !important; }
 """, unsafe_allow_html=True)
 
 # ==============================================================================
+# 1.1. BARRA LATERALE CON NAVIGAZIONE RAPIDA FRA I PROGRAMMI
+# ==============================================================================
+with st.sidebar:
+    st.markdown("### 📁 I miei Programmi")
+
+    # Inserisci qui i link ufficiali dei tuoi programmi
+    programmi = {
+        "Gestione Registrazioni Segretario": "https://gestioneseg.streamlit.app/",
+        "Gestione Programmi": (
+            "https://gestione-programmi-7kb2cuwy6ntgwe7kufezrg.streamlit.app/"
+        ),
+    }
+
+    links_html = ""
+    for nome, url in programmi.items():
+        links_html += f'<div style="margin-bottom: 2px;"><a href="{url}" target="_blank" style="text-decoration: none; color: #31333F; font-size: 14px; font-weight: 500;">📈 {nome}</a></div>'
+
+    st.markdown(
+        f'<div style="padding-left: 12px; margin-bottom: 10px;">{links_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Linea separatrice
+    st.divider()
+
+# ==============================================================================
 # 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA (st.login())
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
