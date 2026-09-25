@@ -3,7 +3,6 @@ app.py
 Gestione Registrazioni SEG - Web App (Streamlit + Google Sheets)
 """
 
-
 from datetime import datetime, date, timedelta
 import io
 import os
@@ -11,6 +10,7 @@ import re
 import zipfile
 import dropbox
 import httpx
+import calendar
 from urllib.parse import quote
 
 import pandas as pd
@@ -46,11 +46,10 @@ st.set_page_config(
     page_title="Gestione Registrazioni SEG",
     page_icon="📒",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# ── Titoli più piccoli in tutta l'app (Streamlit li rende parecchio grandi
-#    di default su mobile) ────────────────────────────────────────────────
+# ── Titoli più piccoli in tutta l'app ────────────────────────────────────────
 st.markdown("""
 <style>
 h1 { font-size: 1.5rem !important; }
@@ -60,32 +59,7 @@ h3 { font-size: 1.1rem !important; }
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1.1. BARRA LATERALE CON NAVIGAZIONE RAPIDA FRA I PROGRAMMI
-# ==============================================================================
-with st.sidebar:
-    st.markdown("### 📁 I miei Programmi")
-
-    # Inserisci qui i link ufficiali dei tuoi programmi
-    programmi = {
-        "Gestione Test Registrazioni Segretario": "https://gestioneseg-test.streamlit.app/",
-        "Gestione Programmi": (
-            "https://gestione-programmi-7kb2cuwy6ntgwe7kufezrg.streamlit.app/"
-        ),
-    }
-
-    links_html = ""
-    for nome, url in programmi.items():
-        links_html += f'<div style="margin-bottom: 2px;"><a href="{url}" target="_blank" style="text-decoration: none; color: #31333F; font-size: 14px; font-weight: 500;">📈 {nome}</a></div>'
-
-    st.markdown(
-        f'<div style="padding-left: 12px; margin-bottom: 10px;">{links_html}</div>',
-        unsafe_allow_html=True,
-    )
-
-    # Linea separatrice
-    st.divider()
-# ==============================================================================
-# 2. CONFIGURAZIONE AUTENTICAZIONE GOOGLE OAUTH NATIVA (st.login())
+# 2. CONFIGURAZIONE AUTENTICAZIONE E FUNZIONI GOOGLE SHEETS
 # ==============================================================================
 NOME_FOGLIO_UTENTI = "Utenti"
 
@@ -119,12 +93,7 @@ def apri_foglio_dati():
         )
     except Exception as e:
         return None, f"Errore durante il collegamento: {e}"
-# ─────────────────────────────────────────────────────────────────
 
-
-# ==============================================================================
-# 3. PANNELLO DI AUTENTICAZIONE GOOGLE
-# ==============================================================================
 
 def sola_lettura() -> bool:
     """Ritorna True se l'utente corrente ha accesso in sola lettura (ruolo 'utente')."""
@@ -132,8 +101,7 @@ def sola_lettura() -> bool:
 
 
 def verifica_utente_foglio(email_cercata):
-    """Ritorna (autorizzato, ruolo, errore). 'errore' è valorizzato solo se la
-    lettura del foglio Utenti è fallita (non se l'email semplicemente non c'è)."""
+    """Ritorna (autorizzato, ruolo, errore)."""
     wb, err = apri_foglio_dati()
     if err:
         return False, None, err
@@ -151,9 +119,17 @@ def verifica_utente_foglio(email_cercata):
     return False, None, None
 
 
-# Se l'utente non ha ancora effettuato il login con Google (st.login() gestisce
-# lui la sessione persistente per 30 giorni, niente cookie manager manuale)
+# ==============================================================================
+# 3. PANNELLO DI AUTENTICAZIONE GOOGLE (Se non loggato, nasconde la sidebar)
+# ==============================================================================
 if not st.user.is_logged_in:
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {display: none !important;}
+            [data-testid="collapsedControl"] {display: none !important;}
+        </style>
+    """, unsafe_allow_html=True)
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔒 Accesso Riservato")
@@ -163,7 +139,7 @@ if not st.user.is_logged_in:
             st.login()
     st.stop()
 
-# Da qui in poi st.user.email è affidabile (autenticato da Google)
+# Da qui in poi l'utente è autenticato
 email_autenticata = (st.user.email or "").strip().lower()
 
 if st.session_state.get("email_logged") != email_autenticata:
@@ -175,8 +151,7 @@ if st.session_state.get("email_logged") != email_autenticata:
             st.session_state.pagina = "presenze"
     elif errore_verifica:
         st.error(f"⚠️ Errore durante la verifica dell'accesso: {errore_verifica}")
-        st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. "
-                "Riprova tra qualche secondo.")
+        st.info("Potrebbe essere un problema temporaneo di connessione al foglio Google. Riprova tra qualche secondo.")
         st.stop()
     else:
         st.error(f"⚠️ L'account `{email_autenticata}` non è autorizzato ad accedere.")
@@ -185,6 +160,28 @@ if st.session_state.get("email_logged") != email_autenticata:
             st.session_state.pop("ruolo", None)
             st.logout()
         st.stop()
+
+# ==============================================================================
+# 1.1. BARRA LATERALE CON NAVIGAZIONE RAPIDA FRA I PROGRAMMI (Visibile post-login)
+# ==============================================================================
+with st.sidebar:
+    st.markdown("### 📁 I miei Programmi")
+
+    programmi = {
+        "Gestione Test Registrazioni Segretario": "https://gestioneseg-test.streamlit.app/",
+        "Gestione Programmi": "https://gestione-programmi-7kb2cuwy6ntgwe7kufezrg.streamlit.app/",
+    }
+
+    links_html = ""
+    for nome, url in programmi.items():
+        links_html += f'<div style="margin-bottom: 2px;"><a href="{url}" target="_blank" style="text-decoration: none; color: #31333F; font-size: 14px; font-weight: 500;">📈 {nome}</a></div>'
+
+    st.markdown(
+        f'<div style="padding-left: 12px; margin-bottom: 10px;">{links_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.divider()
 
 
 # ==============================================================================
