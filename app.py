@@ -66,12 +66,7 @@ with st.sidebar:
     st.markdown("### 📁 I miei Programmi")
 
     # Inserisci qui i link ufficiali dei tuoi programmi
-    programmi = {
-        "?...": "...",
-        "?...": (
-            "..."
-        ),
-    }
+
 
     links_html = ""
     for nome, url in programmi.items():
