@@ -67,7 +67,7 @@ with st.sidebar:
 
     # Inserisci qui i link ufficiali dei tuoi programmi
     programmi = {
-        "Gestione Test Registrazioni Segretario": "https://gestioneseg.streamlit.app/",
+        "Gestione Test Registrazioni Segretario": "https://gestioneseg-test.streamlit.app/",
         "Gestione Programmi": (
             "https://gestione-programmi-7kb2cuwy6ntgwe7kufezrg.streamlit.app/"
         ),
